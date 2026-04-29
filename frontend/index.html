@@ -1,0 +1,3170 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Soneda · Dashboard de Vendas</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Figtree:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #0d0f14;
+    --surface:  #141720;
+    --surface2: #1c2030;
+    --border:   #252a3a;
+    --accent:   #c8f135;
+    --accent2:  #4fffb0;
+    --muted:    #5a6080;
+    --text:     #e8ecf5;
+    --text-dim: #8891aa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Figtree', sans-serif; font-weight: 300; min-height: 100vh; }
+
+  header { display: flex; align-items: center; justify-content: space-between; padding: 24px 40px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .logo { font-family: 'DM Serif Display', serif; font-size: 1.6rem; letter-spacing: -0.5px; }
+  .logo span { color: var(--accent); }
+  .badge { font-family: 'DM Mono', monospace; font-size: 0.72rem; color: var(--muted); background: var(--bg); border: 1px solid var(--border); padding: 4px 12px; border-radius: 20px; letter-spacing: 0.5px; }
+
+  main { max-width: 1300px; margin: 0 auto; padding: 36px 40px; }
+  .section-title { font-family: 'DM Serif Display', serif; font-size: 1.9rem; font-style: italic; margin-bottom: 6px; }
+  .section-sub { color: var(--text-dim); font-size: 0.82rem; margin-bottom: 28px; font-family: 'DM Mono', monospace; }
+
+  /* FILTERS */
+  .filters-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 28px; padding: 22px 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+  .filter-group { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 140px; }
+  .filter-group label { font-family: 'DM Mono', monospace; font-size: 0.7rem; color: var(--accent); letter-spacing: 1px; text-transform: uppercase; }
+  .filter-group select,
+  .filter-group input[type="date"] {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 14px; border-radius: 8px; font-family: 'Figtree', sans-serif; font-size: 0.9rem;
+    cursor: pointer; transition: border-color .2s; appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%235a6080' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px;
+  }
+  .filter-group input[type="date"] { background-image: none; padding-right: 14px; color-scheme: dark; }
+  .filter-group select:focus,
+  .filter-group input[type="date"]:focus { outline: none; border-color: var(--accent); }
+  .btn-clear { background: transparent; border: 1px solid var(--border); color: var(--text-dim); padding: 10px 20px; border-radius: 8px; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 0.78rem; letter-spacing: .5px; transition: all .2s; white-space: nowrap; align-self: flex-end; }
+  .btn-clear:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* KPIs */
+  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; position: relative; overflow: hidden; transition: border-color .2s; }
+  .kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--accent), transparent); }
+  .kpi-card:hover { border-color: var(--accent); }
+  .kpi-label { font-family: 'DM Mono', monospace; font-size: 0.68rem; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+  .kpi-value { font-family: 'DM Serif Display', serif; font-size: 2rem; color: var(--accent); line-height: 1; }
+  .kpi-sub { font-size: 0.75rem; color: var(--text-dim); margin-top: 4px; }
+
+  /* CHART */
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px 32px; }
+  .chart-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+  .chart-title { font-family: 'DM Serif Display', serif; font-size: 1.2rem; }
+  .chart-subtitle { font-family: 'DM Mono', monospace; font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
+  .chart-wrap { position: relative; height: 420px; }
+  .timeline-card-horizontal { padding-bottom: 30px; }
+  .timeline-card-horizontal .chart-wrap { width: 100%; height: 420px !important; }
+  .horizontal-legend-box {
+    width: 100%;
+    margin-top: 22px;
+    padding: 22px 24px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(220px, 1fr));
+    gap: 14px 30px;
+    align-items: start;
+    justify-items: stretch;
+    text-align: left;
+  }
+  .horizontal-legend-title {
+    grid-column: 1 / -1;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--accent);
+    letter-spacing: 1px;
+    margin-bottom: 2px;
+    text-align: left;
+  }
+  .horizontal-legend-item {
+    display: grid;
+    grid-template-columns: 12px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    min-height: 24px;
+    cursor: pointer;
+    border-radius: 8px;
+    padding: 4px 6px;
+    border: 1px solid transparent;
+    text-align: left;
+  }
+  .horizontal-legend-item:hover { background: rgba(255,255,255,0.04); }
+  .horizontal-legend-item.active { background: rgba(200,241,53,0.08); border-color: rgba(200,241,53,0.28); }
+  .horizontal-legend-dot { width: 9px; height: 9px; border-radius: 50%; }
+  .horizontal-legend-name { color: var(--text); font-size: 0.86rem; line-height: 1.18; text-align: left; }
+  .horizontal-legend-value { color: var(--accent2); font-family: 'DM Mono', monospace; font-size: 0.82rem; font-weight: 500; justify-self: end; }
+  @media (max-width: 980px) { .horizontal-legend-box { grid-template-columns: repeat(2, minmax(220px, 1fr)); } }
+  @media (max-width: 620px) { .horizontal-legend-box { grid-template-columns: 1fr; } }
+
+  /* TABLE */
+  .table-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-top: 20px; }
+  .table-head { padding: 20px 24px 12px; border-bottom: 1px solid var(--border); }
+  .table-head-title { font-family: 'DM Serif Display', serif; font-size: 1.1rem; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { font-family: 'DM Mono', monospace; font-size: 0.63rem; letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted); padding: 9px 18px; text-align: left; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; white-space: nowrap; }
+  thead th:hover { color: var(--text); }
+  thead th.sort-asc::after  { content: ' ↑'; color: var(--accent); }
+  thead th.sort-desc::after { content: ' ↓'; color: var(--accent); }
+  thead th.sort-asc, thead th.sort-desc { color: var(--accent); }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .15s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--surface2); }
+  tbody td { padding: 9px 18px; font-size: 0.82rem; }
+  .td-loja { font-family: 'DM Mono', monospace; font-size: 0.78rem; color: var(--muted); }
+  .td-nome { font-weight: 500; }
+  .td-qty { font-family: 'DM Mono', monospace; font-weight: 500; color: var(--accent2); }
+  .td-bar-wrap { display: flex; align-items: center; gap: 10px; }
+  .td-bar { height: 6px; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 3px; min-width: 4px; }
+
+  /* TABS */
+  .tabs-nav { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: var(--surface); padding: 0 40px; }
+  .tab-btn { font-family: 'DM Mono', monospace; font-size: 0.78rem; letter-spacing: 0.5px; color: var(--muted); background: none; border: none; border-bottom: 2px solid transparent; padding: 16px 24px; cursor: pointer; transition: color .2s, border-color .2s; white-space: nowrap; margin-bottom: -1px; }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* STATES */
+  .state-msg { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 340px; gap: 14px; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.82rem; text-align: center; line-height: 1.8; }
+  .spinner { width: 32px; height: 32px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .no-data { display: flex; align-items: center; justify-content: center; height: 180px; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.8rem; }
+  .err { color: #ff6b6b; }
+  .active-banner { display:flex; align-items:center; gap:12px; padding:10px 20px; background:var(--surface2); border:1px solid var(--accent); border-radius:8px; margin-bottom:16px; font-family:'DM Mono',monospace; font-size:0.75rem; color:var(--accent); letter-spacing:0.5px; }
+  .active-banner strong { color:var(--text); font-weight:600; }
+  .active-banner button { background:none; border:1px solid currentColor; color:inherit; padding:2px 10px; border-radius:20px; cursor:pointer; font-family:'DM Mono',monospace; font-size:0.7rem; transition:all .2s; margin-left:auto; }
+  .active-banner button:hover { background:var(--accent); color:var(--bg); }
+  tbody tr.clickable-row { cursor:pointer; }
+  tbody tr.clickable-row:hover { background:var(--surface2); }
+  tbody tr.row-active { background:rgba(200,241,53,0.07) !important; outline:1px solid var(--accent); outline-offset:-1px; }
+
+
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Soneda<span>.</span></div>
+</header>
+
+
+<nav class="tabs-nav">
+  <button class="tab-btn active" onclick="trocarAba('vendas', event)">Vendas Sell Out</button>
+  <button class="tab-btn" onclick="trocarAba('valor', event)">Venda Valor</button>
+  <button class="tab-btn" onclick="trocarAba('dia', event)">Venda por Dia</button>
+  <button class="tab-btn" onclick="trocarAba('estoque', event)">Estoque</button>
+  <button class="tab-btn" onclick="trocarAba('se', event)">Sell Out x Estoque</button>
+</nav>
+
+<!-- ABA 1: VENDAS SELL OUT -->
+<div id="tab-vendas" class="tab-panel active">
+<main>
+  <h1 class="section-title">Vendas Sell Out</h1>
+  <p class="section-sub" id="status-msg">Carregando dados da planilha...</p>
+
+  <div class="filters-row">
+    <div class="filter-group"><label>Ano</label><select id="f-ano"><option value="">Todos</option></select></div>
+    <div class="filter-group"><label>Mês</label><select id="f-mes"><option value="">Todos</option></select></div>
+    <div class="filter-group"><label>Data início</label><input type="date" id="f-di"></div>
+    <div class="filter-group"><label>Data fim</label><input type="date" id="f-df"></div>
+    <div class="filter-group"><label>Loja</label><select id="f-loja"><option value="">Todas</option></select></div>
+    <div class="filter-group"><label>Categoria</label><select id="f-cat"><option value="">Todas</option></select></div>
+    <div class="filter-group"><label>Família</label><select id="f-familia"><option value="">Todas</option></select></div>
+    <button class="btn-clear" onclick="limparFiltros()">↺ Limpar</button>
+  </div>
+  <div id="f-active-banner" class="active-banner" style="display:none"></div>
+
+  <div class="kpi-row">
+    <div class="kpi-card"><div class="kpi-label">Total Vendido</div><div class="kpi-value" id="kpi-total">—</div><div class="kpi-sub">unidades vendidas</div></div>
+    <div class="kpi-card"><div class="kpi-label">Lojas com Venda</div><div class="kpi-value" id="kpi-lojas">—</div><div class="kpi-sub">filiais ativas no período</div></div>
+    <div class="kpi-card"><div class="kpi-label">Maior Filial</div><div class="kpi-value" id="kpi-top" style="font-size:1.1rem;padding-top:6px">—</div><div class="kpi-sub" id="kpi-top-sub">—</div></div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Quantidade Vendida por Filial</div>
+        <div class="chart-subtitle" id="chart-sub">Todos os períodos</div>
+        <div id="loja-ativa" style="display:none;align-items:center;margin-top:10px;gap:6px"></div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div class="kpi-label">Total do período</div>
+        <div class="kpi-value" id="chart-total-val" style="font-size:2.2rem">—</div>
+        <div class="kpi-sub">unidades vendidas</div>
+      </div>
+    </div>
+    <div class="chart-wrap" id="chart-wrap"><div class="state-msg" id="chart-state"><div class="spinner"></div>Carregando dados...</div></div>
+  </div>
+
+  <div class="table-card"><div class="table-head"><div class="table-head-title">Detalhamento de Quantidade Vendida por Filial</div></div><div id="table-body"><div class="no-data">Carregando...</div></div></div>
+
+  <div class="chart-card" style="margin-top:20px"><div class="chart-header"><div><div class="chart-title">Categorias com Maior Venda</div><div class="chart-subtitle" id="cat1-sub">Todos os períodos</div></div></div><div class="chart-wrap" id="cat1-wrap" style="height:360px"><div class="state-msg" id="cat1-state"><div class="spinner"></div>Carregando...</div></div></div>
+  <div class="table-card" style="margin-top:20px"><div class="table-head"><div class="table-head-title">Detalhamento por Categoria</div></div><div id="cat1-table-body"><div class="no-data">Carregando...</div></div></div>
+
+  <div class="chart-card" style="margin-top:20px"><div class="chart-header"><div><div class="chart-title">Famílias com Maior Venda</div><div class="chart-subtitle" id="fam1-sub">Todos os períodos</div></div></div><div class="chart-wrap" id="fam1-wrap" style="height:360px"><div class="state-msg" id="fam1-state"><div class="spinner"></div>Carregando...</div></div></div>
+  <div class="table-card" style="margin-top:20px"><div class="table-head"><div class="table-head-title">Detalhamento por Família</div></div><div id="fam1-table-body"><div class="no-data">Carregando...</div></div></div>
+</main>
+</div>
+<!-- /ABA 1 -->
+
+<!-- ABA SELL OUT X ESTOQUE -->
+<div id="tab-se" class="tab-panel">
+<main>
+  <h1 class="section-title">Sell Out x Estoque</h1>
+  <p class="section-sub" id="se-status-msg">Carregando dados...</p>
+
+  <div class="filters-row">
+    <div class="filter-group"><label>Ano</label><select id="se-ano"><option value="">Todos</option></select></div>
+    <div class="filter-group"><label>Mês</label><select id="se-mes"><option value="">Todos</option></select></div>
+    <div class="filter-group"><label>Data início</label><input type="date" id="se-di"></div>
+    <div class="filter-group"><label>Data fim</label><input type="date" id="se-df"></div>
+    <div class="filter-group"><label>Loja</label><select id="se-loja"><option value="">Todas</option></select></div>
+    <div class="filter-group"><label>Categoria</label><select id="se-cat"><option value="">Todas</option></select></div>
+    <div class="filter-group"><label>Família</label><select id="se-familia"><option value="">Todas</option></select></div>
+    <button class="btn-clear" onclick="seLimparFiltros()">↺ Limpar</button>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi-card"><div class="kpi-label">Sell Out Total</div><div class="kpi-value" id="se-kpi-sellout">—</div><div class="kpi-sub">unidades vendidas</div></div>
+    <div class="kpi-card"><div class="kpi-label">Estoque Total</div><div class="kpi-value" id="se-kpi-estoque">—</div><div class="kpi-sub">unidades em estoque</div></div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-header"><div><div class="chart-title">Sell Out x Estoque por Filial</div><div class="chart-subtitle" id="se-chart-sub">Todos os períodos</div></div></div>
+    <div class="chart-wrap" id="se-chart-wrap" style="height:420px"><div class="state-msg" id="se-chart-state"><div class="spinner"></div>Carregando dados...</div></div>
+  </div>
+
+  <div class="table-card" style="margin-top:20px">
+    <div class="table-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div class="table-head-title" id="se-table-title">Detalhamento Sell Out x Estoque por Filial</div>
+      <div style="display:flex;gap:6px">
+        <button id="se-view-loja" onclick="seAlternarVisao('loja')" style="font-family:'DM Mono',monospace;font-size:0.72rem;padding:5px 14px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:var(--bg);cursor:pointer;letter-spacing:.5px">Por Filial</button>
+        <button id="se-view-data" onclick="seAlternarVisao('data')" style="font-family:'DM Mono',monospace;font-size:0.72rem;padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-dim);cursor:pointer;letter-spacing:.5px">Por Data</button>
+      </div>
+    </div>
+    <div id="se-table-body"><div class="no-data">Carregando...</div></div>
+  </div>
+</main>
+</div>
+<!-- /ABA SELL OUT X ESTOQUE -->
+
+
+<!-- ABA VALOR: VENDA VALOR (R$) -->
+<div id="tab-valor" class="tab-panel">
+<main>
+  <h1 class="section-title">Venda Valor</h1>
+  <p class="section-sub" id="v-status-msg">Carregando dados da planilha...</p>
+
+  <!-- FILTROS -->
+  <div class="filters-row">
+    <div class="filter-group">
+      <label>Ano</label>
+      <select id="v-ano"><option value="">Todos</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Mês</label>
+      <select id="v-mes"><option value="">Todos</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Data início</label>
+      <input type="date" id="v-di">
+    </div>
+    <div class="filter-group">
+      <label>Data fim</label>
+      <input type="date" id="v-df">
+    </div>
+    <div class="filter-group">
+      <label>Loja</label>
+      <select id="v-loja"><option value="">Todas</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Categoria</label>
+      <select id="v-cat"><option value="">Todas</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Família</label>
+      <select id="v-familia"><option value="">Todas</option></select>
+    </div>
+    <button class="btn-clear" onclick="vLimparFiltros()">↺ Limpar</button>
+  </div>
+  <div id="v-active-banner" class="active-banner" style="display:none"></div>
+
+  <!-- KPIs -->
+  <div class="kpi-row">
+    <div class="kpi-card">
+      <div class="kpi-label">Total Geral (R$)</div>
+      <div class="kpi-value" id="v-kpi-total">—</div>
+      <div class="kpi-sub">em valor vendido</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Lojas com Venda</div>
+      <div class="kpi-value" id="v-kpi-lojas">—</div>
+      <div class="kpi-sub">filiais ativas no período</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Maior Filial</div>
+      <div class="kpi-value" id="v-kpi-top" style="font-size:1.1rem;padding-top:6px">—</div>
+      <div class="kpi-sub" id="v-kpi-top-sub">—</div>
+    </div>
+  </div>
+
+  <!-- GRÁFICO -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Valor Vendido por Filial (R$)</div>
+        <div class="chart-subtitle" id="v-chart-sub">Todos os períodos</div>
+        <div id="v-loja-ativa" style="display:none;align-items:center;margin-top:10px;gap:6px"></div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div class="kpi-label">Total do período</div>
+        <div class="kpi-value" id="v-chart-total-val" style="font-size:2.2rem">—</div>
+        <div class="kpi-sub">em valor vendido</div>
+      </div>
+    </div>
+    <div class="chart-wrap" id="v-chart-wrap">
+      <div class="state-msg" id="v-chart-state">
+        <div class="spinner"></div>
+        Carregando dados...
+      </div>
+    </div>
+  </div>
+
+  <!-- TABELA -->
+  <div class="table-card">
+    <div class="table-head"><div class="table-head-title">Detalhamento de Valor Vendido por Filial (R$)</div></div>
+    <div id="v-table-body"><div class="no-data">Carregando...</div></div>
+  </div>
+
+  <!-- GRÁFICO CATEGORIAS -->
+  <div class="chart-card" style="margin-top:20px">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Categorias com Maior Receita</div>
+        <div class="chart-subtitle" id="v-cat1-sub">Todos os períodos</div>
+      </div>
+    </div>
+    <div class="chart-wrap" id="v-cat1-wrap" style="height:360px">
+      <div class="state-msg" id="v-cat1-state"><div class="spinner"></div>Carregando...</div>
+    </div>
+  </div>
+
+  <!-- TABELA CATEGORIAS -->
+  <div class="table-card" style="margin-top:20px">
+    <div class="table-head"><div class="table-head-title">Detalhamento por Categoria (R$)</div></div>
+    <div id="v-cat1-table-body"><div class="no-data">Carregando...</div></div>
+  </div>
+
+  <!-- GRÁFICO FAMÍLIAS -->
+  <div class="chart-card" style="margin-top:20px">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Famílias com Maior Venda</div>
+        <div class="chart-subtitle" id="v-fam1-sub">Todos os períodos</div>
+      </div>
+    </div>
+    <div class="chart-wrap" id="v-fam1-wrap" style="height:360px">
+      <div class="state-msg" id="v-fam1-state"><div class="spinner"></div>Carregando...</div>
+    </div>
+  </div>
+
+  <!-- TABELA FAMÍLIAS -->
+  <div class="table-card" style="margin-top:20px">
+    <div class="table-head"><div class="table-head-title">Detalhamento por Família</div></div>
+    <div id="v-fam1-table-body"><div class="no-data">Carregando...</div></div>
+  </div>
+</main>
+</div>
+<!-- /ABA VALOR -->
+
+<!-- ABA 2: VENDA POR DIA -->
+<div id="tab-dia" class="tab-panel">
+<main>
+  <h1 class="section-title">Venda por Dia</h1>
+  <p class="section-sub" id="d2-status-msg">Carregando dados...</p>
+
+  <!-- FILTROS -->
+  <div class="filters-row">
+    <div class="filter-group">
+      <label>Ano</label>
+      <select id="d2-ano"><option value="">Todos</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Mês</label>
+      <select id="d2-mes"><option value="">Todos</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Data início</label>
+      <input type="date" id="d2-di">
+    </div>
+    <div class="filter-group">
+      <label>Data fim</label>
+      <input type="date" id="d2-df">
+    </div>
+    <div class="filter-group">
+      <label>Loja</label>
+      <select id="d2-loja"><option value="">Todas</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Categoria</label>
+      <select id="d2-cat"><option value="">Todas</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Família</label>
+      <select id="d2-familia"><option value="">Todas</option></select>
+    </div>
+    <button class="btn-clear" onclick="d2LimparFiltros()">↺ Limpar</button>
+  </div>
+  <div id="d2-active-banner" class="active-banner" style="display:none"></div>
+
+  <!-- KPIs -->
+  <div class="kpi-row">
+    <div class="kpi-card">
+      <div class="kpi-label">Total do Período (Qtd)</div>
+      <div class="kpi-value" id="d2-kpi-total">—</div>
+      <div class="kpi-sub">unidades vendidas</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Dias com Venda</div>
+      <div class="kpi-value" id="d2-kpi-dias">—</div>
+      <div class="kpi-sub">dias no período</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Média Diária</div>
+      <div class="kpi-value" id="d2-kpi-media">—</div>
+      <div class="kpi-sub">unidades / dia</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Melhor Dia</div>
+      <div class="kpi-value" id="d2-kpi-top" style="font-size:1.1rem;padding-top:6px">—</div>
+      <div class="kpi-sub" id="d2-kpi-top-sub">—</div>
+    </div>
+  </div>
+
+  <!-- GRÁFICO -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Quantidade Vendida por Dia</div>
+        <div class="chart-subtitle" id="d2-chart-sub">Todos os períodos · Todas as lojas</div>
+      </div>
+    </div>
+    <div class="chart-wrap" id="d2-chart-wrap" style="height:420px">
+      <div class="state-msg" id="d2-chart-state">
+        <div class="spinner"></div>
+        Carregando dados...
+      </div>
+    </div>
+  </div>
+
+  <!-- TABELA -->
+  <div class="table-card" style="margin-top:20px">
+    <div class="table-head"><div class="table-head-title">Detalhamento de Quantidade Vendida por Dia</div></div>
+    <div id="d2-table-body"><div class="no-data">Carregando...</div></div>
+  </div>
+
+  <!-- GRÁFICO CATEGORIAS POR DIA -->
+  <div class="chart-card timeline-card-horizontal" style="margin-top:20px">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Vendas por Categoria ao Longo do Tempo</div>
+        <div class="chart-subtitle" id="cat2-sub">Todos os períodos · Todas as lojas</div>
+      </div>
+    </div>
+    <div class="chart-wrap" id="cat2-wrap" style="height:380px">
+      <div class="state-msg" id="cat2-state"><div class="spinner"></div>Carregando...</div>
+    </div>
+    <div id="cat2-legend" class="horizontal-legend-box"></div>
+  </div>
+
+  <!-- TABELA CATEGORIAS -->
+  <div class="table-card" style="margin-top:20px">
+    <div class="table-head"><div class="table-head-title">Detalhamento por Categoria</div></div>
+    <div id="cat2-table-body"><div class="no-data">Carregando...</div></div>
+  </div>
+
+  <!-- GRÁFICO FAMÍLIAS POR DIA -->
+  <div class="chart-card" style="margin-top:20px">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Vendas por Família ao Longo do Tempo</div>
+        <div class="chart-subtitle" id="fam2-sub">Todos os períodos · Todas as lojas</div>
+      </div>
+    </div>
+    <div class="chart-wrap" id="fam2-wrap" style="height:380px">
+      <div class="state-msg" id="fam2-state"><div class="spinner"></div>Carregando...</div>
+    </div>
+  </div>
+
+  <!-- TABELA FAMÍLIAS -->
+  <div class="table-card" style="margin-top:20px">
+    <div class="table-head"><div class="table-head-title">Detalhamento por Família</div></div>
+    <div id="fam2-table-body"><div class="no-data">Carregando...</div></div>
+  </div>
+</main>
+</div>
+<!-- /ABA 2 -->
+
+<!-- ABA 3: ESTOQUE -->
+<div id="tab-estoque" class="tab-panel">
+<main>
+  <h1 class="section-title">Estoque</h1>
+  <p class="section-sub" id="d3-status-msg">Carregando dados...</p>
+
+  <!-- FILTROS -->
+  <div class="filters-row">
+    <div class="filter-group">
+      <label>Ano</label>
+      <select id="d3-ano"><option value="">Todos</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Mês</label>
+      <select id="d3-mes"><option value="">Todos</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Data início</label>
+      <input type="date" id="d3-di">
+    </div>
+    <div class="filter-group">
+      <label>Data fim</label>
+      <input type="date" id="d3-df">
+    </div>
+    <div class="filter-group">
+      <label>Loja</label>
+      <select id="d3-loja"><option value="">Todas</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Categoria</label>
+      <select id="d3-cat"><option value="">Todas</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Família</label>
+      <select id="d3-familia"><option value="">Todas</option></select>
+    </div>
+    <button class="btn-clear" onclick="d3LimparFiltros()">↺ Limpar</button>
+  </div>
+  <div id="d3-active-banner" class="active-banner" style="display:none"></div>
+
+  <!-- KPIs -->
+  <div class="kpi-row">
+    <div class="kpi-card">
+      <div class="kpi-label">Estoque Total (Qtd)</div>
+      <div class="kpi-value" id="d3-kpi-total">—</div>
+      <div class="kpi-sub">unidades em estoque</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Lojas com Estoque</div>
+      <div class="kpi-value" id="d3-kpi-lojas">—</div>
+      <div class="kpi-sub">filiais com saldo positivo</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Maior Estoque</div>
+      <div class="kpi-value" id="d3-kpi-top" style="font-size:1.1rem;padding-top:6px">—</div>
+      <div class="kpi-sub" id="d3-kpi-top-sub">—</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Menor Estoque</div>
+      <div class="kpi-value" id="d3-kpi-bot" style="font-size:1.1rem;padding-top:6px">—</div>
+      <div class="kpi-sub" id="d3-kpi-bot-sub">—</div>
+    </div>
+  </div>
+
+  <!-- GRÁFICO ESTOQUE POR LOJA -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Estoque Diário por Loja</div>
+        <div class="chart-subtitle" id="d3-chart-sub">Todos os períodos · Todas as lojas</div>
+      </div>
+    </div>
+    <div class="chart-wrap" id="d3-chart-wrap" style="height:420px">
+      <div class="state-msg" id="d3-chart-state"><div class="spinner"></div>Carregando dados...</div>
+    </div>
+  </div>
+
+  <!-- GRÁFICO ESTOQUE POR DIA (linha temporal) -->
+  <div class="chart-card timeline-card-horizontal" style="margin-top:20px">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Estoque ao Longo do Tempo · 10 Maiores Estoques</div>
+        <div class="chart-subtitle" id="d3-line-sub">Todos os períodos · Todas as lojas</div>
+      </div>
+    </div>
+    <div class="chart-wrap" id="d3-line-wrap" style="height:380px">
+      <div class="state-msg" id="d3-line-state"><div class="spinner"></div>Carregando dados...</div>
+    </div>
+    <div class="horizontal-legend-box" id="d3-line-legend">
+      <div class="horizontal-legend-title">Legenda</div>
+    </div>
+  </div>
+
+  <!-- TABELA -->
+  <div class="table-card" style="margin-top:20px">
+    <div class="table-head"><div class="table-head-title">Detalhamento de Estoque por Filial</div></div>
+    <div id="d3-table-body"><div class="no-data">Carregando...</div></div>
+  </div>
+</main>
+</div>
+<!-- /ABA 3 -->
+
+<script>
+// ── CONFIGURAÇÃO ──────────────────────────────────────────────────────────────
+const PUBLISHED_ID = '2PACX-1vQnD-TDSWC76DBgeWdu3Jvi_AqfzSRca9Isub0y9ic0wT1JOOmIzxDhmnh-tT9b6UFHfvMlnJK1Ua4k';
+const GID_BRUTOS   = '594179647';
+const GID_DEPARA   = '742565184';
+const GID_CAT      = '1807120713';
+
+let rawData      = [];
+let deParaMap    = {};
+let catMap       = {};
+let familiaMap   = {};
+let chartInst      = null;
+let vChartInst     = null;
+let d2Chart        = null;
+let cat1Chart      = null;
+let fam1Chart      = null;
+let vCat1Chart     = null;
+let vFam1Chart     = null;
+let cat2Chart      = null;
+let fam2Chart      = null;
+let d3BarChart     = null;
+let d3LineChart    = null;
+let seChart        = null;
+let f_active       = { dim: null, val: null };
+let v_active       = { dim: null, val: null };
+let d2_active      = { dim: null, val: null };
+let d3_active      = { dim: null, val: null };
+let se_active      = { dim: null, val: null };
+let d2_table_active = { dim: null, val: null };
+let t1Sort         = { col: 'qty', dir: 'desc' };
+let cat1Sort       = { col: 'qty', dir: 'desc' };
+let fam1Sort       = { col: 'qty', dir: 'desc' };
+let vt1Sort        = { col: 'val', dir: 'desc' };
+let vCat1Sort      = { col: 'val', dir: 'desc' };
+let vFam1Sort      = { col: 'val', dir: 'desc' };
+let t2Sort         = { col: 'qty', dir: 'desc' };
+let cat2Sort       = { col: 'qty', dir: 'desc' };
+let fam2Sort       = { col: 'qty', dir: 'desc' };
+let t3Sort         = { col: 'qty', dir: 'desc' };
+let seSort         = { col: 'sellout', dir: 'desc' };
+let seRiskSort     = { col: 'sellout', dir: 'desc' };
+let seViewMode     = 'loja';
+let seDataSort     = { col: 'data', dir: 'asc' };
+const tabsRenderizadas = new Set();
+
+// ── HELPERS DE FILTRO INTERATIVO ──────────────────────────────────────────────
+function normalizeFilterValue(val) {
+  return String(val ?? '').trim();
+}
+
+function toggleActiveFilter(active, dim, val) {
+  const normVal = normalizeFilterValue(val);
+  const activeVal = normalizeFilterValue(active.val);
+
+  if (active.dim === dim && activeVal === normVal) {
+    return { dim: null, val: null };
+  }
+
+  return { dim, val: normVal };
+}
+
+function setFilter(active, dim, val, renderFn) {
+  const next = toggleActiveFilter(active, dim, val);
+  active.dim = next.dim;
+  active.val = next.val;
+  renderFn();
+}
+function fSetFilter(dim, val)  { setFilter(f_active,  dim, val, renderizar);  }
+function vSetFilter(dim, val)  { setFilter(v_active,  dim, val, vRenderizar); }
+function d2SetFilter(dim, val) {
+  const novoValor = normalizeFilterValue(val);
+  const valorAtual = normalizeFilterValue(d2_active.val);
+
+  if (d2_active.dim === dim && valorAtual === novoValor) {
+    d2_active = { dim: null, val: null };
+  } else {
+    d2_active = { dim, val: novoValor };
+  }
+
+  d2Renderizar();
+}
+function d3SetFilter(dim, val) { setFilter(d3_active, dim, val, d3Renderizar);}
+
+function mostrarBanner(bannerId, active, labels, limparFn) {
+  const el = document.getElementById(bannerId);
+  if (!el) return;
+  if (!active.val) { el.style.display = 'none'; return; }
+  const label = labels[active.dim] || active.dim;
+  el.style.display = 'flex';
+  el.innerHTML = `▶ FILTRANDO POR ${label}: <strong>${active.val}</strong><button onclick="${limparFn}()">✕ limpar</button>`;
+}
+function fLimparAtivo()  { f_active  = {dim:null,val:null}; renderizar();  }
+function vLimparAtivo()  { v_active  = {dim:null,val:null}; vRenderizar(); }
+function d2LimparAtivo() { d2_active = {dim:null,val:null}; d2Renderizar();}
+function d2FiltrarPorData(dataOriginal) {
+  d2SetFilter('data', dataOriginal);
+}
+function d3LimparAtivo() { d3_active = {dim:null,val:null}; d3Renderizar();}
+
+const PALETTE = ['#c8f135','#4fffb0','#38bdf8','#f472b6','#fb923c','#a78bfa','#facc15','#34d399','#f87171','#60a5fa','#e879f9','#fbbf24'];
+
+function d2SetCatDropdown(val) {
+  const el = document.getElementById('d2-cat');
+  el.value = (el.value === val) ? '' : val;
+  d2Renderizar();
+}
+
+
+
+// ── CSV PARSER ────────────────────────────────────────────────────────────────
+function parseCSV(text) {
+  const lines = text.replace(/\r/g, '').split('\n');
+
+  function splitLine(line) {
+    const out = []; let cur = '', q = false;
+    for (const ch of line) {
+      if (ch === '"') { q = !q; }
+      else if (ch === ',' && !q) { out.push(cur.trim()); cur = ''; }
+      else cur += ch;
+    }
+    out.push(cur.trim());
+    return out;
+  }
+
+  let hi = 0;
+  for (let i = 0; i < Math.min(lines.length, 6); i++) {
+    if (splitLine(lines[i]).filter(c => c !== '').length > 5) { hi = i; break; }
+  }
+
+  const headers = splitLine(lines[hi]).map(h => h.replace(/^"|"$/g, ''));
+  const rows = [];
+  for (let i = hi + 1; i < lines.length; i++) {
+    const vals = splitLine(lines[i]);
+    if (vals.every(v => v === '')) continue;
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = (vals[idx] || '').replace(/^"|"$/g, '').trim(); });
+    rows.push(obj);
+  }
+  return rows;
+}
+
+// ── FETCH CSV ─────────────────────────────────────────────────────────────────
+async function fetchCSV(gid) {
+  const url = `https://docs.google.com/spreadsheets/d/e/${PUBLISHED_ID}/pub?gid=${gid}&single=true&output=csv&t=${Date.now()}`;
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTTP ${res.status} — verifique se a planilha está publicada na web (Arquivo → Publicar na web).`);
+  return res.text();
+}
+
+// ── INICIALIZAÇÃO ─────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    // Busca De-Para e Categorias em paralelo (eram sequenciais antes)
+    const [deParaRes, catRes] = await Promise.allSettled([
+      fetchCSV(GID_DEPARA),
+      fetchCSV(GID_CAT)
+    ]);
+
+    if (deParaRes.status === 'fulfilled') {
+      try {
+        const rows = parseCSV(deParaRes.value);
+        rows.forEach(r => {
+          const keys    = Object.keys(r);
+          const codKey  = keys.find(k => /cod.?loja|cod_loja/i.test(k))    || keys[0];
+          const nomeKey = keys.find(k => /nome.?fantasia|nome_fantasia/i.test(k)) || keys[1];
+          const cod  = (r[codKey]  || '').trim();
+          const nome = (r[nomeKey] || '').trim();
+          if (cod && nome) deParaMap[cod] = nome;
+        });
+      } catch(e) { console.warn('De-Para não carregado:', e.message); }
+    } else { console.warn('De-Para não carregado:', deParaRes.reason?.message); }
+
+    if (catRes.status === 'fulfilled') {
+      try {
+        const rows = parseCSV(catRes.value);
+        if (rows.length === 0) throw new Error('Aba Categorias vazia');
+        const semAcento = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+        const keys  = Object.keys(rows[0]);
+        const nkeys = keys.map(semAcento);
+        const codIdx = nkeys.findIndex(nk => nk === 'codbarras' || /^cod.*(barra)/.test(nk));
+        const codKey = codIdx >= 0 ? keys[codIdx] : keys[0];
+        const famIdx = nkeys.findIndex(nk => /^famil/.test(nk));
+        const catIdx = nkeys.findIndex(nk => /^categ/.test(nk));
+        const famKey = famIdx >= 0 ? keys[famIdx] : null;
+        const catKey = catIdx >= 0 ? keys[catIdx] : null;
+        const valido = v => v && v !== '-' && v !== '–' && v !== '—';
+        rows.forEach(r => {
+          const ean = normalizarCodigoBarras(r[codKey]);
+          if (!ean) return;
+          const vFam = famKey ? (r[famKey] || '').trim() : '';
+          const vCat = catKey ? (r[catKey] || '').trim() : '';
+          if (valido(vFam)) familiaMap[ean] = vFam;
+          if (valido(vCat)) catMap[ean]     = vCat;
+        });
+        console.log(`[Categorias] ${Object.keys(catMap).length} categorias e ${Object.keys(familiaMap).length} famílias carregadas`);
+      } catch(e) { console.warn('Categorias não carregadas:', e.message); }
+    } else { console.warn('Categorias não carregadas:', catRes.reason?.message); }
+
+    const csv = await fetchCSV(GID_BRUTOS);
+    const todas = parseCSV(csv);
+
+    rawData = todas.filter(r => /^\d{4}$/.test(col(r, 'Ano')));
+
+    if (rawData.length === 0) {
+      throw new Error(`Nenhuma linha válida encontrada. Colunas detectadas: ${Object.keys(todas[0]||{}).join(', ')}`);
+    }
+
+    document.getElementById('status-msg').textContent =
+      `${rawData.length.toLocaleString('pt-BR')} registros carregados · ${Object.keys(deParaMap).length} lojas no de-para`;
+
+    // Só a aba ativa: monta filtros, aplica mês atual e renderiza
+    construirFiltros();
+    aplicarFiltroAtual('f');
+    renderizar();
+    tabsRenderizadas.add('vendas');
+
+  } catch(err) {
+    console.error(err);
+    setEstado(`<span class="err">⚠ Erro ao carregar dados:<br>${err.message}</span>`);
+    document.getElementById('status-msg').textContent = 'Erro ao carregar dados.';
+  }
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function col(row, ...nomes) {
+  for (const n of nomes) {
+    if (row[n] !== undefined && row[n] !== '') return row[n];
+  }
+  return '';
+}
+
+function parseBR(raw) {
+  return parseFloat((raw || '').replace(/R\$\s*/i, '').replace(/\./g, '').replace(',', '.')) || 0;
+}
+
+function normalizarCodigoBarras(valor) {
+  let s = String(valor ?? '').trim().replace(/^["']|["']$/g, '');
+  // notação científica com vírgula BR: "7,9E+12" → "7.9E+12"
+  s = s.replace(/^(\d+),(\d*[eE])/, '$1.$2');
+  // notação científica com ponto: "7.9E+12"
+  if (/^\d+\.?\d*[eE][+\-]?\d+$/i.test(s)) s = String(Math.round(Number(s)));
+  return s.replace(/\.0+$/, '').replace(/\D/g, '');
+}
+
+function parseDataBR(raw) {
+  if (!raw) return null;
+
+  const txt = String(raw).trim();
+  if (!txt) return null;
+
+  // Google Sheets exporta datas no formato americano M/D/AAAA (mês/dia/ano)
+  const p = txt.split('/');
+  if (p.length === 3) {
+    const m = Number(p[0]); // mês vem primeiro
+    const d = Number(p[1]); // dia vem segundo
+    const y = Number(p[2]);
+
+    if (!Number.isNaN(m) && !Number.isNaN(d) && !Number.isNaN(y) && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      const dt = new Date(y, m - 1, d);
+      return isNaN(dt) ? null : dt;
+    }
+  }
+
+  // Fallback para ISO (AAAA-MM-DD) ou outros formatos
+  const dt = new Date(txt);
+  return isNaN(dt) ? null : dt;
+}
+
+function dataParaISO(dt) {
+  if (!dt || isNaN(dt)) return '';
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const d = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+
+function getCat(r) {
+  const ean = normalizarCodigoBarras(col(r, 'GTIN', 'gtin', 'Gtin', 'GTIN/PLU', 'Gtin/Plu', 'gtin/plu', 'PLU', 'Ean', 'EAN', 'codbarras', 'CODBARRAS'));
+  return (ean && catMap[ean]) ? catMap[ean] : '';
+}
+
+function getFamilia(r) {
+  const gtin = normalizarCodigoBarras(col(r, 'GTIN', 'gtin', 'Gtin', 'GTIN/PLU', 'Gtin/Plu', 'gtin/plu', 'PLU', 'Ean', 'EAN', 'codbarras', 'CODBARRAS'));
+  return (gtin && familiaMap[gtin]) ? familiaMap[gtin] : '';
+}
+
+function setEstado(html) {
+  const el = document.getElementById('chart-state');
+  if (el) { el.style.display = 'flex'; el.innerHTML = html; }
+}
+
+function ocultarEstado() {
+  const el = document.getElementById('chart-state');
+  if (el) el.style.display = 'none';
+}
+
+// ── FILTROS ───────────────────────────────────────────────────────────────────
+function construirFiltros() {
+  const anos  = [...new Set(rawData.map(r => col(r,'Ano')).filter(Boolean))].sort();
+  const meses = [...new Set(rawData.map(r => col(r,'Mês','Mes')).filter(Boolean))];
+  const ORD   = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  meses.sort((a,b) => ORD.indexOf(a) - ORD.indexOf(b));
+
+  const lojas = [...new Set(rawData.map(r => col(r,'Loja','loja')).filter(l => l && deParaMap[l]))].sort((a,b) => +a - +b);
+  const cats  = [...new Set(rawData.map(r => getCat(r)).filter(Boolean))].sort();
+
+  const sA = document.getElementById('f-ano');
+  const sM = document.getElementById('f-mes');
+  const sL = document.getElementById('f-loja');
+  const sC = document.getElementById('f-cat');
+  const sF = document.getElementById('f-familia');
+
+  const familias = [...new Set(rawData.map(r => getFamilia(r)).filter(Boolean))].sort();
+
+  sA.innerHTML = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
+  sM.innerHTML = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
+  sL.innerHTML = '<option value="">Todas</option>' + lojas.map(l => {
+    const nome = deParaMap[l] || `Filial ${l}`;
+    return `<option value="${l}">#${l} · ${nome}</option>`;
+  }).join('');
+  sC.innerHTML = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+  sF.innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
+
+  ['f-ano','f-mes','f-di','f-df','f-loja','f-cat','f-familia'].forEach(id =>
+    document.getElementById(id).addEventListener('change', renderizar)
+  );
+}
+
+function limparFiltros() {
+  ['f-ano','f-mes','f-di','f-df','f-loja','f-cat','f-familia'].forEach(id => document.getElementById(id).value = '');
+  f_active = { dim: null, val: null };
+  renderizar();
+}
+
+function filtrar(excl) {
+  const ano     = document.getElementById('f-ano').value;
+  const mes     = document.getElementById('f-mes').value;
+  const di      = document.getElementById('f-di').value;
+  const df      = document.getElementById('f-df').value;
+  const loja    = document.getElementById('f-loja').value;
+  const cat     = document.getElementById('f-cat').value;
+  const familia = document.getElementById('f-familia').value;
+
+  return rawData.filter(r => {
+    if (ano     && col(r,'Ano') !== ano) return false;
+    if (mes     && col(r,'Mês','Mes') !== mes) return false;
+    if (loja    && col(r,'Loja','loja') !== loja) return false;
+    if (cat     && getCat(r) !== cat) return false;
+    if (familia && getFamilia(r) !== familia) return false;
+    if (f_active.val && f_active.dim !== excl) {
+      if (f_active.dim === 'loja'    && col(r,'Loja','loja') !== f_active.val) return false;
+      if (f_active.dim === 'cat'     && getCat(r) !== f_active.val) return false;
+      if (f_active.dim === 'familia' && getFamilia(r) !== f_active.val) return false;
+    }
+    if (di || df) {
+      const raw = col(r,'Data','data');
+      if (raw) {
+        const dt = parseDataBR(raw);
+        if (dt) {
+          const s = dataParaISO(dt);
+          if (di && s < di) return false;
+          if (df && s > df) return false;
+        }
+      }
+    }
+    return true;
+  });
+}
+
+// ── AGGREGATE ─────────────────────────────────────────────────────────────────
+function agruparPorLoja(data) {
+  const map = {};
+  data.forEach(r => {
+    const loja = col(r,'Loja','loja');
+    if (!loja) return;
+    const qty = parseBR(col(r,'Venda (Qtd)','Venda Nf Quantidade','Venda Pdv Quantidade'));
+    const key = loja.trim();
+    if (!deParaMap[key]) return;
+    if (!map[key]) {
+      map[key] = { loja: key, nome: deParaMap[key], qty: 0 };
+    }
+    map[key].qty += qty;
+  });
+  return Object.values(map).sort((a,b) => b.qty - a.qty);
+}
+
+// ── RENDER PRINCIPAL ──────────────────────────────────────────────────────────
+function renderizar() {
+  mostrarBanner('f-active-banner', f_active,
+    {loja:'FILIAL', cat:'CATEGORIA', familia:'FAMÍLIA'}, 'fLimparAtivo');
+
+  const ano = document.getElementById('f-ano').value;
+  const mes = document.getElementById('f-mes').value;
+  document.getElementById('chart-sub').textContent =
+    [ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos';
+  document.getElementById('loja-ativa').style.display = 'none';
+
+  // Gráficos/tabelas da dimensão selecionada mantêm todas as linhas visíveis e destacam a linha ativa.
+  // KPIs e demais visuais recebem o filtro ativo normalmente.
+  const byLojaChart = agruparPorLoja(filtrar('loja'));
+  const byLojaFull  = agruparPorLoja(filtrar());
+
+  renderKPIs(byLojaFull);
+  renderGrafico(byLojaChart);
+  renderTabela(byLojaChart);
+  renderCat1(filtrar('cat'));
+  renderFam1(filtrar('familia'));
+}
+
+function renderKPIs(byLoja) {
+  const total  = byLoja.reduce((s,r) => s + r.qty, 0);
+  const ativas = byLoja.filter(r => r.qty > 0).length;
+  const top    = byLoja[0];
+  document.getElementById('kpi-total').textContent   = total.toLocaleString('pt-BR');
+  document.getElementById('kpi-lojas').textContent   = ativas;
+  document.getElementById('kpi-top').textContent     = top ? top.nome : '—';
+  document.getElementById('kpi-top-sub').textContent = top ? `${top.qty.toLocaleString('pt-BR')} un.` : '—';
+}
+
+function renderGrafico(byLoja) {
+  const total = byLoja.reduce((s,r) => s + r.qty, 0);
+  document.getElementById('chart-total-val').textContent = total.toLocaleString('pt-BR');
+
+  if (byLoja.length === 0) {
+    setEstado('Nenhum dado para os filtros selecionados.');
+    return;
+  }
+  ocultarEstado();
+
+  let canvas = document.getElementById('myChart');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'myChart';
+    document.getElementById('chart-wrap').appendChild(canvas);
+  }
+
+  const labels = byLoja.map(r => r.nome);
+  const values = byLoja.map(r => r.qty);
+  const n      = byLoja.length;
+
+  const sel = f_active.dim === 'loja' ? f_active.val : null;
+  const bgColors = byLoja.map((r, i) => {
+    if (sel) return r.loja === sel ? 'rgba(200,241,53,0.95)' : 'rgba(37,42,58,0.45)';
+    const t = n > 1 ? i/(n-1) : 0;
+    return `rgba(${Math.round(200-t*80)},${Math.round(241-t*100)},${Math.round(53+t*100)},0.85)`;
+  });
+  const borderColors = byLoja.map((r, i) => {
+    if (sel) return r.loja === sel ? 'rgba(200,241,53,1)' : 'rgba(37,42,58,0.2)';
+    const t = n > 1 ? i/(n-1) : 0;
+    return `rgba(${Math.round(200-t*80)},${Math.round(241-t*100)},${Math.round(53+t*100)},1)`;
+  });
+
+  if (chartInst) chartInst.destroy();
+
+  chartInst = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Qtd Vendida',
+        data: values,
+        backgroundColor: bgColors,
+        borderColor: borderColors,
+        borderWidth: 1.5,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      onClick: (evt, elements) => {
+        if (elements.length > 0) fSetFilter('loja', byLoja[elements[0].index].loja);
+      },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1c2030', borderColor: '#252a3a', borderWidth: 1,
+          titleColor: '#c8f135', bodyColor: '#e8ecf5',
+          titleFont: { family: 'DM Mono', size: 11 },
+          bodyFont: { family: 'Figtree', size: 13 },
+          padding: 14,
+          callbacks: {
+            title: ctx => ctx[0].label,
+            label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades vendidas`,
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: ctx => {
+              if (!sel) return '#8891aa';
+              return byLoja[ctx.index]?.loja === sel ? '#c8f135' : '#3a4060';
+            },
+            font: { family: 'DM Mono', size: 9 },
+            maxRotation: 45,
+            minRotation: 45,
+            autoSkip: false,
+          },
+          grid: { color: '#1c2030' }
+        },
+        y: {
+          ticks: { color: '#8891aa', font: { family: 'DM Mono', size: 11 }, callback: v => v.toLocaleString('pt-BR') },
+          grid: { color: '#252a3a' }
+        }
+      }
+    }
+  });
+
+  canvas.style.cursor = 'pointer';
+}
+
+function agruparPorCategoria(data) {
+  const map = {};
+  data.forEach(r => {
+    const cat = getCat(r) || 'SEM CATEGORIA';
+    const qty = parseBR(col(r,'Venda (Qtd)','Venda Nf Quantidade','Venda Pdv Quantidade'));
+    if (!map[cat]) map[cat] = { cat, qty: 0 };
+    map[cat].qty += qty;
+  });
+  return Object.values(map).sort((a,b) => b.qty - a.qty);
+}
+
+function renderCat1(data) {
+  let byCat = agruparPorCategoria(data);
+  const total = byCat.reduce((s,r) => s + r.qty, 0);
+
+  const ano = document.getElementById('f-ano').value;
+  const mes = document.getElementById('f-mes').value;
+  document.getElementById('cat1-sub').textContent = [ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos';
+
+  const state = document.getElementById('cat1-state');
+  if (byCat.length === 0) { if(state) { state.style.display='flex'; state.innerHTML='Nenhum dado.'; } return; }
+  if (state) state.style.display = 'none';
+
+  byCat = [...byCat].sort((a,b) => {
+    let va, vb;
+    if (cat1Sort.col === 'cat') { va = a.cat.toLowerCase(); vb = b.cat.toLowerCase(); }
+    else if (cat1Sort.col === 'pct') { va = total > 0 ? a.qty / total : 0; vb = total > 0 ? b.qty / total : 0; }
+    else { va = a.qty; vb = b.qty; }
+    if (va < vb) return cat1Sort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return cat1Sort.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  let canvas = document.getElementById('cat1-canvas');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'cat1-canvas';
+    document.getElementById('cat1-wrap').appendChild(canvas);
+  }
+  if (cat1Chart) cat1Chart.destroy();
+
+  const selCat = f_active.dim === 'cat' ? f_active.val : null;
+  cat1Chart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: byCat.map(r => r.cat),
+      datasets: [{
+        data: byCat.map(r => r.qty),
+        backgroundColor: byCat.map((r,i) => selCat ? (r.cat===selCat ? PALETTE[i%PALETTE.length]+'ee' : 'rgba(37,42,58,0.45)') : PALETTE[i%PALETTE.length]+'cc'),
+        borderColor:     byCat.map((r,i) => selCat ? (r.cat===selCat ? PALETTE[i%PALETTE.length] : 'rgba(37,42,58,0.2)') : PALETTE[i%PALETTE.length]),
+        borderWidth: 1.5, borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      onClick: (evt, elements) => {
+        if (elements.length > 0) fSetFilter('cat', byCat[elements[0].index].cat);
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1,
+          titleColor:'#c8f135', bodyColor:'#e8ecf5',
+          titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+          callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades` }
+        }
+      },
+      scales: {
+        x: { ticks:{ color: ctx => selCat ? (byCat[ctx.index]?.cat===selCat ? '#c8f135':'#3a4060') : '#8891aa', font:{family:'DM Mono',size:9}, maxRotation:35, autoSkip:false }, grid:{color:'#1c2030'} },
+        y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+      }
+    }
+  });
+  canvas.style.cursor = 'pointer';
+
+  const maxQ = Math.max(...byCat.map(r => r.qty), 1);
+  const th = (label, key) => {
+    const cls = cat1Sort.col === key ? ` class="sort-${cat1Sort.dir}"` : '';
+    return `<th${cls} onclick="cat1OrdenarPor('${key}')">${label}</th>`;
+  };
+  const linhas = byCat.map(r => {
+    const pct  = total > 0 ? ((r.qty/total)*100).toFixed(1) : 0;
+    const barW = ((r.qty/maxQ)*100).toFixed(1);
+    const ativo = selCat === r.cat ? ' row-active' : '';
+    return `<tr class="clickable-row${ativo}" onclick="fSetFilter('cat',this.dataset.v)" data-v="${r.cat.replace(/"/g,'&quot;')}">
+      <td class="td-nome">${r.cat}</td>
+      <td class="td-qty">${r.qty.toLocaleString('pt-BR')}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="width:${barW}%;max-width:150px"></div>
+        <span style="font-size:.78rem;color:var(--text-dim);font-family:'DM Mono',monospace">${pct}%</span>
+      </div></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('cat1-table-body').innerHTML = `<table>
+    <thead><tr>${th('Categoria','cat')}${th('Qtd Vendida','qty')}${th('Participação','pct')}</tr></thead>
+    <tbody>${linhas}</tbody>
+  </table>`;
+}
+
+function cat1OrdenarPor(coluna) {
+  cat1Sort.dir = cat1Sort.col === coluna && cat1Sort.dir === 'desc' ? 'asc' : 'desc';
+  cat1Sort.col = coluna;
+  renderizar();
+}
+
+function agruparPorFamilia(data) {
+  const map = {};
+  data.forEach(r => {
+    const fam = getFamilia(r) || 'SEM FAMÍLIA';
+    const qty = parseBR(col(r,'Venda (Qtd)','Venda Nf Quantidade','Venda Pdv Quantidade'));
+    if (!map[fam]) map[fam] = { fam, qty: 0 };
+    map[fam].qty += qty;
+  });
+  return Object.values(map).sort((a,b) => b.qty - a.qty);
+}
+
+function renderFam1(data) {
+  let byFam = agruparPorFamilia(data);
+  const total = byFam.reduce((s,r) => s + r.qty, 0);
+
+  const ano = document.getElementById('f-ano').value;
+  const mes = document.getElementById('f-mes').value;
+  document.getElementById('fam1-sub').textContent = [ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos';
+
+  const state = document.getElementById('fam1-state');
+  if (byFam.length === 0) { if(state) { state.style.display='flex'; state.innerHTML='Nenhum dado.'; } return; }
+  if (state) state.style.display = 'none';
+
+  byFam = [...byFam].sort((a,b) => {
+    let va, vb;
+    if (fam1Sort.col === 'fam') { va = a.fam.toLowerCase(); vb = b.fam.toLowerCase(); }
+    else if (fam1Sort.col === 'pct') { va = total > 0 ? a.qty / total : 0; vb = total > 0 ? b.qty / total : 0; }
+    else { va = a.qty; vb = b.qty; }
+    if (va < vb) return fam1Sort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return fam1Sort.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  let canvas = document.getElementById('fam1-canvas');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'fam1-canvas';
+    document.getElementById('fam1-wrap').appendChild(canvas);
+  }
+  if (fam1Chart) fam1Chart.destroy();
+
+  const selFam = f_active.dim === 'familia' ? f_active.val : null;
+  fam1Chart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: byFam.map(r => r.fam),
+      datasets: [{
+        data: byFam.map(r => r.qty),
+        backgroundColor: byFam.map((r,i) => selFam ? (r.fam===selFam ? PALETTE[i%PALETTE.length]+'ee' : 'rgba(37,42,58,0.45)') : PALETTE[i%PALETTE.length]+'cc'),
+        borderColor:     byFam.map((r,i) => selFam ? (r.fam===selFam ? PALETTE[i%PALETTE.length] : 'rgba(37,42,58,0.2)') : PALETTE[i%PALETTE.length]),
+        borderWidth: 1.5, borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      onClick: (evt, elements) => {
+        if (elements.length > 0) fSetFilter('familia', byFam[elements[0].index].fam);
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1,
+          titleColor:'#c8f135', bodyColor:'#e8ecf5',
+          titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+          callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades` }
+        }
+      },
+      scales: {
+        x: { ticks:{ color: ctx => selFam ? (byFam[ctx.index]?.fam===selFam ? '#c8f135':'#3a4060') : '#8891aa', font:{family:'DM Mono',size:9}, maxRotation:35, autoSkip:false }, grid:{color:'#1c2030'} },
+        y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+      }
+    }
+  });
+  canvas.style.cursor = 'pointer';
+
+  const maxQ = Math.max(...byFam.map(r => r.qty), 1);
+  const th = (label, key) => {
+    const cls = fam1Sort.col === key ? ` class="sort-${fam1Sort.dir}"` : '';
+    return `<th${cls} onclick="fam1OrdenarPor('${key}')">${label}</th>`;
+  };
+  const linhas = byFam.map(r => {
+    const pct  = total > 0 ? ((r.qty/total)*100).toFixed(1) : 0;
+    const barW = ((r.qty/maxQ)*100).toFixed(1);
+    const ativo = selFam === r.fam ? ' row-active' : '';
+    return `<tr class="clickable-row${ativo}" onclick="fSetFilter('familia',this.dataset.v)" data-v="${r.fam.replace(/"/g,'&quot;')}">
+      <td class="td-nome">${r.fam}</td>
+      <td class="td-qty">${r.qty.toLocaleString('pt-BR')}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="width:${barW}%;max-width:150px"></div>
+        <span style="font-size:.78rem;color:var(--text-dim);font-family:'DM Mono',monospace">${pct}%</span>
+      </div></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('fam1-table-body').innerHTML = `<table>
+    <thead><tr>${th('Família','fam')}${th('Qtd Vendida','qty')}${th('Participação','pct')}</tr></thead>
+    <tbody>${linhas}</tbody>
+  </table>`;
+}
+
+function fam1OrdenarPor(coluna) {
+  fam1Sort.dir = fam1Sort.col === coluna && fam1Sort.dir === 'desc' ? 'asc' : 'desc';
+  fam1Sort.col = coluna;
+  renderizar();
+}
+
+function t1OrdenarPor(coluna) {
+  t1Sort.dir = t1Sort.col === coluna && t1Sort.dir === 'desc' ? 'asc' : 'desc';
+  t1Sort.col = coluna;
+  renderizar();
+}
+
+function renderTabela(byLoja) {
+  const container = document.getElementById('table-body');
+  const total = byLoja.reduce((s,r) => s+r.qty, 0);
+
+  if (byLoja.length === 0) {
+    container.innerHTML = '<div class="no-data">Nenhum dado para os filtros selecionados</div>';
+    return;
+  }
+
+  const sorted = [...byLoja].sort((a,b) => {
+    let va, vb;
+    if (t1Sort.col === 'loja') { va = +a.loja; vb = +b.loja; }
+    else if (t1Sort.col === 'nome') { va = a.nome.toLowerCase(); vb = b.nome.toLowerCase(); }
+    else if (t1Sort.col === 'pct') { va = total > 0 ? a.qty / total : 0; vb = total > 0 ? b.qty / total : 0; }
+    else { va = a.qty; vb = b.qty; }
+    if (va < vb) return t1Sort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return t1Sort.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const maxQ = Math.max(...sorted.map(r => r.qty), 1);
+
+  const th = (label, key) => {
+    const cls = t1Sort.col === key ? ` class="sort-${t1Sort.dir}"` : '';
+    return `<th${cls} onclick="t1OrdenarPor('${key}')">${label}</th>`;
+  };
+
+  const sel1 = f_active.dim === 'loja' ? f_active.val : null;
+  const linhas = sorted.map(r => {
+    const pct  = total > 0 ? ((r.qty/total)*100).toFixed(1) : 0;
+    const barW = ((r.qty/maxQ)*100).toFixed(1);
+    const ativo = sel1 === r.loja ? ' row-active' : '';
+    return `<tr class="clickable-row${ativo}" onclick="fSetFilter('loja','${r.loja}')">
+      <td class="td-loja">#${r.loja}</td>
+      <td class="td-nome">${r.nome}</td>
+      <td class="td-qty">${r.qty.toLocaleString('pt-BR')}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="width:${barW}%;max-width:150px"></div>
+        <span style="font-size:.78rem;color:var(--text-dim);font-family:'DM Mono',monospace">${pct}%</span>
+      </div></td>
+    </tr>`;
+  }).join('');
+
+  const totalLinha = `<tr style="background:var(--surface2)">
+    <td class="td-loja">—</td>
+    <td class="td-nome" style="font-weight:600;color:var(--accent)">TOTAL GERAL</td>
+    <td class="td-qty" style="color:var(--accent)">${total.toLocaleString('pt-BR')}</td>
+    <td><span style="font-size:.78rem;color:var(--accent);font-family:'DM Mono',monospace">100%</span></td>
+  </tr>`;
+
+  container.innerHTML = `<table>
+    <thead><tr>
+      ${th('Filial','loja')}${th('Nome Fantasia','nome')}${th('Qtd Vendida','qty')}${th('Participação','pct')}
+    </tr></thead>
+    <tbody>${linhas}${totalLinha}</tbody>
+  </table>`;
+}
+
+// ── ABA 2: VENDA POR DIA ──────────────────────────────────────────────────────
+function d2ConstruirFiltros() {
+  const anos  = [...new Set(rawData.map(r => col(r,'Ano')).filter(Boolean))].sort();
+  const meses = [...new Set(rawData.map(r => col(r,'Mês','Mes')).filter(Boolean))];
+  const ORD   = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  meses.sort((a,b) => ORD.indexOf(a) - ORD.indexOf(b));
+
+  const lojas = [...new Set(rawData.map(r => col(r,'Loja','loja')).filter(l => l && deParaMap[l]))].sort((a,b) => +a - +b);
+  const cats  = [...new Set(rawData.map(r => getCat(r)).filter(Boolean))].sort();
+
+  const familias = [...new Set(rawData.map(r => getFamilia(r)).filter(Boolean))].sort();
+
+  document.getElementById('d2-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
+  document.getElementById('d2-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
+  document.getElementById('d2-loja').innerHTML    = '<option value="">Todas</option>' + lojas.map(l => {
+    const nome = deParaMap[l] || `Filial ${l}`;
+    return `<option value="${l}">#${l} · ${nome}</option>`;
+  }).join('');
+  document.getElementById('d2-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+  document.getElementById('d2-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
+
+  ['d2-ano','d2-mes','d2-di','d2-df','d2-loja','d2-cat','d2-familia'].forEach(id =>
+    document.getElementById(id).addEventListener('change', d2Renderizar)
+  );
+
+  document.getElementById('d2-status-msg').textContent =
+    document.getElementById('status-msg').textContent;
+}
+
+function d2LimparFiltros() {
+  ['d2-ano','d2-mes','d2-di','d2-df','d2-loja','d2-cat','d2-familia'].forEach(id => document.getElementById(id).value = '');
+  d2_active = { dim: null, val: null };
+  d2Renderizar();
+}
+
+function d2Filtrar(excl) {
+  const ano     = document.getElementById('d2-ano').value;
+  const mes     = document.getElementById('d2-mes').value;
+  const di      = document.getElementById('d2-di').value;
+  const df      = document.getElementById('d2-df').value;
+  const loja    = document.getElementById('d2-loja').value;
+  const cat     = document.getElementById('d2-cat').value;
+  const familia = document.getElementById('d2-familia').value;
+
+  return rawData.filter(r => {
+    if (ano     && col(r,'Ano') !== ano) return false;
+    if (mes     && col(r,'Mês','Mes') !== mes) return false;
+    if (loja    && col(r,'Loja','loja') !== loja) return false;
+    if (cat     && getCat(r) !== cat) return false;
+    if (familia && getFamilia(r) !== familia) return false;
+    if (d2_active.val && d2_active.dim !== excl) {
+      if (d2_active.dim === 'cat' && getCat(r) !== d2_active.val) return false;
+      if (d2_active.dim === 'data') {
+        const dataOriginalAtiva = normalizeFilterValue(col(r,'Data','data'));
+        if (dataOriginalAtiva !== normalizeFilterValue(d2_active.val)) return false;
+      }
+    }
+    if (di || df) {
+      const raw = col(r,'Data','data');
+      if (raw) {
+        const dt = parseDataBR(raw);
+        if (dt) {
+          const s = dataParaISO(dt);
+          if (di && s < di) return false;
+          if (df && s > df) return false;
+        }
+      }
+    }
+    return true;
+  });
+}
+
+function d2ParseData(raw) {
+  return parseDataBR(raw);
+}
+
+function d2AgruparPorDia(data) {
+  const map = {};
+  data.forEach(r => {
+    const dataOriginal = String(col(r,'Data','data') || '').trim();
+    if (!dataOriginal) return;
+
+    const dt = d2ParseData(dataOriginal);
+    const iso = dt ? dataParaISO(dt) : dataOriginal;
+
+    // A chave segue a DATA ORIGINAL da aba Dados Brutos.
+    // Assim a tabela mostra exatamente o que está na coluna Data, sem converter para ISO.
+    const key = dataOriginal;
+
+    const qty = parseBR(col(r,'Venda (Qtd)','Venda Nf Quantidade','Venda Pdv Quantidade'));
+    if (!map[key]) map[key] = { data: dataOriginal, iso, qty: 0 };
+    map[key].qty += qty;
+  });
+
+  return Object.values(map).sort((a,b) => String(a.iso || a.data).localeCompare(String(b.iso || b.data)));
+}
+
+function d2FormatarData(valor) {
+  if (!valor) return valor;
+  const s = String(valor).trim();
+  // ISO YYYY-MM-DD → DD/MM/AAAA (sem ambiguidade)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, d] = s.split('-');
+    return `${d}/${m}/${y}`;
+  }
+  // Qualquer outro formato (M/D/AAAA do Google Sheets, etc.): parseia e formata
+  const dt = parseDataBR(s);
+  if (dt && !isNaN(dt)) {
+    const d = String(dt.getDate()).padStart(2, '0');
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    return `${d}/${m}/${dt.getFullYear()}`;
+  }
+  return s;
+}
+
+function d2DiaSemana(valor) {
+  const dt = d2ParseData(valor);
+  if (!dt) return '';
+  return ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][dt.getDay()];
+}
+
+function d2Renderizar() {
+  mostrarBanner('d2-active-banner', d2_active, {cat:'CATEGORIA', data:'DATA'}, 'd2LimparAtivo');
+  const dados  = d2Filtrar();
+  const porDia = d2AgruparPorDia(dados);
+  const porDiaTabela = d2AgruparPorDia(d2Filtrar('data'));
+
+  const ano  = document.getElementById('d2-ano').value;
+  const mes  = document.getElementById('d2-mes').value;
+  const loja = document.getElementById('d2-loja').value;
+  const nomeLoja = loja ? (document.getElementById('d2-loja').selectedOptions[0]?.text || '') : 'Todas as lojas';
+
+  document.getElementById('d2-chart-sub').textContent =
+    ([ano, mes].filter(Boolean).join(' · ') || 'Todos os períodos') + ' · ' + nomeLoja;
+
+  const total = porDia.reduce((s,r) => s + r.qty, 0);
+  const dias  = porDia.filter(r => r.qty > 0).length;
+  const media = dias > 0 ? (total / dias) : 0;
+  const top   = porDia.reduce((a,b) => b.qty > (a?.qty||0) ? b : a, null);
+
+  document.getElementById('d2-kpi-total').textContent   = total.toLocaleString('pt-BR');
+  document.getElementById('d2-kpi-dias').textContent    = dias;
+  document.getElementById('d2-kpi-media').textContent   = Math.round(media).toLocaleString('pt-BR');
+  document.getElementById('d2-kpi-top').textContent     = top ? d2FormatarData(top.data) : '—';
+  document.getElementById('d2-kpi-top-sub').textContent = top ? `${top.qty.toLocaleString('pt-BR')} un.` : '—';
+
+  const d2State = document.getElementById('d2-chart-state');
+  if (porDia.length === 0) {
+    if (d2State) { d2State.style.display='flex'; d2State.innerHTML='Nenhum dado para os filtros selecionados.'; }
+    if (d2Chart) { d2Chart.destroy(); d2Chart = null; }
+    document.getElementById('d2-table-body').innerHTML = '<div class="no-data">Nenhum dado para os filtros selecionados</div>';
+    return;
+  }
+  if (d2State) d2State.style.display = 'none';
+
+  let canvas = document.getElementById('d2-myChart');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'd2-myChart';
+    document.getElementById('d2-chart-wrap').appendChild(canvas);
+  }
+
+  if (d2Chart) d2Chart.destroy();
+
+  d2Chart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: porDia.map(r => d2FormatarData(r.data)),
+      datasets: [{
+        label: 'Qtd Vendida',
+        data: porDia.map(r => r.qty),
+        borderColor: 'rgba(200,241,53,0.9)',
+        backgroundColor: 'rgba(200,241,53,0.08)',
+        borderWidth: 2,
+        pointRadius: porDia.length <= 60 ? 3 : 0,
+        pointHoverRadius: 5,
+        pointBackgroundColor: 'rgba(200,241,53,1)',
+        fill: true,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1c2030', borderColor: '#252a3a', borderWidth: 1,
+          titleColor: '#c8f135', bodyColor: '#e8ecf5',
+          titleFont: { family: 'DM Mono', size: 11 },
+          bodyFont: { family: 'Figtree', size: 13 },
+          padding: 14,
+          callbacks: {
+            label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades vendidas`
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: '#8891aa',
+            font: { family: 'DM Mono', size: 9 },
+            maxRotation: 45, minRotation: 45,
+            autoSkip: true, maxTicksLimit: 40,
+          },
+          grid: { color: '#1c2030' }
+        },
+        y: {
+          ticks: { color: '#8891aa', font: { family: 'DM Mono', size: 11 }, callback: v => v.toLocaleString('pt-BR') },
+          grid: { color: '#252a3a' }
+        }
+      }
+    }
+  });
+
+  const sorted2 = [...porDiaTabela].sort((a,b) => {
+    let va, vb;
+    const ORD_DIA = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+    if (t2Sort.col === 'data') { va = a.iso || a.data; vb = b.iso || b.data; }
+    else if (t2Sort.col === 'dia') { va = ORD_DIA.indexOf(d2DiaSemana(a.data)); vb = ORD_DIA.indexOf(d2DiaSemana(b.data)); }
+    else if (t2Sort.col === 'pct') { va = total > 0 ? a.qty / total : 0; vb = total > 0 ? b.qty / total : 0; }
+    else { va = a.qty; vb = b.qty; }
+    if (va < vb) return t2Sort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return t2Sort.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const maxQ2 = Math.max(...porDiaTabela.map(r => r.qty), 1);
+
+  const th2 = (label, key) => {
+    const cls = t2Sort.col === key ? ` class="sort-${t2Sort.dir}"` : '';
+    return `<th${cls} onclick="t2OrdenarPor('${key}')">${label}</th>`;
+  };
+
+  const linhas2 = sorted2.map(r => {
+    const pct  = total > 0 ? ((r.qty/total)*100).toFixed(1) : 0;
+    const barW = ((r.qty/maxQ2)*100).toFixed(1);
+    const dia  = d2DiaSemana(r.data);
+    const fds  = dia === 'Sáb' || dia === 'Dom';
+    const ativoData = d2_active.dim === 'data' && normalizeFilterValue(d2_active.val) === normalizeFilterValue(r.data) ? ' row-active' : '';
+    return `<tr class="clickable-row${ativoData}" onclick="d2FiltrarPorData(this.dataset.v)" data-v="${String(r.data).replace(/"/g,'&quot;')}">
+      <td class="td-loja">${d2FormatarData(r.data)}</td>
+      <td class="td-loja" style="color:${fds ? '#ff9f6b' : 'var(--muted)'}">${dia}</td>
+      <td class="td-qty">${r.qty.toLocaleString('pt-BR')}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="width:${barW}%;max-width:150px"></div>
+        <span style="font-size:.78rem;color:var(--text-dim);font-family:'DM Mono',monospace">${pct}%</span>
+      </div></td>
+    </tr>`;
+  }).join('');
+
+  const totalLinha2 = `<tr style="background:var(--surface2)">
+    <td class="td-loja" style="color:var(--accent)">TOTAL</td>
+    <td class="td-loja" style="color:var(--accent)">—</td>
+    <td class="td-qty" style="color:var(--accent)">${total.toLocaleString('pt-BR')}</td>
+    <td><span style="font-size:.78rem;color:var(--accent);font-family:'DM Mono',monospace">100%</span></td>
+  </tr>`;
+
+  document.getElementById('d2-table-body').innerHTML = `<table>
+    <thead><tr>${th2('Data','data')}${th2('Dia','dia')}${th2('Qtd Vendida','qty')}${th2('Participação','pct')}</tr></thead>
+    <tbody>${linhas2}${totalLinha2}</tbody>
+  </table>`;
+
+  renderCat2(d2Filtrar('cat'));
+  renderFam2(d2Filtrar('familia'));
+}
+
+function renderCat2(data) {
+  const loja = document.getElementById('d2-loja').value;
+  const ano  = document.getElementById('d2-ano').value;
+  const mes  = document.getElementById('d2-mes').value;
+  const nomeLoja = loja ? (document.getElementById('d2-loja').selectedOptions[0]?.text || '') : 'Todas as lojas';
+  document.getElementById('cat2-sub').textContent = ([ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos') + ' · ' + nomeLoja;
+
+  const cats = [...new Set(data.map(r => getCat(r)).filter(Boolean))].sort();
+  const dias  = [...new Set(data.map(r => {
+    const dt = d2ParseData(col(r,'Data','data'));
+    return dt ? dataParaISO(dt) : null;
+  }).filter(Boolean))].sort();
+
+  const state2 = document.getElementById('cat2-state');
+  if (cats.length === 0 || dias.length === 0) {
+    if(state2) { state2.style.display='flex'; state2.innerHTML='Nenhum dado.'; }
+    document.getElementById('cat2-table-body').innerHTML = '<div class="no-data">Nenhum dado</div>';
+    const legend = document.getElementById('cat2-legend'); if (legend) legend.innerHTML = '';
+    return;
+  }
+  if(state2) state2.style.display = 'none';
+
+  const mapCatDia = {};
+  data.forEach(r => {
+    const c  = getCat(r); if (!c) return;
+    const dt = d2ParseData(col(r,'Data','data')); if (!dt) return;
+    const dk = dataParaISO(dt);
+    const qty = parseBR(col(r,'Venda (Qtd)','Venda Nf Quantidade','Venda Pdv Quantidade'));
+    if (!mapCatDia[c]) mapCatDia[c] = {};
+    mapCatDia[c][dk] = (mapCatDia[c][dk] || 0) + qty;
+  });
+
+  let canvas2 = document.getElementById('cat2-canvas');
+  if (!canvas2) {
+    canvas2 = document.createElement('canvas');
+    canvas2.id = 'cat2-canvas';
+    document.getElementById('cat2-wrap').appendChild(canvas2);
+  }
+  if (cat2Chart) cat2Chart.destroy();
+
+  const d2SelC = d2_active.dim === 'cat' ? d2_active.val : null;
+
+  // totais por categoria para a sidebar-legenda default
+  const totCatMap = {};
+  cats.forEach(c => { totCatMap[c] = Object.values(mapCatDia[c] || {}).reduce((s,v)=>s+v,0); });
+
+  function escapeJS(v) {
+    return String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  }
+
+  function renderHorizontalLegend(dataIndex = null) {
+    const legend = document.getElementById('cat2-legend');
+    if (!legend) return;
+
+    const catAtiva = document.getElementById('d2-cat').value;
+    const dataLabel = dataIndex !== null && dias[dataIndex] ? d2FormatarData(dias[dataIndex]) : null;
+
+    let entries;
+    if (dataIndex !== null && dias[dataIndex]) {
+      entries = cats.map((c,i) => ({
+        cat: c,
+        val: mapCatDia[c]?.[dias[dataIndex]] || 0,
+        cor: PALETTE[i % PALETTE.length]
+      })).filter(e => e.val > 0).sort((a,b) => b.val - a.val);
+    } else {
+      entries = [...cats]
+        .sort((a,b) => totCatMap[b] - totCatMap[a])
+        .map(c => ({
+          cat: c,
+          val: totCatMap[c],
+          cor: PALETTE[cats.indexOf(c) % PALETTE.length]
+        }));
+    }
+
+    legend.innerHTML = `<div class="horizontal-legend-title">${dataLabel || 'Legenda'}</div>`
+      + entries.map(e => {
+        return `<div class="horizontal-legend-item" style="cursor:default">
+          <span class="horizontal-legend-dot" style="background:${e.cor}"></span>
+          <span class="horizontal-legend-name">${e.cat}</span>
+          <span class="horizontal-legend-value">${e.val.toLocaleString('pt-BR')}</span>
+        </div>`;
+      }).join('');
+  }
+
+  renderHorizontalLegend();
+
+  cat2Chart = new Chart(canvas2, {
+    type: 'line',
+    data: {
+      labels: dias.map(d2FormatarData),
+      datasets: cats.map((c, i) => ({
+        label: c,
+        data: dias.map(d => mapCatDia[c]?.[d] || 0),
+        borderColor:     d2SelC ? (c===d2SelC ? PALETTE[i%PALETTE.length] : 'rgba(90,96,128,0.25)') : PALETTE[i%PALETTE.length],
+        backgroundColor: d2SelC ? (c===d2SelC ? PALETTE[i%PALETTE.length]+'22' : 'transparent') : PALETTE[i%PALETTE.length]+'22',
+        borderWidth: d2SelC ? (c===d2SelC ? 2.5 : 1) : 2,
+        pointRadius: dias.length <= 60 ? 2 : 0, pointHoverRadius: 4, tension: 0.3, fill: false,
+      }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      onHover: (evt, elements) => {
+        if (elements && elements.length > 0) {
+          renderHorizontalLegend(elements[0].index);
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: false }
+      },
+      scales: {
+        x: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:true, maxTicksLimit:30 }, grid:{color:'#1c2030'} },
+        y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+      }
+    }
+  });
+  canvas2.style.cursor = 'pointer';
+  canvas2.addEventListener('mouseleave', () => renderHorizontalLegend());
+
+  let totCat = cats.map(c => ({ cat: c, qty: Object.values(mapCatDia[c] || {}).reduce((s,v)=>s+v,0) }));
+  const totalGeral = totCat.reduce((s,r)=>s+r.qty,0);
+
+  totCat = [...totCat].sort((a,b) => {
+    let va, vb;
+    if (cat2Sort.col === 'cat') { va = a.cat.toLowerCase(); vb = b.cat.toLowerCase(); }
+    else if (cat2Sort.col === 'pct') { va = totalGeral > 0 ? a.qty / totalGeral : 0; vb = totalGeral > 0 ? b.qty / totalGeral : 0; }
+    else { va = a.qty; vb = b.qty; }
+    if (va < vb) return cat2Sort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return cat2Sort.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const maxQ = Math.max(...totCat.map(r => r.qty), 1);
+  const th = (label, key) => {
+    const cls = cat2Sort.col === key ? ` class="sort-${cat2Sort.dir}"` : '';
+    return `<th${cls} onclick="cat2OrdenarPor('${key}')">${label}</th>`;
+  };
+  const linhas = totCat.map(r => {
+    const pct  = totalGeral > 0 ? ((r.qty/totalGeral)*100).toFixed(1) : 0;
+    const barW = ((r.qty/maxQ)*100).toFixed(1);
+    const ativo = normalizeFilterValue(d2SelC) === normalizeFilterValue(r.cat) ? ' row-active' : '';
+    return `<tr class="clickable-row${ativo}" onclick="d2SetFilter('cat',this.dataset.v)" data-v="${r.cat.replace(/"/g,'&quot;')}">
+      <td class="td-nome">${r.cat}</td>
+      <td class="td-qty">${r.qty.toLocaleString('pt-BR')}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="width:${barW}%;max-width:150px"></div>
+        <span style="font-size:.78rem;color:var(--text-dim);font-family:'DM Mono',monospace">${pct}%</span>
+      </div></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('cat2-table-body').innerHTML = `<table>
+    <thead><tr>${th('Categoria','cat')}${th('Qtd Vendida','qty')}${th('Participação','pct')}</tr></thead>
+    <tbody>${linhas}</tbody>
+  </table>`;
+}
+
+function cat2OrdenarPor(coluna) {
+  cat2Sort.dir = cat2Sort.col === coluna && cat2Sort.dir === 'desc' ? 'asc' : 'desc';
+  cat2Sort.col = coluna;
+  d2Renderizar();
+}
+
+function renderFam2(data) {
+  const loja = document.getElementById('d2-loja').value;
+  const ano  = document.getElementById('d2-ano').value;
+  const mes  = document.getElementById('d2-mes').value;
+  const nomeLoja = loja ? (document.getElementById('d2-loja').selectedOptions[0]?.text || '') : 'Todas as lojas';
+  document.getElementById('fam2-sub').textContent = ([ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos') + ' · ' + nomeLoja;
+
+  const fams = [...new Set(data.map(r => getFamilia(r) || 'SEM FAMÍLIA').filter(Boolean))].sort();
+  const dias  = [...new Set(data.map(r => {
+    const dt = d2ParseData(col(r,'Data','data'));
+    return dt ? dataParaISO(dt) : null;
+  }).filter(Boolean))].sort();
+
+  const state2 = document.getElementById('fam2-state');
+  if (fams.length === 0 || dias.length === 0) {
+    if(state2) { state2.style.display='flex'; state2.innerHTML='Nenhum dado.'; }
+    document.getElementById('fam2-table-body').innerHTML = '<div class="no-data">Nenhum dado</div>';
+    return;
+  }
+  if(state2) state2.style.display = 'none';
+
+  const mapFamDia = {};
+  data.forEach(r => {
+    const f  = getFamilia(r) || 'SEM FAMÍLIA';
+    const dt = d2ParseData(col(r,'Data','data')); if (!dt) return;
+    const dk = dataParaISO(dt);
+    const qty = parseBR(col(r,'Venda (Qtd)','Venda Nf Quantidade','Venda Pdv Quantidade'));
+    if (!mapFamDia[f]) mapFamDia[f] = {};
+    mapFamDia[f][dk] = (mapFamDia[f][dk] || 0) + qty;
+  });
+
+  let canvas2 = document.getElementById('fam2-canvas');
+  if (!canvas2) {
+    canvas2 = document.createElement('canvas');
+    canvas2.id = 'fam2-canvas';
+    document.getElementById('fam2-wrap').appendChild(canvas2);
+  }
+  if (fam2Chart) fam2Chart.destroy();
+
+  fam2Chart = new Chart(canvas2, {
+    type: 'line',
+    data: {
+      labels: dias.map(d2FormatarData),
+      datasets: fams.map((f, i) => ({
+        label: f,
+        data: dias.map(d => mapFamDia[f]?.[d] || 0),
+        borderColor:     PALETTE[i%PALETTE.length],
+        backgroundColor: PALETTE[i%PALETTE.length]+'22',
+        borderWidth: 2,
+        pointRadius: dias.length <= 60 ? 2 : 0, pointHoverRadius: 4, tension: 0.3, fill: false,
+      }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: {
+          labels:{ color:'#8891aa', font:{family:'DM Mono',size:10}, boxWidth:10 },
+        },
+        tooltip: {
+          backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1,
+          titleColor:'#c8f135', bodyColor:'#e8ecf5',
+          titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:12}, padding:12,
+        }
+      },
+      scales: {
+        x: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:true, maxTicksLimit:30 }, grid:{color:'#1c2030'} },
+        y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+      }
+    }
+  });
+
+  let totFam = fams.map(f => ({ fam: f, qty: Object.values(mapFamDia[f] || {}).reduce((s,v)=>s+v,0) }));
+  const totalGeral = totFam.reduce((s,r)=>s+r.qty,0);
+
+  totFam = [...totFam].sort((a,b) => {
+    let va, vb;
+    if (fam2Sort.col === 'fam') { va = a.fam.toLowerCase(); vb = b.fam.toLowerCase(); }
+    else if (fam2Sort.col === 'pct') { va = totalGeral > 0 ? a.qty / totalGeral : 0; vb = totalGeral > 0 ? b.qty / totalGeral : 0; }
+    else { va = a.qty; vb = b.qty; }
+    if (va < vb) return fam2Sort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return fam2Sort.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const maxQ = Math.max(...totFam.map(r => r.qty), 1);
+  const th = (label, key) => {
+    const cls = fam2Sort.col === key ? ` class="sort-${fam2Sort.dir}"` : '';
+    return `<th${cls} onclick="fam2OrdenarPor('${key}')">${label}</th>`;
+  };
+  const linhas = totFam.map(r => {
+    const pct  = totalGeral > 0 ? ((r.qty/totalGeral)*100).toFixed(1) : 0;
+    const barW = ((r.qty/maxQ)*100).toFixed(1);
+    return `<tr>
+      <td class="td-nome">${r.fam}</td>
+      <td class="td-qty">${r.qty.toLocaleString('pt-BR')}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="width:${barW}%;max-width:150px"></div>
+        <span style="font-size:.78rem;color:var(--text-dim);font-family:'DM Mono',monospace">${pct}%</span>
+      </div></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('fam2-table-body').innerHTML = `<table>
+    <thead><tr>${th('Família','fam')}${th('Qtd Vendida','qty')}${th('Participação','pct')}</tr></thead>
+    <tbody>${linhas}</tbody>
+  </table>`;
+}
+
+function fam2OrdenarPor(coluna) {
+  fam2Sort.dir = fam2Sort.col === coluna && fam2Sort.dir === 'desc' ? 'asc' : 'desc';
+  fam2Sort.col = coluna;
+  d2Renderizar();
+}
+
+function t2OrdenarPor(coluna) {
+  t2Sort.dir = t2Sort.col === coluna && t2Sort.dir === 'desc' ? 'asc' : 'desc';
+  t2Sort.col = coluna;
+  d2Renderizar();
+}
+
+// ── ABA 3: ESTOQUE ────────────────────────────────────────────────────────────
+function d3ConstruirFiltros() {
+  const anos  = [...new Set(rawData.map(r => col(r,'Ano')).filter(Boolean))].sort();
+  const meses = [...new Set(rawData.map(r => col(r,'Mês','Mes')).filter(Boolean))];
+  const ORD   = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  meses.sort((a,b) => ORD.indexOf(a) - ORD.indexOf(b));
+  const lojas = [...new Set(rawData.map(r => col(r,'Loja','loja')).filter(l => l && deParaMap[l]))].sort((a,b) => +a - +b);
+  const cats  = [...new Set(rawData.map(r => getCat(r)).filter(Boolean))].sort();
+
+  const familias = [...new Set(rawData.map(r => getFamilia(r)).filter(Boolean))].sort();
+
+  document.getElementById('d3-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
+  document.getElementById('d3-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
+  document.getElementById('d3-loja').innerHTML    = '<option value="">Todas</option>' + lojas.map(l => {
+    const nome = deParaMap[l] || `Filial ${l}`;
+    return `<option value="${l}">#${l} · ${nome}</option>`;
+  }).join('');
+  document.getElementById('d3-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+  document.getElementById('d3-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
+
+  ['d3-ano','d3-mes','d3-di','d3-df','d3-loja','d3-cat','d3-familia',
+    'se-ano','se-mes','se-di','se-df','se-loja','se-cat','se-familia'].forEach(id =>
+    document.getElementById(id).addEventListener('change', d3Renderizar)
+  );
+  document.getElementById('d3-status-msg').textContent = document.getElementById('status-msg').textContent;
+}
+
+function d3LimparFiltros() {
+  ['d3-ano','d3-mes','d3-di','d3-df','d3-loja','d3-cat','d3-familia',
+    'se-ano','se-mes','se-di','se-df','se-loja','se-cat','se-familia'].forEach(id => document.getElementById(id).value = '');
+  d3_active = { dim: null, val: null };
+  d3Renderizar();
+}
+
+function d3Filtrar(excl) {
+  const ano     = document.getElementById('d3-ano').value;
+  const mes     = document.getElementById('d3-mes').value;
+  const di      = document.getElementById('d3-di').value;
+  const df      = document.getElementById('d3-df').value;
+  const loja    = document.getElementById('d3-loja').value;
+  const cat     = document.getElementById('d3-cat').value;
+  const familia = document.getElementById('d3-familia').value;
+
+  return rawData.filter(r => {
+    if (ano     && col(r,'Ano') !== ano) return false;
+    if (mes     && col(r,'Mês','Mes') !== mes) return false;
+    if (loja    && col(r,'Loja','loja') !== loja) return false;
+    if (cat     && getCat(r) !== cat) return false;
+    if (familia && getFamilia(r) !== familia) return false;
+    if (d3_active.val && d3_active.dim !== excl) {
+      if (d3_active.dim === 'loja' && col(r,'Loja','loja') !== d3_active.val) return false;
+    }
+    if (di || df) {
+      const raw = col(r,'Data','data');
+      if (raw) {
+        const dt = parseDataBR(raw);
+        if (dt) {
+          const s = dataParaISO(dt);
+          if (di && s < di) return false;
+          if (df && s > df) return false;
+        }
+      }
+    }
+    return true;
+  });
+}
+
+function d3Renderizar() {
+  mostrarBanner('d3-active-banner', d3_active, {loja:'FILIAL'}, 'd3LimparAtivo');
+  const dados = d3Filtrar();
+  const dadosTabela = d3Filtrar('loja');
+  const ano   = document.getElementById('d3-ano').value;
+  const mes   = document.getElementById('d3-mes').value;
+  const loja  = document.getElementById('d3-loja').value;
+  const nomeLoja = loja ? (document.getElementById('d3-loja').selectedOptions[0]?.text || '') : 'Todas as lojas';
+  const periodo  = ([ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos') + ' · ' + nomeLoja;
+  document.getElementById('d3-chart-sub').textContent = periodo;
+  document.getElementById('d3-line-sub').textContent  = periodo;
+
+  const mapLoja = {};
+  dados.forEach(r => {
+    const l   = col(r,'Loja','loja'); if (!l) return;
+    const est = parseBR(col(r,'Estoque Diario','Estoque Diário','Estoque','estoque'));
+    const key = l.trim();
+    if (!deParaMap[key]) return;
+    if (!mapLoja[key]) mapLoja[key] = { loja: key, nome: deParaMap[key], qty: 0 };
+    mapLoja[key].qty += est;
+  });
+
+  const byLoja = Object.values(mapLoja).sort((a,b) => b.qty - a.qty);
+
+  const mapLojaTabela = {};
+  dadosTabela.forEach(r => {
+    const l   = col(r,'Loja','loja'); if (!l) return;
+    const est = parseBR(col(r,'Estoque Diario','Estoque Diário','Estoque','estoque'));
+    const key = l.trim();
+    if (!deParaMap[key]) return;
+    if (!mapLojaTabela[key]) mapLojaTabela[key] = { loja: key, nome: deParaMap[key], qty: 0 };
+    mapLojaTabela[key].qty += est;
+  });
+  const byLojaTabela = Object.values(mapLojaTabela).sort((a,b) => b.qty - a.qty);
+  const total  = byLoja.reduce((s,r) => s + r.qty, 0);
+  const ativas = byLoja.filter(r => r.qty > 0).length;
+  const top    = byLoja[0];
+  const bot    = byLoja.filter(r => r.qty > 0).slice(-1)[0];
+
+  document.getElementById('d3-kpi-total').textContent   = total.toLocaleString('pt-BR');
+  document.getElementById('d3-kpi-lojas').textContent   = ativas;
+  document.getElementById('d3-kpi-top').textContent     = top ? top.nome : '—';
+  document.getElementById('d3-kpi-top-sub').textContent = top ? `${top.qty.toLocaleString('pt-BR')} un.` : '—';
+  document.getElementById('d3-kpi-bot').textContent     = bot ? bot.nome : '—';
+  document.getElementById('d3-kpi-bot-sub').textContent = bot ? `${bot.qty.toLocaleString('pt-BR')} un.` : '—';
+
+  const barState = document.getElementById('d3-chart-state');
+  if (byLoja.length === 0) {
+    if(barState) { barState.style.display='flex'; barState.innerHTML='Nenhum dado.'; }
+    if (d3BarChart) { d3BarChart.destroy(); d3BarChart = null; }
+    const oldBarCanvas = document.getElementById('d3-bar-canvas');
+    if (oldBarCanvas) oldBarCanvas.remove();
+  } else {
+    if(barState) barState.style.display = 'none';
+    let c1 = document.getElementById('d3-bar-canvas');
+    if (!c1) { c1 = document.createElement('canvas'); c1.id = 'd3-bar-canvas'; document.getElementById('d3-chart-wrap').appendChild(c1); }
+    if (d3BarChart) d3BarChart.destroy();
+    const n = byLoja.length;
+    const d3Sel = d3_active.dim === 'loja' ? d3_active.val : null;
+    d3BarChart = new Chart(c1, {
+      type: 'bar',
+      data: {
+        labels: byLoja.map(r => r.nome),
+        datasets: [{
+          data: byLoja.map(r => r.qty),
+          backgroundColor: byLoja.map((r,i) => { if(d3Sel) return r.loja===d3Sel?'rgba(79,255,176,0.95)':'rgba(37,42,58,0.45)'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},0.85)`; }),
+          borderColor:     byLoja.map((r,i) => { if(d3Sel) return r.loja===d3Sel?'rgba(79,255,176,1)':'rgba(37,42,58,0.2)'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},1)`; }),
+          borderWidth: 1.5, borderRadius: 6,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        onClick: (evt, elements) => {
+          if (elements.length > 0) d3SetFilter('loja', byLoja[elements[0].index].loja);
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1, titleColor:'#4fffb0', bodyColor:'#e8ecf5', titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+            callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades em estoque` }
+          }
+        },
+        scales: {
+          x: { ticks:{ color: ctx => d3Sel?(byLoja[ctx.index]?.loja===d3Sel?'#4fffb0':'#3a4060'):'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false }, grid:{color:'#1c2030'} },
+          y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+        }
+      }
+    });
+    c1.style.cursor = 'pointer';
+  }
+
+  const dadosChart = d3Filtrar('loja');
+  const dias = [...new Set(dadosChart.map(r => { const dt=d2ParseData(col(r,'Data','data')); return dt?dataParaISO(dt):null; }).filter(Boolean))].sort();
+  const lojas = loja ? [loja] : (() => {
+    const totPorLoja = {};
+    dadosChart.forEach(r => {
+      const l = col(r,'Loja','loja'); if (!l || !deParaMap[l]) return;
+      const est = parseBR(col(r,'Estoque Diario','Estoque Diário','Estoque','estoque'));
+      totPorLoja[l] = (totPorLoja[l] || 0) + est;
+    });
+    return Object.entries(totPorLoja).sort((a,b) => b[1]-a[1]).slice(0,10).map(([l]) => l);
+  })();
+
+  const lineState = document.getElementById('d3-line-state');
+  const d3LineLegendEl = document.getElementById('d3-line-legend');
+  if (dias.length === 0) {
+    if(lineState) { lineState.style.display='flex'; lineState.innerHTML='Nenhum dado.'; }
+    if (d3LineChart) { d3LineChart.destroy(); d3LineChart = null; }
+    const oldLineCanvas = document.getElementById('d3-line-canvas');
+    if (oldLineCanvas) oldLineCanvas.remove();
+    if (d3LineLegendEl) d3LineLegendEl.innerHTML = '<div class="horizontal-legend-title">Legenda</div>';
+  } else {
+    if(lineState) lineState.style.display = 'none';
+    const mapLD = {};
+    dadosChart.forEach(r => {
+      const l   = col(r,'Loja','loja'); if (!l || !lojas.includes(l)) return;
+      const dt  = d2ParseData(col(r,'Data','data')); if (!dt) return;
+      const dk  = dataParaISO(dt);
+      const est = parseBR(col(r,'Estoque Diario','Estoque Diário','Estoque','estoque'));
+      if (!mapLD[l]) mapLD[l] = {};
+      mapLD[l][dk] = (mapLD[l][dk] || 0) + est;
+    });
+
+    function renderD3LineLegend(dataIndex) {
+      const legend = document.getElementById('d3-line-legend');
+      if (!legend) return;
+      const dataLabel = dataIndex != null && dias[dataIndex] ? d2FormatarData(dias[dataIndex]) : null;
+      let entries;
+      if (dataIndex != null && dias[dataIndex]) {
+        entries = lojas.map((l,i) => ({
+          nome: deParaMap[l] || `Filial ${l}`,
+          val:  mapLD[l]?.[dias[dataIndex]] || 0,
+          cor:  PALETTE[i % PALETTE.length]
+        })).filter(e => e.val > 0).sort((a,b) => b.val - a.val);
+      } else {
+        entries = lojas.map((l,i) => ({
+          nome: deParaMap[l] || `Filial ${l}`,
+          val:  Object.values(mapLD[l] || {}).reduce((s,v) => s+v, 0),
+          cor:  PALETTE[i % PALETTE.length]
+        })).sort((a,b) => b.val - a.val);
+      }
+      legend.innerHTML = `<div class="horizontal-legend-title">${dataLabel || 'Legenda'}</div>`
+        + entries.map(e => `<div class="horizontal-legend-item" style="cursor:default">
+            <span class="horizontal-legend-dot" style="background:${e.cor}"></span>
+            <span class="horizontal-legend-name">${e.nome}</span>
+            <span class="horizontal-legend-value">${e.val.toLocaleString('pt-BR')}</span>
+          </div>`).join('');
+    }
+
+    renderD3LineLegend();
+
+    let c2 = document.getElementById('d3-line-canvas');
+    if (!c2) { c2 = document.createElement('canvas'); c2.id = 'd3-line-canvas'; document.getElementById('d3-line-wrap').appendChild(c2); }
+    if (d3LineChart) d3LineChart.destroy();
+
+    d3LineChart = new Chart(c2, {
+      type: 'line',
+      data: {
+        labels: dias.map(d2FormatarData),
+        datasets: lojas.map((l,i) => ({
+          label: deParaMap[l] || `Filial ${l}`,
+          data: dias.map(d => mapLD[l]?.[d] ?? null),
+          borderColor:     PALETTE[i%PALETTE.length],
+          backgroundColor: PALETTE[i%PALETTE.length]+'22',
+          borderWidth: 2,
+          pointRadius: dias.length <= 60 ? 2 : 0,
+          pointHoverRadius: 4, tension: 0.3, fill: false, spanGaps: true,
+        }))
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode:'index', intersect:false },
+        onHover: (evt, elements) => {
+          if (elements && elements.length > 0) renderD3LineLegend(elements[0].index);
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: false }
+        },
+        scales: {
+          x: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:true, maxTicksLimit:30 }, grid:{color:'#1c2030'} },
+          y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+        }
+      }
+    });
+    c2.style.cursor = 'default';
+    c2.addEventListener('mouseleave', () => renderD3LineLegend());
+  }
+
+  const maxQ = byLojaTabela[0]?.qty || 1;
+  const th3 = (label, key) => {
+    const cls = t3Sort.col === key ? ` class="sort-${t3Sort.dir}"` : '';
+    return `<th${cls} onclick="t3OrdenarPor('${key}')">${label}</th>`;
+  };
+  const sorted3 = [...byLojaTabela].sort((a,b) => {
+    let va, vb;
+    if (t3Sort.col === 'loja') { va=+a.loja; vb=+b.loja; }
+    else if (t3Sort.col === 'nome') { va=a.nome.toLowerCase(); vb=b.nome.toLowerCase(); }
+    else if (t3Sort.col === 'volume') { va=a.qty; vb=b.qty; }
+    else { va=a.qty; vb=b.qty; }
+    if (va<vb) return t3Sort.dir==='asc'?-1:1;
+    if (va>vb) return t3Sort.dir==='asc'?1:-1;
+    return 0;
+  });
+  const d3SelTab = d3_active.dim === 'loja' ? d3_active.val : null;
+  const linhas3 = sorted3.map(r => {
+    const barW = ((r.qty/maxQ)*100).toFixed(1);
+    const ativo = d3SelTab === r.loja ? ' row-active' : '';
+    return `<tr class="clickable-row${ativo}" onclick="d3SetFilter('loja','${r.loja}')">
+      <td class="td-loja">#${r.loja}</td>
+      <td class="td-nome">${r.nome}</td>
+      <td class="td-qty" style="color:var(--accent2)">${r.qty.toLocaleString('pt-BR')}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="background:linear-gradient(90deg,var(--accent2),#38bdf8);width:${barW}%;max-width:150px"></div>
+      </div></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('d3-table-body').innerHTML = byLojaTabela.length === 0
+    ? '<div class="no-data">Nenhum dado para os filtros selecionados</div>'
+    : `<table><thead><tr>${th3('Filial','loja')}${th3('Nome Fantasia','nome')}${th3('Estoque Atual','qty')}${th3('Volume','volume')}</tr></thead><tbody>${linhas3}</tbody></table>`;
+}
+
+function t3OrdenarPor(coluna) {
+  t3Sort.dir = t3Sort.col === coluna && t3Sort.dir === 'desc' ? 'asc' : 'desc';
+  t3Sort.col = coluna;
+  d3Renderizar();
+}
+
+
+// ── ABA SELL OUT X ESTOQUE ───────────────────────────────────────────────────
+function seConstruirFiltros() {
+  const anos  = [...new Set(rawData.map(r => col(r,'Ano')).filter(Boolean))].sort();
+  const meses = [...new Set(rawData.map(r => col(r,'Mês','Mes')).filter(Boolean))];
+  const ORD   = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  meses.sort((a,b) => ORD.indexOf(a) - ORD.indexOf(b));
+
+  // Regra: só mostrar lojas existentes no De-Para
+  const lojas = [...new Set(rawData.map(r => col(r,'Loja','loja')).filter(l => l && deParaMap[String(l).trim()]))].sort((a,b) => +a - +b);
+  const cats  = [...new Set(rawData.map(r => getCat(r)).filter(Boolean))].sort();
+  const familias = [...new Set(rawData.map(r => getFamilia(r)).filter(Boolean))].sort();
+
+  document.getElementById('se-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
+  document.getElementById('se-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
+  document.getElementById('se-loja').innerHTML    = '<option value="">Todas</option>' + lojas.map(l => `<option value="${l}">#${l} · ${deParaMap[String(l).trim()]}</option>`).join('');
+  document.getElementById('se-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+  document.getElementById('se-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
+
+  ['se-ano','se-mes','se-di','se-df','se-loja','se-cat','se-familia'].forEach(id =>
+    document.getElementById(id).addEventListener('change', seRenderizar)
+  );
+
+  document.getElementById('se-status-msg').textContent =
+    `${rawData.length.toLocaleString('pt-BR')} registros carregados · ${Object.keys(deParaMap).length} lojas no de-para`;
+}
+
+function seLimparFiltros() {
+  ['se-ano','se-mes','se-di','se-df','se-loja','se-cat','se-familia'].forEach(id => document.getElementById(id).value = '');
+  se_active = { dim: null, val: null };
+  seRenderizar();
+}
+
+function seFiltrarPorLoja(loja) {
+  se_active = toggleActiveFilter(se_active, 'loja', loja);
+  seRenderizar();
+}
+
+function seFiltrar(excl) {
+  const ano     = document.getElementById('se-ano').value;
+  const mes     = document.getElementById('se-mes').value;
+  const di      = document.getElementById('se-di').value;
+  const df      = document.getElementById('se-df').value;
+  const loja    = document.getElementById('se-loja').value;
+  const cat     = document.getElementById('se-cat').value;
+  const familia = document.getElementById('se-familia').value;
+
+  return rawData.filter(r => {
+    const lojaRaw = col(r,'Loja','loja');
+    const lojaKey = String(lojaRaw || '').trim();
+
+    // Regra: loja fora do De-Para não existe para o painel
+    if (!lojaKey || !deParaMap[lojaKey]) return false;
+
+    if (ano     && col(r,'Ano') !== ano) return false;
+    if (mes     && col(r,'Mês','Mes') !== mes) return false;
+    if (loja    && lojaKey !== loja) return false;
+    if (cat     && getCat(r) !== cat) return false;
+    if (familia && getFamilia(r) !== familia) return false;
+
+    if (se_active.val && se_active.dim !== excl) {
+      if (se_active.dim === 'loja' && lojaKey !== se_active.val) return false;
+    }
+
+    if (di || df) {
+      const raw = col(r,'Data','data');
+      if (raw) {
+        const dt = parseDataBR(raw);
+        if (dt) {
+          const s = dataParaISO(dt);
+          if (di && s < di) return false;
+          if (df && s > df) return false;
+        }
+      }
+    }
+
+    return true;
+  });
+}
+
+function seAgruparPorLoja(data) {
+  const map = {};
+
+  data.forEach(r => {
+    const loja = String(col(r,'Loja','loja') || '').trim();
+    if (!loja || !deParaMap[loja]) return;
+
+    const sellout = parseBR(col(r,'Venda (Qtd)','Venda Nf Quantidade','Venda Pdv Quantidade'));
+    const estoque = parseBR(col(r,'Estoque Diario','Estoque Diário','Estoque','estoque'));
+
+    if (!map[loja]) {
+      map[loja] = {
+        loja,
+        nome: deParaMap[loja],
+        sellout: 0,
+        estoque: 0,
+        risco: ''
+      };
+    }
+
+    map[loja].sellout += sellout;
+    map[loja].estoque += estoque;
+  });
+
+  return Object.values(map).map(r => {
+    if (r.sellout > 0 && r.estoque <= 0) r.risco = 'Sem estoque';
+    else if (r.sellout > r.estoque) r.risco = 'Estoque menor que venda';
+    else if (r.sellout > 0) r.risco = 'OK';
+    else r.risco = 'Sem venda';
+
+    return r;
+  });
+}
+
+function seOrdenarPor(coluna) {
+  seSort.dir = seSort.col === coluna && seSort.dir === 'desc' ? 'asc' : 'desc';
+  seSort.col = coluna;
+  seRenderizar();
+}
+
+function seRiskOrdenarPor(coluna) {
+  seRiskSort.dir = seRiskSort.col === coluna && seRiskSort.dir === 'desc' ? 'asc' : 'desc';
+  seRiskSort.col = coluna;
+  seRenderizar();
+}
+
+function seAplicarSort(data, sortState) {
+  return [...data].sort((a,b) => {
+    let va = a[sortState.col];
+    let vb = b[sortState.col];
+
+    if (['loja','nome','risco'].includes(sortState.col)) {
+      va = String(va || '').toLowerCase();
+      vb = String(vb || '').toLowerCase();
+    } else {
+      va = Number(va || 0);
+      vb = Number(vb || 0);
+    }
+
+    if (va < vb) return sortState.dir === 'asc' ? -1 : 1;
+    if (va > vb) return sortState.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+}
+
+function seRenderizar() {
+  const dados = seFiltrar();
+  const dadosTabela = seFiltrar('loja');
+  const byLoja = seAgruparPorLoja(dados);
+  const byLojaTabela = seAgruparPorLoja(dadosTabela);
+
+  const ano = document.getElementById('se-ano').value;
+  const mes = document.getElementById('se-mes').value;
+  document.getElementById('se-chart-sub').textContent =
+    [ano, mes].filter(Boolean).join(' · ') || 'Todos os períodos';
+
+  const totalSellout = byLoja.reduce((s,r) => s + r.sellout, 0);
+  const totalEstoque = byLoja.reduce((s,r) => s + r.estoque, 0);
+
+  document.getElementById('se-kpi-sellout').textContent = totalSellout.toLocaleString('pt-BR');
+  document.getElementById('se-kpi-estoque').textContent = totalEstoque.toLocaleString('pt-BR');
+  
+
+  seRenderGrafico(byLoja);
+  if (seViewMode === 'data') {
+    seRenderTabelaData(seFiltrar());
+  } else {
+    seRenderTabela(byLojaTabela);
+  }
+  seRenderRiskTabela(byLoja);
+}
+
+function seRenderGrafico(byLoja) {
+  const state = document.getElementById('se-chart-state');
+
+  if (byLoja.length === 0) {
+    if (state) { state.style.display = 'flex'; state.innerHTML = 'Nenhum dado para os filtros selecionados.'; }
+    if (seChart) { seChart.destroy(); seChart = null; }
+    const old = document.getElementById('se-chart-canvas');
+    if (old) old.remove();
+    return;
+  }
+
+  if (state) state.style.display = 'none';
+
+  const dadosGrafico = [...byLoja]
+    .sort((a,b) => b.sellout - a.sellout)
+    .slice(0, 30);
+
+  let canvas = document.getElementById('se-chart-canvas');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'se-chart-canvas';
+    document.getElementById('se-chart-wrap').appendChild(canvas);
+  }
+
+  if (seChart) seChart.destroy();
+
+  seChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: dadosGrafico.map(r => r.nome),
+      datasets: [
+        {
+          label: 'Sell Out',
+          data: dadosGrafico.map(r => r.sellout),
+          backgroundColor: 'rgba(200,241,53,0.75)',
+          borderColor: 'rgba(200,241,53,1)',
+          borderWidth: 1.5,
+          borderRadius: 6,
+        },
+        {
+          label: 'Estoque',
+          data: dadosGrafico.map(r => r.estoque),
+          backgroundColor: 'rgba(79,255,176,0.55)',
+          borderColor: 'rgba(79,255,176,1)',
+          borderWidth: 1.5,
+          borderRadius: 6,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      onClick: (evt, elements) => {
+        if (elements.length > 0) seFiltrarPorLoja(dadosGrafico[elements[0].index].loja);
+      },
+      plugins: {
+        legend: {
+          labels: { color:'#8891aa', font:{family:'DM Mono',size:10}, boxWidth:10 }
+        },
+        tooltip: {
+          backgroundColor:'#1c2030',
+          borderColor:'#252a3a',
+          borderWidth:1,
+          titleColor:'#c8f135',
+          bodyColor:'#e8ecf5',
+          titleFont:{family:'DM Mono',size:11},
+          bodyFont:{family:'Figtree',size:13},
+          padding:14,
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString('pt-BR')} un.`
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks:{ color:'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false },
+          grid:{color:'#1c2030'}
+        },
+        y: {
+          ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') },
+          grid:{color:'#252a3a'}
+        }
+      }
+    }
+  });
+}
+
+function seRenderTabela(byLoja) {
+  const container = document.getElementById('se-table-body');
+
+  if (byLoja.length === 0) {
+    container.innerHTML = '<div class="no-data">Nenhum dado para os filtros selecionados</div>';
+    return;
+  }
+
+  const sorted = seAplicarSort(byLoja, seSort);
+  const th = (label, key) => {
+    const cls = seSort.col === key ? ` class="sort-${seSort.dir}"` : '';
+    return `<th${cls} onclick="seOrdenarPor('${key}')">${label}</th>`;
+  };
+
+  const linhas = sorted.map(r => {
+    const ativo = se_active.dim === 'loja' && se_active.val === r.loja ? ' row-active' : '';
+    return `
+    <tr class="clickable-row${ativo}" onclick="seFiltrarPorLoja('${r.loja}')">
+      <td class="td-loja">#${r.loja}</td>
+      <td class="td-nome">${r.nome}</td>
+      <td class="td-qty">${r.sellout.toLocaleString('pt-BR')}</td>
+      <td class="td-qty" style="color:var(--accent2)">${r.estoque.toLocaleString('pt-BR')}</td>
+      
+    </tr>
+  `;
+  }).join('');
+
+  container.innerHTML = `<table>
+    <thead><tr>
+      ${th('Filial','loja')}
+      ${th('Nome Fantasia','nome')}
+      ${th('Sell Out','sellout')}
+      ${th('Estoque','estoque')}
+    </tr></thead>
+    <tbody>${linhas}</tbody>
+  </table>`;
+}
+
+function seRenderRiskTabela(byLoja) {
+  // Ranking separado removido: a aba agora mostra apenas Sell Out, Estoque e Status.
+}
+
+function seAgruparPorData(data) {
+  const map = {};
+  data.forEach(r => {
+    const loja = String(col(r,'Loja','loja') || '').trim();
+    if (!loja || !deParaMap[loja]) return;
+    const dataOriginal = String(col(r,'Data','data') || '').trim();
+    if (!dataOriginal) return;
+    const dt  = parseDataBR(dataOriginal);
+    const iso = dt ? dataParaISO(dt) : dataOriginal;
+    const sellout = parseBR(col(r,'Venda (Qtd)','Venda Nf Quantidade','Venda Pdv Quantidade'));
+    const estoque = parseBR(col(r,'Estoque Diario','Estoque Diário','Estoque','estoque'));
+    if (!map[dataOriginal]) map[dataOriginal] = { data: dataOriginal, iso, sellout: 0, estoque: 0 };
+    map[dataOriginal].sellout += sellout;
+    map[dataOriginal].estoque += estoque;
+  });
+  return Object.values(map).sort((a,b) => String(a.iso).localeCompare(String(b.iso)));
+}
+
+function seDataOrdenarPor(coluna) {
+  seDataSort.dir = seDataSort.col === coluna && seDataSort.dir === 'desc' ? 'asc' : 'desc';
+  seDataSort.col = coluna;
+  seRenderizar();
+}
+
+function seAlternarVisao(modo) {
+  seViewMode = modo;
+  const btnLoja = document.getElementById('se-view-loja');
+  const btnData = document.getElementById('se-view-data');
+  if (btnLoja && btnData) {
+    const ativo   = 'border:1px solid var(--accent);background:var(--accent);color:var(--bg)';
+    const inativo = 'border:1px solid var(--border);background:transparent;color:var(--text-dim)';
+    btnLoja.style.cssText = `font-family:'DM Mono',monospace;font-size:0.72rem;padding:5px 14px;border-radius:6px;cursor:pointer;letter-spacing:.5px;${modo==='loja'?ativo:inativo}`;
+    btnData.style.cssText = `font-family:'DM Mono',monospace;font-size:0.72rem;padding:5px 14px;border-radius:6px;cursor:pointer;letter-spacing:.5px;${modo==='data'?ativo:inativo}`;
+  }
+  const titulo = document.getElementById('se-table-title');
+  if (titulo) titulo.textContent = modo === 'loja'
+    ? 'Detalhamento Sell Out x Estoque por Filial'
+    : 'Detalhamento Sell Out x Estoque por Data';
+  seRenderizar();
+}
+
+function seRenderTabelaData(data) {
+  const container = document.getElementById('se-table-body');
+  const porData = seAgruparPorData(data);
+
+  if (porData.length === 0) {
+    container.innerHTML = '<div class="no-data">Nenhum dado para os filtros selecionados</div>';
+    return;
+  }
+
+  const sorted = [...porData].sort((a,b) => {
+    let va, vb;
+    if (seDataSort.col === 'data') { va = a.iso; vb = b.iso; }
+    else if (seDataSort.col === 'dia') {
+      const ORD = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+      va = ORD.indexOf(d2DiaSemana(a.data));
+      vb = ORD.indexOf(d2DiaSemana(b.data));
+    }
+    else { va = a[seDataSort.col]; vb = b[seDataSort.col]; }
+    if (va < vb) return seDataSort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return seDataSort.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const totalSO  = sorted.reduce((s,r) => s + r.sellout, 0);
+  const totalEst = sorted.reduce((s,r) => s + r.estoque, 0);
+  const maxSO    = Math.max(...sorted.map(r => r.sellout), 1);
+
+  const th = (label, key) => {
+    const cls = seDataSort.col === key ? ` class="sort-${seDataSort.dir}"` : '';
+    return `<th${cls} onclick="seDataOrdenarPor('${key}')">${label}</th>`;
+  };
+
+  const linhas = sorted.map(r => {
+    const dia = d2DiaSemana(r.data);
+    const fds = dia === 'Sáb' || dia === 'Dom';
+    const barW = ((r.sellout / maxSO) * 100).toFixed(1);
+    return `<tr>
+      <td class="td-loja">${d2FormatarData(r.data)}</td>
+      <td class="td-loja" style="color:${fds ? '#ff9f6b' : 'var(--muted)'}">${dia}</td>
+      <td class="td-qty">${r.sellout.toLocaleString('pt-BR')}</td>
+      <td class="td-qty" style="color:var(--accent2)">${r.estoque.toLocaleString('pt-BR')}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="width:${barW}%;max-width:120px"></div>
+      </div></td>
+    </tr>`;
+  }).join('');
+
+  const totalLinha = `<tr style="background:var(--surface2)">
+    <td class="td-loja" style="color:var(--accent)">TOTAL</td>
+    <td class="td-loja">—</td>
+    <td class="td-qty" style="color:var(--accent)">${totalSO.toLocaleString('pt-BR')}</td>
+    <td class="td-qty" style="color:var(--accent2)">${totalEst.toLocaleString('pt-BR')}</td>
+    <td></td>
+  </tr>`;
+
+  container.innerHTML = `<table>
+    <thead><tr>
+      ${th('Data','data')}
+      ${th('Dia','dia')}
+      ${th('Sell Out','sellout')}
+      ${th('Estoque','estoque')}
+      <th>Volume</th>
+    </tr></thead>
+    <tbody>${linhas}${totalLinha}</tbody>
+  </table>`;
+}
+
+// ── ABA VALOR: VENDA VALOR (R$) ───────────────────────────────────────────────
+function vConstruirFiltros() {
+  const anos     = [...new Set(rawData.map(r => col(r,'Ano')).filter(Boolean))].sort();
+  const meses    = [...new Set(rawData.map(r => col(r,'Mês','Mes')).filter(Boolean))];
+  const ORD      = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  meses.sort((a,b) => ORD.indexOf(a) - ORD.indexOf(b));
+  const lojas    = [...new Set(rawData.map(r => col(r,'Loja','loja')).filter(Boolean))].sort((a,b) => +a - +b);
+  const cats     = [...new Set(rawData.map(r => getCat(r)).filter(Boolean))].sort();
+  const familias = [...new Set(rawData.map(r => getFamilia(r)).filter(Boolean))].sort();
+
+  document.getElementById('v-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
+  document.getElementById('v-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
+  document.getElementById('v-loja').innerHTML    = '<option value="">Todas</option>' + lojas.map(l => {
+    const nome = deParaMap[l] || `Filial ${l}`;
+    return `<option value="${l}">#${l} · ${nome}</option>`;
+  }).join('');
+  document.getElementById('v-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+  document.getElementById('v-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
+
+  ['v-ano','v-mes','v-di','v-df','v-loja','v-cat','v-familia'].forEach(id =>
+    document.getElementById(id).addEventListener('change', vRenderizar)
+  );
+  document.getElementById('v-status-msg').textContent = document.getElementById('status-msg').textContent;
+}
+
+function vLimparFiltros() {
+  ['v-ano','v-mes','v-di','v-df','v-loja','v-cat','v-familia'].forEach(id => document.getElementById(id).value = '');
+  v_active = { dim: null, val: null };
+  vRenderizar();
+}
+
+function vFiltrar(excl) {
+  const ano     = document.getElementById('v-ano').value;
+  const mes     = document.getElementById('v-mes').value;
+  const di      = document.getElementById('v-di').value;
+  const df      = document.getElementById('v-df').value;
+  const loja    = document.getElementById('v-loja').value;
+  const cat     = document.getElementById('v-cat').value;
+  const familia = document.getElementById('v-familia').value;
+
+  return rawData.filter(r => {
+    if (ano     && col(r,'Ano') !== ano) return false;
+    if (mes     && col(r,'Mês','Mes') !== mes) return false;
+    if (loja    && col(r,'Loja','loja') !== loja) return false;
+    if (cat     && getCat(r) !== cat) return false;
+    if (familia && getFamilia(r) !== familia) return false;
+    if (v_active.val && v_active.dim !== excl) {
+      if (v_active.dim === 'loja' && col(r,'Loja','loja') !== v_active.val) return false;
+      if (v_active.dim === 'cat'  && getCat(r) !== v_active.val) return false;
+      if (v_active.dim === 'familia' && getFamilia(r) !== v_active.val) return false;
+    }
+    if (di || df) {
+      const raw = col(r,'Data','data');
+      if (raw) {
+        const dt = parseDataBR(raw);
+        if (dt) {
+          const s = dataParaISO(dt);
+          if (di && s < di) return false;
+          if (df && s > df) return false;
+        }
+      }
+    }
+    return true;
+  });
+}
+
+function vAgruparPorLoja(data) {
+  const map = {};
+  data.forEach(r => {
+    const loja = col(r,'Loja','loja');
+    if (!loja) return;
+    const val = parseBR(col(r,'Venda (R$)','Venda(R$)','Venda R$','venda (r$)','Venda Valor','Venda NF Valor','Venda PDV Valor','venda_valor','Valor Venda'));
+    const key = loja.trim();
+    if (!deParaMap[key]) return;
+    if (!map[key]) map[key] = { loja: key, nome: deParaMap[key], val: 0 };
+    map[key].val += val;
+  });
+  return Object.values(map).sort((a,b) => b.val - a.val);
+}
+
+function vFmtR(v) {
+  return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function vRenderKPIs(byLoja) {
+  const total  = byLoja.reduce((s,r) => s + r.val, 0);
+  const ativas = byLoja.filter(r => r.val > 0).length;
+  const top    = byLoja[0];
+  document.getElementById('v-kpi-total').textContent   = vFmtR(total);
+  document.getElementById('v-kpi-lojas').textContent   = ativas;
+  document.getElementById('v-kpi-top').textContent     = top ? top.nome : '—';
+  document.getElementById('v-kpi-top-sub').textContent = top ? vFmtR(top.val) : '—';
+}
+
+function vRenderGrafico(byLoja) {
+  const total = byLoja.reduce((s,r) => s + r.val, 0);
+  document.getElementById('v-chart-total-val').textContent = vFmtR(total);
+
+  const stateEl = document.getElementById('v-chart-state');
+  if (byLoja.length === 0) {
+    if (stateEl) { stateEl.style.display = 'flex'; stateEl.innerHTML = 'Nenhum dado para os filtros selecionados.'; }
+    return;
+  }
+  if (stateEl) stateEl.style.display = 'none';
+
+  let canvas = document.getElementById('v-myChart');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'v-myChart';
+    document.getElementById('v-chart-wrap').appendChild(canvas);
+  }
+
+  const n = byLoja.length;
+  const vSel = v_active.dim === 'loja' ? v_active.val : null;
+  const bgColors = byLoja.map((r, i) => {
+    if (vSel) return r.loja === vSel ? 'rgba(79,255,176,0.95)' : 'rgba(37,42,58,0.45)';
+    const t = n > 1 ? i/(n-1) : 0;
+    return `rgba(${Math.round(79+t*121)},${Math.round(255-t*100)},${Math.round(176-t*50)},0.85)`;
+  });
+  const borderColors = byLoja.map((r, i) => {
+    if (vSel) return r.loja === vSel ? 'rgba(79,255,176,1)' : 'rgba(37,42,58,0.2)';
+    const t = n > 1 ? i/(n-1) : 0;
+    return `rgba(${Math.round(79+t*121)},${Math.round(255-t*100)},${Math.round(176-t*50)},1)`;
+  });
+
+  if (vChartInst) vChartInst.destroy();
+  vChartInst = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: byLoja.map(r => r.nome),
+      datasets: [{ label: 'Valor Vendido (R$)', data: byLoja.map(r => r.val), backgroundColor: bgColors, borderColor: borderColors, borderWidth: 1.5, borderRadius: 6 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      onClick: (evt, elements) => {
+        if (elements.length > 0) vSetFilter('loja', byLoja[elements[0].index].loja);
+      },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1,
+          titleColor:'#4fffb0', bodyColor:'#e8ecf5',
+          titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+          callbacks: { title: ctx => ctx[0].label, label: ctx => ' ' + vFmtR(ctx.parsed.y) }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: ctx => { if (!vSel) return '#8891aa'; return byLoja[ctx.index]?.loja === vSel ? '#4fffb0' : '#3a4060'; },
+            font: { family: 'DM Mono', size: 9 }, maxRotation: 45, minRotation: 45, autoSkip: false
+          },
+          grid: { color: '#1c2030' }
+        },
+        y: {
+          ticks: { color: '#8891aa', font: { family: 'DM Mono', size: 11 }, callback: v => 'R$ ' + v.toLocaleString('pt-BR') },
+          grid: { color: '#252a3a' }
+        }
+      }
+    }
+  });
+  canvas.style.cursor = 'pointer';
+}
+
+function vRenderTabela(byLoja) {
+  const container = document.getElementById('v-table-body');
+  const total = byLoja.reduce((s,r) => s + r.val, 0);
+  if (byLoja.length === 0) { container.innerHTML = '<div class="no-data">Nenhum dado para os filtros selecionados</div>'; return; }
+
+  const sorted = [...byLoja].sort((a,b) => {
+    let va, vb;
+    if (vt1Sort.col === 'loja') { va = +a.loja; vb = +b.loja; }
+    else if (vt1Sort.col === 'nome') { va = a.nome.toLowerCase(); vb = b.nome.toLowerCase(); }
+    else if (vt1Sort.col === 'pct') { va = total > 0 ? a.val / total : 0; vb = total > 0 ? b.val / total : 0; }
+    else { va = a.val; vb = b.val; }
+    if (va < vb) return vt1Sort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return vt1Sort.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const maxV = Math.max(...sorted.map(r => r.val), 1);
+  const th = (label, key) => {
+    const cls = vt1Sort.col === key ? ` class="sort-${vt1Sort.dir}"` : '';
+    return `<th${cls} onclick="vt1OrdenarPor('${key}')">${label}</th>`;
+  };
+  const vSelT = v_active.dim === 'loja' ? v_active.val : null;
+  const linhas = sorted.map(r => {
+    const pct  = total > 0 ? ((r.val/total)*100).toFixed(1) : 0;
+    const barW = ((r.val/maxV)*100).toFixed(1);
+    const ativo = vSelT === r.loja ? ' row-active' : '';
+    return `<tr class="clickable-row${ativo}" onclick="vSetFilter('loja','${r.loja}')">
+      <td class="td-loja">#${r.loja}</td>
+      <td class="td-nome">${r.nome}</td>
+      <td class="td-qty" style="color:var(--accent2)">${vFmtR(r.val)}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="background:linear-gradient(90deg,var(--accent2),#38bdf8);width:${barW}%;max-width:150px"></div>
+        <span style="font-size:.78rem;color:var(--text-dim);font-family:'DM Mono',monospace">${pct}%</span>
+      </div></td>
+    </tr>`;
+  }).join('');
+  const totalLinha = `<tr style="background:var(--surface2)">
+    <td class="td-loja">—</td>
+    <td class="td-nome" style="font-weight:600;color:var(--accent2)">TOTAL GERAL</td>
+    <td class="td-qty" style="color:var(--accent2)">${vFmtR(total)}</td>
+    <td><span style="font-size:.78rem;color:var(--accent2);font-family:'DM Mono',monospace">100%</span></td>
+  </tr>`;
+  container.innerHTML = `<table><thead><tr>${th('Filial','loja')}${th('Nome Fantasia','nome')}${th('Valor Vendido','val')}${th('Participação','pct')}</tr></thead><tbody>${linhas}${totalLinha}</tbody></table>`;
+}
+
+function vt1OrdenarPor(coluna) {
+  vt1Sort.dir = vt1Sort.col === coluna && vt1Sort.dir === 'desc' ? 'asc' : 'desc';
+  vt1Sort.col = coluna;
+  vRenderizar();
+}
+
+function vRenderCat1(data) {
+  const map = {};
+  data.forEach(r => {
+    const cat = getCat(r) || 'SEM CATEGORIA';
+    const val = parseBR(col(r,'Venda (R$)','Venda(R$)','Venda R$','venda (r$)','Venda Valor','Venda NF Valor','Venda PDV Valor','venda_valor','Valor Venda'));
+    if (!map[cat]) map[cat] = { cat, val: 0 };
+    map[cat].val += val;
+  });
+  let byCat = Object.values(map);
+  const total = byCat.reduce((s,r) => s + r.val, 0);
+
+  const ano = document.getElementById('v-ano').value;
+  const mes = document.getElementById('v-mes').value;
+  document.getElementById('v-cat1-sub').textContent = [ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos';
+
+  const state = document.getElementById('v-cat1-state');
+  if (byCat.length === 0) { if(state) { state.style.display='flex'; state.innerHTML='Nenhum dado.'; } return; }
+  if (state) state.style.display = 'none';
+
+  byCat = [...byCat].sort((a,b) => {
+    let va, vb;
+    if (vCat1Sort.col === 'cat') { va = a.cat.toLowerCase(); vb = b.cat.toLowerCase(); }
+    else if (vCat1Sort.col === 'pct') { va = total > 0 ? a.val / total : 0; vb = total > 0 ? b.val / total : 0; }
+    else { va = a.val; vb = b.val; }
+    if (va < vb) return vCat1Sort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return vCat1Sort.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  let canvas = document.getElementById('v-cat1-canvas');
+  if (!canvas) { canvas = document.createElement('canvas'); canvas.id = 'v-cat1-canvas'; document.getElementById('v-cat1-wrap').appendChild(canvas); }
+  if (vCat1Chart) vCat1Chart.destroy();
+
+  const vSelC = v_active.dim === 'cat' ? v_active.val : null;
+  vCat1Chart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: byCat.map(r => r.cat),
+      datasets: [{ data: byCat.map(r => r.val),
+        backgroundColor: byCat.map((r,i) => vSelC ? (r.cat===vSelC ? PALETTE[i%PALETTE.length]+'ee':'rgba(37,42,58,0.45)') : PALETTE[i%PALETTE.length]+'cc'),
+        borderColor:     byCat.map((r,i) => vSelC ? (r.cat===vSelC ? PALETTE[i%PALETTE.length]:'rgba(37,42,58,0.2)') : PALETTE[i%PALETTE.length]),
+        borderWidth:1.5, borderRadius:6 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      onClick: (evt, elements) => {
+        if (elements.length > 0) vSetFilter('cat', byCat[elements[0].index].cat);
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1, titleColor:'#4fffb0', bodyColor:'#e8ecf5', titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+          callbacks: { label: ctx => ' ' + vFmtR(ctx.parsed.y) }
+        }
+      },
+      scales: {
+        x: { ticks:{ color: ctx => vSelC?(byCat[ctx.index]?.cat===vSelC?'#4fffb0':'#3a4060'):'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:35, autoSkip:false }, grid:{color:'#1c2030'} },
+        y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback: v => 'R$ '+v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+      }
+    }
+  });
+  canvas.style.cursor = 'pointer';
+
+  const maxV = Math.max(...byCat.map(r => r.val), 1);
+  const th = (label, key) => {
+    const cls = vCat1Sort.col === key ? ` class="sort-${vCat1Sort.dir}"` : '';
+    return `<th${cls} onclick="vCat1OrdenarPor('${key}')">${label}</th>`;
+  };
+  const linhas = byCat.map(r => {
+    const pct  = total > 0 ? ((r.val/total)*100).toFixed(1) : 0;
+    const barW = ((r.val/maxV)*100).toFixed(1);
+    const ativo = vSelC === r.cat ? ' row-active' : '';
+    return `<tr class="clickable-row${ativo}" onclick="vSetFilter('cat',this.dataset.v)" data-v="${r.cat.replace(/"/g,'&quot;')}">
+      <td class="td-nome">${r.cat}</td>
+      <td class="td-qty" style="color:var(--accent2)">${vFmtR(r.val)}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="background:linear-gradient(90deg,var(--accent2),#38bdf8);width:${barW}%;max-width:150px"></div>
+        <span style="font-size:.78rem;color:var(--text-dim);font-family:'DM Mono',monospace">${pct}%</span>
+      </div></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('v-cat1-table-body').innerHTML = `<table>
+    <thead><tr>${th('Categoria','cat')}${th('Valor Vendido','val')}${th('Participação','pct')}</tr></thead>
+    <tbody>${linhas}</tbody>
+  </table>`;
+}
+
+function vCat1OrdenarPor(coluna) {
+  vCat1Sort.dir = vCat1Sort.col === coluna && vCat1Sort.dir === 'desc' ? 'asc' : 'desc';
+  vCat1Sort.col = coluna;
+  vRenderizar();
+}
+
+
+function vRenderFam1(data) {
+  const map = {};
+  data.forEach(r => {
+    const fam = getFamilia(r) || 'SEM FAMÍLIA';
+    const val = parseBR(col(r,'Venda (R$)','Venda(R$)','Venda R$','venda (r$)','Venda Valor','Venda NF Valor','Venda PDV Valor','venda_valor','Valor Venda'));
+    if (!map[fam]) map[fam] = { fam, val: 0 };
+    map[fam].val += val;
+  });
+
+  let byFam = Object.values(map);
+  const total = byFam.reduce((s,r) => s + r.val, 0);
+
+  const ano = document.getElementById('v-ano').value;
+  const mes = document.getElementById('v-mes').value;
+  document.getElementById('v-fam1-sub').textContent = [ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos';
+
+  const state = document.getElementById('v-fam1-state');
+  if (byFam.length === 0) {
+    if (state) { state.style.display = 'flex'; state.innerHTML = 'Nenhum dado.'; }
+    document.getElementById('v-fam1-table-body').innerHTML = '<div class="no-data">Nenhum dado</div>';
+    if (vFam1Chart) { vFam1Chart.destroy(); vFam1Chart = null; }
+    return;
+  }
+  if (state) state.style.display = 'none';
+
+  byFam = [...byFam].sort((a,b) => {
+    let va, vb;
+    if (vFam1Sort.col === 'fam') { va = a.fam.toLowerCase(); vb = b.fam.toLowerCase(); }
+    else if (vFam1Sort.col === 'pct') { va = total > 0 ? a.val / total : 0; vb = total > 0 ? b.val / total : 0; }
+    else { va = a.val; vb = b.val; }
+
+    if (va < vb) return vFam1Sort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return vFam1Sort.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  let canvas = document.getElementById('v-fam1-canvas');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'v-fam1-canvas';
+    document.getElementById('v-fam1-wrap').appendChild(canvas);
+  }
+
+  if (vFam1Chart) vFam1Chart.destroy();
+
+  const vSelF = v_active.dim === 'familia' ? v_active.val : null;
+  vFam1Chart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: byFam.map(r => r.fam),
+      datasets: [{
+        data: byFam.map(r => r.val),
+        backgroundColor: byFam.map((r,i) => vSelF ? (r.fam === vSelF ? PALETTE[i % PALETTE.length] + 'ee' : 'rgba(37,42,58,0.45)') : PALETTE[i % PALETTE.length] + 'cc'),
+        borderColor: byFam.map((r,i) => vSelF ? (r.fam === vSelF ? PALETTE[i % PALETTE.length] : 'rgba(37,42,58,0.2)') : PALETTE[i % PALETTE.length]),
+        borderWidth: 1.5,
+        borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      onClick: (evt, elements) => {
+        if (elements.length > 0) vSetFilter('familia', byFam[elements[0].index].fam);
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor:'#1c2030',
+          borderColor:'#252a3a',
+          borderWidth:1,
+          titleColor:'#4fffb0',
+          bodyColor:'#e8ecf5',
+          titleFont:{family:'DM Mono',size:11},
+          bodyFont:{family:'Figtree',size:13},
+          padding:14,
+          callbacks: { label: ctx => ' ' + vFmtR(ctx.parsed.y) }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: ctx => vSelF ? (byFam[ctx.index]?.fam === vSelF ? '#4fffb0' : '#3a4060') : '#8891aa',
+            font:{family:'DM Mono',size:9},
+            maxRotation:35,
+            autoSkip:false
+          },
+          grid:{color:'#1c2030'}
+        },
+        y: {
+          ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback: v => 'R$ ' + v.toLocaleString('pt-BR') },
+          grid:{color:'#252a3a'}
+        }
+      }
+    }
+  });
+
+  canvas.style.cursor = 'pointer';
+
+  const maxV = Math.max(...byFam.map(r => r.val), 1);
+  const th = (label, key) => {
+    const cls = vFam1Sort.col === key ? ` class="sort-${vFam1Sort.dir}"` : '';
+    return `<th${cls} onclick="vFam1OrdenarPor('${key}')">${label}</th>`;
+  };
+
+  const linhas = byFam.map(r => {
+    const pct  = total > 0 ? ((r.val / total) * 100).toFixed(1) : 0;
+    const barW = ((r.val / maxV) * 100).toFixed(1);
+    const ativo = normalizeFilterValue(vSelF) === normalizeFilterValue(r.fam) ? ' row-active' : '';
+
+    return `<tr class="clickable-row${ativo}" onclick="vSetFilter('familia',this.dataset.v)" data-v="${r.fam.replace(/"/g,'&quot;')}">
+      <td class="td-nome">${r.fam}</td>
+      <td class="td-qty" style="color:var(--accent2)">${vFmtR(r.val)}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="background:linear-gradient(90deg,var(--accent2),#38bdf8);width:${barW}%;max-width:150px"></div>
+        <span style="font-size:.78rem;color:var(--text-dim);font-family:'DM Mono',monospace">${pct}%</span>
+      </div></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('v-fam1-table-body').innerHTML = `<table>
+    <thead><tr>${th('Família','fam')}${th('Valor Vendido','val')}${th('Participação','pct')}</tr></thead>
+    <tbody>${linhas}</tbody>
+  </table>`;
+}
+
+function vFam1OrdenarPor(coluna) {
+  vFam1Sort.dir = vFam1Sort.col === coluna && vFam1Sort.dir === 'desc' ? 'asc' : 'desc';
+  vFam1Sort.col = coluna;
+  vRenderizar();
+}
+
+function vRenderizar() {
+  mostrarBanner('v-active-banner', v_active, {loja:'FILIAL', cat:'CATEGORIA', familia:'FAMÍLIA'}, 'vLimparAtivo');
+
+  const ano = document.getElementById('v-ano').value;
+  const mes = document.getElementById('v-mes').value;
+  document.getElementById('v-chart-sub').textContent = [ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos';
+  document.getElementById('v-loja-ativa').style.display = 'none';
+
+  const byLojaChart = vAgruparPorLoja(vFiltrar('loja'));
+  const byLojaFull  = vAgruparPorLoja(vFiltrar());
+  vRenderKPIs(byLojaFull);
+  vRenderGrafico(byLojaChart);
+  vRenderTabela(byLojaChart);
+  vRenderCat1(vFiltrar('cat'));
+  vRenderFam1(vFiltrar('familia'));
+}
+
+// ── FILTRO DE MÊS/ANO ATUAL ───────────────────────────────────────────────────
+function aplicarFiltroAtual(prefix) {
+  const MESES_ABREV = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const agora    = new Date();
+  const anoAtual = String(agora.getFullYear());
+  const mesAtual = MESES_ABREV[agora.getMonth()];
+
+  const elAno = document.getElementById(`${prefix}-ano`);
+  const elMes = document.getElementById(`${prefix}-mes`);
+
+  if (elAno) {
+    const temAno = [...elAno.options].some(o => o.value === anoAtual);
+    if (temAno) elAno.value = anoAtual;
+  }
+  if (elMes) {
+    const temMes = [...elMes.options].some(o => o.value === mesAtual);
+    if (temMes) elMes.value = mesAtual;
+  }
+}
+
+// ── TABS ──────────────────────────────────────────────────────────────────────
+function trocarAba(aba, evt) {
+  document.querySelectorAll('.tab-panel').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + aba).classList.add('active');
+  const btn = evt?.currentTarget || window.event?.currentTarget;
+  if (btn) btn.classList.add('active');
+
+  // Constrói filtros e renderiza apenas na primeira vez que a aba for aberta
+  if (!tabsRenderizadas.has(aba) && rawData.length > 0) {
+    if (aba === 'valor')   { vConstruirFiltros();  aplicarFiltroAtual('v');  vRenderizar();  }
+    if (aba === 'dia')     { d2ConstruirFiltros(); aplicarFiltroAtual('d2'); d2Renderizar(); }
+    if (aba === 'estoque') { d3ConstruirFiltros(); aplicarFiltroAtual('d3'); d3Renderizar(); }
+    if (aba === 'se')      { seConstruirFiltros(); aplicarFiltroAtual('se'); seRenderizar(); }
+    tabsRenderizadas.add(aba);
+  }
+}
+
+
+
+
+// ── START ─────────────────────────────────────────────────────────────────────
+init();
+
+</script>
+
+</body>
+</html>
