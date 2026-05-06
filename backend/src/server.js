@@ -110,8 +110,22 @@ async function iniciarServidor() {
     // CONSULTAS
     // ─────────────────────────────────────
     app.get("/api/dados-brutos", async (req, res) => {
-      const dados = await db.collection("dados_brutos").find({}).toArray();
-      res.json(dados);
+      try {
+        const limite = Number(req.query.limite || 5000);
+
+        const dados = await db
+          .collection("dados_brutos")
+          .find({})
+          .limit(limite)
+          .toArray();
+
+        res.json(dados);
+      } catch (error) {
+        res.status(500).json({
+          erro: "Erro ao buscar dados brutos",
+          detalhe: error.message
+        });
+      }
     });
 
     app.get("/api/lojas-depara", async (req, res) => {
@@ -125,67 +139,132 @@ async function iniciarServidor() {
     });
 
     // ─────────────────────────────────────
-// DADOS TRATADOS (JOIN)
-// ─────────────────────────────────────
-app.get("/api/dados-tratados", async (req, res) => {
-  try {
-    const dados = await db.collection("dados_brutos").aggregate([
-      {
-        $lookup: {
-          from: "categorias_depara",
-          localField: "GTIN/PLU",
-          foreignField: "CODBARRAS",
-          as: "categoria_info"
-        }
-      },
-      {
-        $lookup: {
-          from: "lojas_depara",
-          localField: "Loja",
-          foreignField: "Cod_Loja",
-          as: "loja_info"
-        }
-      },
-      {
-        $addFields: {
-          Categoria_DePara: { $arrayElemAt: ["$categoria_info.CATEGORIA", 0] },
-          Familia_DePara: { $arrayElemAt: ["$categoria_info.FAMILIA", 0] },
-          Produto_DePara: {
-            $arrayElemAt: [
-              {
-                $map: {
-                  input: "$categoria_info",
-                  as: "cat",
-                  in: {
-                    $getField: {
-                      field: "NOME PRODUTO",
-                      input: "$$cat"
+    // DADOS TRATADOS (JOIN)
+    // ─────────────────────────────────────
+    app.get("/api/dados-tratados", async (req, res) => {
+      try {
+        const dados = await db.collection("dados_brutos").aggregate([
+          {
+            $lookup: {
+              from: "categorias_depara",
+              localField: "GTIN/PLU",
+              foreignField: "CODBARRAS",
+              as: "categoria_info"
+            }
+          },
+          {
+            $lookup: {
+              from: "lojas_depara",
+              localField: "Loja",
+              foreignField: "Cod_Loja",
+              as: "loja_info"
+            }
+          },
+          {
+            $addFields: {
+              Categoria_DePara: { $arrayElemAt: ["$categoria_info.CATEGORIA", 0] },
+              Familia_DePara: { $arrayElemAt: ["$categoria_info.FAMILIA", 0] },
+              Produto_DePara: {
+                $arrayElemAt: [
+                  {
+                    $map: {
+                      input: "$categoria_info",
+                      as: "cat",
+                      in: {
+                        $getField: {
+                          field: "NOME PRODUTO",
+                          input: "$$cat"
+                        }
+                      }
                     }
+                  },
+                  0
+                ]
+              },
+              Nome_Loja_DePara: { $arrayElemAt: ["$loja_info.Nome_Fantasia", 0] }
+            }
+          },
+          {
+            $project: {
+              categoria_info: 0,
+              loja_info: 0
+            }
+          }
+        ]).toArray();
+
+        res.json(dados);
+      } catch (error) {
+        res.status(500).json({
+          erro: "Erro ao buscar dados tratados",
+          detalhe: error.message
+        });
+      }
+    });
+
+    // ─────────────────────────────────────
+    // RESUMO DASHBOARD
+    // ─────────────────────────────────────
+    app.get("/api/dashboard/resumo", async (req, res) => {
+      try {
+        const pipeline = [
+          {
+            $group: {
+              _id: null,
+
+              total_vendido: {
+                $sum: {
+                  $toDouble: {
+                    $ifNull: ["$Venda Pdv Quantidade", 0]
                   }
                 }
               },
-              0
-            ]
-          },
-          Nome_Loja_DePara: { $arrayElemAt: ["$loja_info.Nome_Fantasia", 0] }
-        }
-      },
-      {
-        $project: {
-          categoria_info: 0,
-          loja_info: 0
-        }
-      }
-    ]).toArray();
 
-    res.json(dados);
-  } catch (error) {
-    res.status(500).json({
-      erro: "Erro ao buscar dados tratados",
-      detalhe: error.message
+              total_valor: {
+                $sum: {
+                  $toDouble: {
+                    $ifNull: ["$Venda Pdv Valor", 0]
+                  }
+                }
+              },
+
+              lojas: {
+                $addToSet: "$Loja"
+              }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              total_vendido: 1,
+              total_valor: 1,
+              total_lojas: {
+                $size: "$lojas"
+              }
+            }
+          }
+        ];
+
+        const resultado = await db
+          .collection("dados_brutos")
+          .aggregate(pipeline)
+          .toArray();
+
+        res.json(
+          resultado[0] || {
+            total_vendido: 0,
+            total_valor: 0,
+            total_lojas: 0
+          }
+        );
+
+      } catch (error) {
+        res.status(500).json({
+          erro: "Erro ao gerar resumo",
+          detalhe: error.message
+        });
+      }
     });
-  }
-});
+
     // ─────────────────────────────────────
     // IMPORTAÇÕES (PROTEGIDAS)
     // ─────────────────────────────────────
