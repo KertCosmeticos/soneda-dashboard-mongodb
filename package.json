@@ -1,0 +1,12 @@
+{
+  "name": "soneda-dashboard-mongodb",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "cd backend && node src/server.js",
+    "build": "cd backend && npm install"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
