@@ -191,7 +191,7 @@ app.get("/api/vendas-sellout", async (req, res) => {
 });
 
 // FRONTEND COMO ROTA FINAL
-app.get("*", (req, res) => {
+app.use((req, res) => {
   res.sendFile(path.join(frontendPath, "index.html"));
 });
 
