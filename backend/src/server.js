@@ -156,7 +156,12 @@ app.get("/api/dados-tratados", async (req, res) => {
                 $map: {
                   input: "$categoria_info",
                   as: "cat",
-                  in: "$$cat.NOME PRODUTO"
+                  in: {
+                    $getField: {
+                      field: "NOME PRODUTO",
+                      input: "$$cat"
+                    }
+                  }
                 }
               },
               0
