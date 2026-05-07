@@ -109,7 +109,7 @@ async function iniciarServidor() {
     console.log("✅ Conectado ao MongoDB");
     console.log(`📦 Banco em uso: ${dbName}`);
 
-    // Seed usuário inicial a partir das variáveis de ambiente
+    // Seed usuário inicial de importação a partir das variáveis de ambiente
     const totalUsuarios = await db.collection("usuarios_importacao").countDocuments();
     if (totalUsuarios === 0 && process.env.ADMIN_USER && process.env.ADMIN_PASSWORD) {
       await db.collection("usuarios_importacao").insertOne({
@@ -118,13 +118,31 @@ async function iniciarServidor() {
         email:    process.env.EMAIL_USER || "",
         criadoEm: new Date()
       });
-      console.log(`👤 Usuário inicial criado: ${process.env.ADMIN_USER}`);
+      console.log(`👤 Usuário de importação inicial criado: ${process.env.ADMIN_USER}`);
+    }
+
+    // Seed super-admin no MongoDB (permite reset de senha por e-mail)
+    const adminExistente = await db.collection("usuarios_admin").findOne({ usuario: process.env.ADMIN_USER });
+    if (!adminExistente && process.env.ADMIN_USER && process.env.ADMIN_PASSWORD) {
+      await db.collection("usuarios_admin").insertOne({
+        usuario:  process.env.ADMIN_USER,
+        senha:    hashSenha(process.env.ADMIN_PASSWORD),
+        email:    process.env.ADMIN_EMAIL || "",
+        criadoEm: new Date()
+      });
+      console.log(`🔐 Super-admin criado no MongoDB: ${process.env.ADMIN_USER}`);
+    } else if (adminExistente && process.env.ADMIN_EMAIL && !adminExistente.email) {
+      // Atualiza e-mail se ainda não estava cadastrado
+      await db.collection("usuarios_admin").updateOne(
+        { usuario: process.env.ADMIN_USER },
+        { $set: { email: process.env.ADMIN_EMAIL } }
+      );
     }
 
     // Garante índice único no campo usuario
     await db.collection("usuarios_importacao").createIndex({ usuario: 1 }, { unique: true });
 
-    // TTL automático para tokens de reset expirados
+    // TTL automático para tokens de reset expirados (importação e admin)
     await db.collection("tokens_reset").createIndex({ expira: 1 }, { expireAfterSeconds: 0 });
 
     app.get("/", (req, res) => {
@@ -237,12 +255,13 @@ async function iniciarServidor() {
           return res.status(400).json({ erro: "Este link expirou. Solicite um novo." });
         }
 
-        await db.collection("usuarios_importacao").updateOne(
+        // Decide qual coleção atualizar com base no tipo do token
+        const colecao = registro.tipo === "admin" ? "usuarios_admin" : "usuarios_importacao";
+        await db.collection(colecao).updateOne(
           { _id: registro.usuarioId },
           { $set: { senha: hashSenha(novaSenha) } }
         );
 
-        // Invalida o token imediatamente após uso
         await db.collection("tokens_reset").deleteOne({ token });
 
         res.json({ ok: true });
@@ -254,14 +273,21 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     // LOGIN / LOGOUT (gestão de usuários)
     // ─────────────────────────────────────
-    app.post("/api/admin/login", (req, res) => {
+    app.post("/api/admin/login", async (req, res) => {
       const { usuario, senha } = req.body;
-      if (usuario === process.env.ADMIN_USER && senha === process.env.ADMIN_PASSWORD) {
+      if (!usuario || !senha) return res.status(401).json({ erro: "Usuário ou senha inválidos." });
+
+      try {
+        const admin = await db.collection("usuarios_admin").findOne({ usuario });
+        if (!admin || !verificarSenha(senha, admin.senha)) {
+          return res.status(401).json({ erro: "Usuário ou senha inválidos." });
+        }
         const token = gerarToken();
         sessoesAdmin.set(token, { expira: Date.now() + TOKEN_EXPIRY_MS });
         return res.json({ token });
+      } catch (error) {
+        res.status(500).json({ erro: "Erro ao verificar credenciais." });
       }
-      res.status(401).json({ erro: "Usuário ou senha inválidos." });
     });
 
     app.post("/api/admin/logout", (req, res) => {
@@ -269,6 +295,66 @@ async function iniciarServidor() {
       const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
       if (token) sessoesAdmin.delete(token);
       res.json({ ok: true });
+    });
+
+    // ─────────────────────────────────────
+    // RESET DE SENHA (super-admin)
+    // ─────────────────────────────────────
+    app.post("/api/admin/solicitar-reset", async (req, res) => {
+      const { usuario } = req.body;
+      const respostaNeutra = { ok: true, mensagem: "Se o usuário existir e tiver um e-mail cadastrado, você receberá as instruções em breve." };
+
+      if (!usuario) return res.json(respostaNeutra);
+
+      try {
+        const admin = await db.collection("usuarios_admin").findOne({ usuario });
+        if (!admin || !admin.email) return res.json(respostaNeutra);
+
+        await db.collection("tokens_reset").deleteMany({ usuarioId: admin._id, tipo: "admin" });
+
+        const token  = gerarToken();
+        const expira = new Date(Date.now() + RESET_TOKEN_EXPIRY_MS);
+
+        await db.collection("tokens_reset").insertOne({
+          token,
+          usuarioId: admin._id,
+          tipo:      "admin",
+          expira
+        });
+
+        const baseUrl = `${req.protocol}://${req.get("host")}`;
+        const link    = `${baseUrl}/reset-senha?token=${token}`;
+
+        await transporter.sendMail({
+          from:    `"Painel Soneda" <${process.env.EMAIL_USER}>`,
+          to:      admin.email,
+          subject: "Redefinição de senha — Administração Painel Soneda",
+          html: `
+            <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#0d0f14;color:#e8ecf5;border-radius:12px">
+              <h2 style="font-size:1.4rem;margin-bottom:8px;color:#c8f135">Redefinição de senha</h2>
+              <p style="color:#8891aa;font-size:0.9rem;margin-bottom:24px">Painel Soneda · Administração</p>
+              <p style="margin-bottom:20px">Olá, <strong>${admin.usuario}</strong>.</p>
+              <p style="margin-bottom:24px">Recebemos uma solicitação para redefinir a senha de administrador. Clique no botão abaixo para criar uma nova senha. O link é válido por <strong>30 minutos</strong> e pode ser usado apenas uma vez.</p>
+              <a href="${link}" style="display:inline-block;background:#c8f135;color:#0d0f14;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.9rem;margin-bottom:24px">
+                Redefinir minha senha
+              </a>
+              <p style="color:#5a6080;font-size:0.78rem;margin-top:24px;border-top:1px solid #252a3a;padding-top:16px">
+                Se você não solicitou a redefinição de senha, ignore este e-mail.<br><br>
+                Link alternativo: <a href="${link}" style="color:#c8f135">${link}</a>
+              </p>
+            </div>
+          `
+        });
+
+        console.log(`📧 E-mail de reset admin enviado para ${admin.email}`);
+        res.json(respostaNeutra);
+      } catch (error) {
+        console.error("❌ Erro ao enviar e-mail de reset admin:", error.code, error.message);
+        res.status(500).json({
+          erro:    "Erro ao enviar e-mail. Tente novamente.",
+          detalhe: `[${error.code || "ERR"}] ${error.message}`
+        });
+      }
     });
 
     // ─────────────────────────────────────

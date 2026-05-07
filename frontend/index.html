@@ -452,6 +452,27 @@
       </div>
       <button class="btn-login" onclick="guLogin()">Entrar</button>
       <div id="gu-login-err" class="login-err"></div>
+      <div style="text-align:center;margin-top:16px">
+        <button type="button" onclick="guMostrarReset()" style="background:none;border:none;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.72rem;cursor:pointer;text-decoration:underline;text-underline-offset:3px;transition:color .2s" onmouseover="this.style.color='var(--text-dim)'" onmouseout="this.style.color='var(--muted)'">Esqueci minha senha</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TELA DE RESET DE SENHA (admin) -->
+  <div id="gu-reset" class="login-wrap" style="display:none">
+    <div class="login-box">
+      <h2>Redefinir Senha</h2>
+      <p>Digite seu nome de usuário de administrador. Enviaremos um link para o e-mail cadastrado.</p>
+      <div class="login-field">
+        <label>Usuário</label>
+        <input type="text" id="gu-reset-usuario" placeholder="seu usuário" autocomplete="username"
+               onkeydown="if(event.key==='Enter') guSolicitarReset()" />
+      </div>
+      <button class="btn-login" onclick="guSolicitarReset()">Enviar link</button>
+      <div id="gu-reset-msg" class="login-err" style="color:var(--accent2)"></div>
+      <div style="text-align:center;margin-top:16px">
+        <button type="button" onclick="guVoltarLogin()" style="background:none;border:none;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.72rem;cursor:pointer;text-decoration:underline;text-underline-offset:3px;transition:color .2s" onmouseover="this.style.color='var(--text-dim)'" onmouseout="this.style.color='var(--muted)'">← Voltar ao login</button>
+      </div>
     </div>
   </div>
 
@@ -3584,16 +3605,19 @@ function guGetToken() {
 }
 
 function guAtualizarUI() {
-  const token   = guGetToken();
-  const loginEl = document.getElementById('gu-login');
+  const token    = guGetToken();
+  const loginEl  = document.getElementById('gu-login');
+  const resetEl  = document.getElementById('gu-reset');
   const painelEl = document.getElementById('gu-painel');
   if (!loginEl || !painelEl) return;
   if (token) {
     loginEl.style.display  = 'none';
+    resetEl.style.display  = 'none';
     painelEl.style.display = 'block';
     guCarregarUsuarios();
   } else {
-    loginEl.style.display  = 'flex';
+    // só mostra o login se a tela de reset não estiver ativa
+    if (resetEl.style.display !== 'flex') loginEl.style.display = 'flex';
     painelEl.style.display = 'none';
   }
 }
@@ -3755,6 +3779,55 @@ async function importSolicitarReset() {
     msgEl.style.color = 'var(--accent2)';
     msgEl.textContent = data.mensagem;
     document.getElementById('reset-usuario').value = '';
+  } catch (err) {
+    msgEl.style.color = '#ff6b6b';
+    msgEl.textContent = err.message;
+  }
+}
+
+// ── RESET DE SENHA (login de administração) ──────────────────────────────────
+
+function guMostrarReset() {
+  document.getElementById('gu-login').style.display = 'none';
+  document.getElementById('gu-reset').style.display = 'flex';
+  document.getElementById('gu-reset-usuario').value = '';
+  document.getElementById('gu-reset-msg').textContent = '';
+  setTimeout(() => document.getElementById('gu-reset-usuario').focus(), 50);
+}
+
+function guVoltarLogin() {
+  document.getElementById('gu-reset').style.display = 'none';
+  document.getElementById('gu-login').style.display  = 'flex';
+}
+
+async function guSolicitarReset() {
+  const usuario = document.getElementById('gu-reset-usuario').value.trim();
+  const msgEl   = document.getElementById('gu-reset-msg');
+  msgEl.style.color = 'var(--accent2)';
+  msgEl.textContent = '';
+
+  if (!usuario) {
+    msgEl.style.color = '#ff6b6b';
+    msgEl.textContent = 'Informe o nome de usuário.';
+    return;
+  }
+
+  try {
+    msgEl.style.color = 'var(--text-dim)';
+    msgEl.textContent = 'Enviando...';
+
+    const res  = await fetch(`${API_BASE}/api/admin/solicitar-reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario })
+    });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.detalhe || data.erro || 'Erro ao solicitar reset.');
+
+    msgEl.style.color = 'var(--accent2)';
+    msgEl.textContent = data.mensagem;
+    document.getElementById('gu-reset-usuario').value = '';
   } catch (err) {
     msgEl.style.color = '#ff6b6b';
     msgEl.textContent = err.message;
