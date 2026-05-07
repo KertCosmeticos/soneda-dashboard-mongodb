@@ -411,7 +411,7 @@
       <div class="import-row">
         <div class="import-label">Dados Brutos</div>
         <input class="import-file" type="file" id="csvDadosBrutos" accept=".csv,text/csv" />
-        <a class="btn-modelo" href="/templates/modelo_dados_brutos.csv" download="modelo_dados_brutos.csv">
+        <a class="btn-modelo" href="/api/templates/modelo_dados_brutos.csv" download="modelo_dados_brutos.csv">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Modelo
         </a>
@@ -420,7 +420,7 @@
       <div class="import-row">
         <div class="import-label">De/Para Categorias</div>
         <input class="import-file" type="file" id="csvCategorias" accept=".csv,text/csv" />
-        <a class="btn-modelo" href="/templates/modelo_categorias_depara.csv" download="modelo_categorias_depara.csv">
+        <a class="btn-modelo" href="/api/templates/modelo_categorias_depara.csv" download="modelo_categorias_depara.csv">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Modelo
         </a>
@@ -429,7 +429,7 @@
       <div class="import-row">
         <div class="import-label">De/Para Lojas</div>
         <input class="import-file" type="file" id="csvLojas" accept=".csv,text/csv" />
-        <a class="btn-modelo" href="/templates/modelo_lojas_depara.csv" download="modelo_lojas_depara.csv">
+        <a class="btn-modelo" href="/api/templates/modelo_lojas_depara.csv" download="modelo_lojas_depara.csv">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Modelo
         </a>
@@ -510,6 +510,7 @@
     <div class="gu-subtabs-nav">
       <button class="gu-subtab-btn active" onclick="guMudarSubAba('importacao', this)">Usuários de Importação</button>
       <button class="gu-subtab-btn" onclick="guMudarSubAba('admins', this)">Administradores</button>
+      <button class="gu-subtab-btn" onclick="guMudarSubAba('modelos', this)">Modelos de Importação</button>
     </div>
 
     <!-- Sub-aba: Importação -->
@@ -558,6 +559,28 @@
         </table>
       </div>
       <div id="gu-admins-msg" class="gu-msg"></div>
+    </div>
+
+    <!-- Sub-aba: Modelos de Importação -->
+    <div id="gu-sub-modelos" class="gu-subpanel">
+      <p style="font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--text-dim);margin-bottom:20px;line-height:1.6">
+        Arquivos CSV usados como modelo na área de importação. Clique em <strong style="color:var(--text)">Subir Novo</strong> para substituir um modelo pelo seu arquivo atualizado.
+      </p>
+      <div class="gu-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Arquivo</th>
+              <th>Última atualização</th>
+              <th style="text-align:right">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="gu-modelos-tbody">
+            <tr><td colspan="3"><div class="no-data">Carregando...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="gu-modelos-msg" class="gu-msg"></div>
     </div>
 
   </div>
@@ -4110,7 +4133,86 @@ function guMudarSubAba(aba, btn) {
   document.querySelectorAll('.gu-subpanel').forEach(p => p.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('gu-sub-' + aba).classList.add('active');
-  if (aba === 'admins') guCarregarAdmins();
+  if (aba === 'admins')   guCarregarAdmins();
+  if (aba === 'modelos')  guCarregarModelos();
+}
+
+// ── MODELOS DE IMPORTAÇÃO ─────────────────────────────────────────────────────
+
+async function guCarregarModelos() {
+  const token  = guGetToken();
+  const tbody  = document.getElementById('gu-modelos-tbody');
+  if (!tbody) return;
+
+  tbody.innerHTML = '<tr><td colspan="3"><div class="no-data"><div class="spinner"></div></div></td></tr>';
+
+  try {
+    const res = await fetch(`${API_BASE}/api/admin/templates`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.status === 401) { sessionStorage.removeItem('gu_token'); guAtualizarUI(); return; }
+
+    const templates = await res.json();
+
+    tbody.innerHTML = templates.map(t => {
+      const atualizado = t.atualizadoEm
+        ? new Date(t.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : '—';
+      return `
+        <tr>
+          <td>
+            <div style="font-family:'DM Mono',monospace;font-size:0.82rem;color:var(--text)">${escHtml(t.nome)}</div>
+            <div style="font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--muted);margin-top:2px">${escHtml(t.filename)}</div>
+          </td>
+          <td class="td-date">${atualizado}</td>
+          <td>
+            <div class="td-actions">
+              <a class="btn-gu senha" href="/api/templates/${escHtml(t.filename)}" download="${escHtml(t.filename)}" style="text-decoration:none">↓ Baixar</a>
+              <label class="btn-gu novo" style="cursor:pointer;margin:0">
+                ↑ Subir Novo
+                <input type="file" accept=".csv,text/csv" style="display:none"
+                       onchange="guFazUploadModelo('${escHtml(t.filename)}', this)" />
+              </label>
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
+
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="3"><div class="no-data err">Erro ao carregar modelos.</div></td></tr>';
+  }
+}
+
+async function guFazUploadModelo(filename, inputEl) {
+  const file    = inputEl.files[0];
+  const msgEl   = document.getElementById('gu-modelos-msg');
+  const token   = guGetToken();
+  if (!file) return;
+
+  msgEl.className  = 'gu-msg';
+  msgEl.textContent = `Enviando ${file.name}...`;
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const res  = await fetch(`${API_BASE}/api/admin/templates/${encodeURIComponent(filename)}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.erro || 'Erro ao subir modelo.');
+
+    msgEl.className  = 'gu-msg ok';
+    msgEl.textContent = `Modelo "${filename}" atualizado com sucesso.`;
+    inputEl.value = '';
+    guCarregarModelos();
+    setTimeout(() => { if (msgEl.textContent.includes(filename)) msgEl.textContent = ''; }, 4000);
+  } catch (err) {
+    msgEl.className  = 'gu-msg err';
+    msgEl.textContent = err.message;
+  }
 }
 
 // ── GESTÃO DE ADMINISTRADORES ─────────────────────────────────────────────────

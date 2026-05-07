@@ -121,6 +121,32 @@ async function iniciarServidor() {
       console.log(`👤 Usuário de importação inicial criado: ${process.env.ADMIN_USER}`);
     }
 
+    // Seed templates de importação
+    const templatesSeed = [
+      {
+        filename: "modelo_dados_brutos.csv",
+        nome:     "Dados Brutos",
+        conteudo: "Data;Loja;GTIN/PLU;Venda Pdv Quantidade;Venda Pdv Valor\n01/01/2025;001;7891234567890;10;150.00\n"
+      },
+      {
+        filename: "modelo_categorias_depara.csv",
+        nome:     "De/Para Categorias",
+        conteudo: "CODBARRAS;CATEGORIA;FAMILIA;NOME PRODUTO\n7891234567890;Cosméticos;Hidratantes;Creme Hidratante Corporal 200ml\n"
+      },
+      {
+        filename: "modelo_lojas_depara.csv",
+        nome:     "De/Para Lojas",
+        conteudo: "Cod_Loja;Nome_Fantasia\n001;Loja Centro\n"
+      }
+    ];
+    for (const t of templatesSeed) {
+      const existe = await db.collection("templates_importacao").findOne({ filename: t.filename });
+      if (!existe) {
+        await db.collection("templates_importacao").insertOne({ ...t, atualizadoEm: new Date() });
+        console.log(`📄 Template criado: ${t.filename}`);
+      }
+    }
+
     // Seed super-admin no MongoDB (permite reset de senha por e-mail)
     const adminExistente = await db.collection("usuarios_admin").findOne({ usuario: process.env.ADMIN_USER });
     if (!adminExistente && process.env.ADMIN_USER && process.env.ADMIN_PASSWORD) {
@@ -151,6 +177,62 @@ async function iniciarServidor() {
 
     app.get("/reset-senha", (req, res) => {
       res.sendFile(path.join(frontendPath, "reset-senha.html"));
+    });
+
+    // ─────────────────────────────────────
+    // TEMPLATES DE IMPORTAÇÃO
+    // ─────────────────────────────────────
+
+    // Download público — sem autenticação
+    app.get("/api/templates/:filename", async (req, res) => {
+      try {
+        const template = await db.collection("templates_importacao").findOne({ filename: req.params.filename });
+        if (!template) return res.status(404).json({ erro: "Template não encontrado." });
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="${template.filename}"`);
+        res.send("﻿" + template.conteudo); // BOM para compatibilidade com Excel
+      } catch (error) {
+        res.status(500).json({ erro: "Erro ao buscar template." });
+      }
+    });
+
+    // Listar templates (admin)
+    app.get("/api/admin/templates", verificarTokenAdmin, async (req, res) => {
+      try {
+        const templates = await db
+          .collection("templates_importacao")
+          .find({}, { projection: { conteudo: 0 } })
+          .sort({ nome: 1 })
+          .toArray();
+        res.json(templates);
+      } catch (error) {
+        res.status(500).json({ erro: "Erro ao listar templates." });
+      }
+    });
+
+    // Upload / substituir template (admin)
+    app.put("/api/admin/templates/:filename", verificarTokenAdmin, upload.single("file"), async (req, res) => {
+      const { filename } = req.params;
+      if (!req.file) return res.status(400).json({ erro: "Nenhum arquivo enviado." });
+
+      try {
+        const conteudo = fs.readFileSync(req.file.path, "utf-8");
+        fs.unlinkSync(req.file.path);
+
+        const result = await db.collection("templates_importacao").updateOne(
+          { filename },
+          { $set: { conteudo, atualizadoEm: new Date() } }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ erro: "Template não encontrado. Verifique o nome do arquivo." });
+        }
+
+        res.json({ ok: true });
+      } catch (error) {
+        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        res.status(500).json({ erro: "Erro ao salvar template.", detalhe: error.message });
+      }
     });
 
     // ─────────────────────────────────────
