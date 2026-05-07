@@ -216,11 +216,11 @@ async function iniciarServidor() {
         console.log(`📧 E-mail de reset enviado para ${user.email}`);
         res.json(respostaNeutra);
       } catch (error) {
-        console.error("❌ Erro ao enviar e-mail de reset:");
-        console.error("   code:", error.code);
-        console.error("   message:", error.message);
-        console.error("   response:", error.response);
-        res.status(500).json({ erro: "Erro ao enviar e-mail. Tente novamente." });
+        console.error("❌ Erro ao enviar e-mail de reset:", error.code, error.message);
+        res.status(500).json({
+          erro: "Erro ao enviar e-mail. Tente novamente.",
+          detalhe: `[${error.code || "ERR"}] ${error.message}`
+        });
       }
     });
 

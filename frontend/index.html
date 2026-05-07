@@ -3750,7 +3750,7 @@ async function importSolicitarReset() {
     });
     const data = await res.json();
 
-    if (!res.ok) throw new Error(data.erro || 'Erro ao solicitar reset.');
+    if (!res.ok) throw new Error(data.detalhe || data.erro || 'Erro ao solicitar reset.');
 
     msgEl.style.color = 'var(--accent2)';
     msgEl.textContent = data.mensagem;
