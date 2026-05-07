@@ -96,7 +96,7 @@ function verificarTokenAdmin(req, res, next) {
 // ─────────────────────────────────────────
 function limparValor(valor) {
   if (valor === undefined || valor === null) return "";
-  return String(valor).trim();
+  return String(valor).replace(/^﻿/, '').trim();
 }
 
 // ─────────────────────────────────────────
@@ -127,7 +127,7 @@ async function iniciarServidor() {
       {
         filename: "modelo_dados_brutos.csv",
         nome:     "Dados Brutos",
-        conteudo: "Data;Loja;GTIN/PLU;Venda Pdv Quantidade;Venda Pdv Valor\n01/01/2025;001;7891234567890;10;150.00\n"
+        conteudo: "Ano;Mês;Loja;GTIN/PLU;Produto;Venda (Qtd);Venda (R$)\n2025;Jan;001;7891234567890;Produto Exemplo;10;150,00\n"
       },
       {
         filename: "modelo_categorias_depara.csv",
@@ -670,8 +670,8 @@ async function iniciarServidor() {
           {
             $group: {
               _id: null,
-              total_vendido: { $sum: { $toDouble: { $ifNull: ["$Venda Pdv Quantidade", 0] } } },
-              total_valor:   { $sum: { $toDouble: { $ifNull: ["$Venda Pdv Valor", 0] } } },
+              total_vendido: { $sum: { $toDouble: { $ifNull: [{ $getField: "Venda (Qtd)" }, 0] } } },
+              total_valor:   { $sum: { $toDouble: { $ifNull: [{ $getField: "Venda (R$)" }, 0] } } },
               lojas:         { $addToSet: "$Loja" }
             }
           },
@@ -693,7 +693,7 @@ async function iniciarServidor() {
           {
             $group: {
               _id: "$Loja",
-              total_venda: { $sum: { $toDouble: { $ifNull: ["$Venda Pdv Valor", 0] } } }
+              total_venda: { $sum: { $toDouble: { $ifNull: [{ $getField: "Venda (R$)" }, 0] } } }
             }
           },
           { $sort: { total_venda: -1 } },
@@ -743,11 +743,11 @@ async function iniciarServidor() {
         const resultado = await db.collection("dados_brutos").aggregate([
           {
             $group: {
-              _id: "$Data",
-              total_venda: { $sum: { $toDouble: { $ifNull: ["$Venda Pdv Valor", 0] } } }
+              _id: { ano: "$Ano", mes: "$Mês" },
+              total_venda: { $sum: { $toDouble: { $ifNull: [{ $getField: "Venda (R$)" }, 0] } } }
             }
           },
-          { $sort: { _id: 1 } }
+          { $sort: { "_id.ano": 1, "_id.mes": 1 } }
         ]).toArray();
         res.json(resultado);
       } catch (error) {

@@ -1432,7 +1432,24 @@ async function init() {
     }
 
     const todas = Array.isArray(brutosRes.value) ? brutosRes.value : [];
-    rawData = todas.filter(r => r && typeof r === 'object' && Object.keys(r).some(k => k !== '_id' && k !== 'importado_em' && r[k] !== null && r[k] !== ''));
+    rawData = todas
+      .filter(r => r && typeof r === 'object' && Object.keys(r).some(k => k !== '_id' && k !== 'importado_em' && r[k] !== null && r[k] !== ''))
+      .map(r => {
+        // Strip BOM (﻿) from field names (e.g. first column from Excel CSV exports)
+        const c = {};
+        Object.keys(r).forEach(k => { c[k.replace(/^﻿/, '')] = r[k]; });
+        // Synthesize Data (DD/MM/YYYY) from Mês + Ano when no Data column exists
+        if (!c.Data && !c.data) {
+          const MN = { Jan:1,Fev:2,Mar:3,Abr:4,Mai:5,Jun:6,Jul:7,Ago:8,Set:9,Out:10,Nov:11,Dez:12 };
+          const mes = c['Mês'] || c['Mes'] || '';
+          const ano = c['Ano'] || '';
+          const mesNum = MN[mes] || parseInt(mes);
+          if (mesNum && ano && !isNaN(parseInt(ano))) {
+            c.Data = `01/${String(mesNum).padStart(2,'0')}/${ano}`;
+          }
+        }
+        return c;
+      });
 
     if (resumoRes.status === 'fulfilled') {
       const resumo = resumoRes.value || {};
