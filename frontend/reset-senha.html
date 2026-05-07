@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Redefinir Senha · Painel Soneda</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Figtree:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #0d0f14;
+    --surface:  #141720;
+    --border:   #252a3a;
+    --accent:   #c8f135;
+    --accent2:  #4fffb0;
+    --muted:    #5a6080;
+    --text:     #e8ecf5;
+    --text-dim: #8891aa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Figtree', sans-serif;
+    font-weight: 300;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    padding: 24px 40px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .logo { font-family: 'DM Serif Display', serif; font-size: 1.6rem; letter-spacing: -0.5px; }
+  .logo span { color: var(--accent); }
+
+  .wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 24px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 40px 48px;
+    width: 100%;
+    max-width: 420px;
+  }
+  .card h2 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.6rem;
+    font-style: italic;
+    margin-bottom: 6px;
+  }
+  .card p {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-bottom: 28px;
+    line-height: 1.6;
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .field label {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--accent);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .input-wrap { position: relative; }
+  .field input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 42px 10px 14px;
+    border-radius: 8px;
+    font-family: 'Figtree', sans-serif;
+    font-size: 0.9rem;
+    transition: border-color .2s;
+    width: 100%;
+  }
+  .field input:focus { outline: none; border-color: var(--accent); }
+  .btn-olho {
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; cursor: pointer; color: var(--muted);
+    padding: 0; display: flex; align-items: center; transition: color .2s;
+  }
+  .btn-olho:hover { color: var(--text); }
+  .btn-submit {
+    width: 100%;
+    margin-top: 8px;
+    background: var(--accent);
+    border: none;
+    color: var(--bg);
+    padding: 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.82rem;
+    font-weight: 500;
+    letter-spacing: .5px;
+    transition: filter .2s;
+  }
+  .btn-submit:hover { filter: brightness(1.1); }
+  .btn-submit:disabled { opacity: .5; cursor: default; }
+  .msg {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    min-height: 18px;
+    margin-top: 12px;
+    text-align: center;
+    line-height: 1.5;
+  }
+  .msg.ok  { color: var(--accent2); }
+  .msg.err { color: #ff6b6b; }
+
+  /* Estado de token inválido */
+  .estado-invalido {
+    text-align: center;
+    padding: 10px 0;
+  }
+  .estado-invalido .icone {
+    font-size: 2.4rem;
+    margin-bottom: 12px;
+  }
+  .estado-invalido h3 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.3rem;
+    font-style: italic;
+    margin-bottom: 8px;
+    color: #ff6b6b;
+  }
+  .estado-invalido p {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+  .btn-voltar {
+    display: inline-block;
+    margin-top: 20px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+    background: none;
+    border: none;
+  }
+  .btn-voltar:hover { color: var(--text); }
+
+  /* Estado de sucesso */
+  .estado-sucesso {
+    text-align: center;
+    padding: 10px 0;
+  }
+  .estado-sucesso .icone { font-size: 2.4rem; margin-bottom: 12px; }
+  .estado-sucesso h3 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.3rem;
+    font-style: italic;
+    margin-bottom: 8px;
+    color: var(--accent2);
+  }
+  .estado-sucesso p {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    line-height: 1.6;
+    margin-bottom: 20px;
+  }
+  .btn-ir {
+    background: var(--accent);
+    border: none;
+    color: var(--bg);
+    padding: 10px 28px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    font-weight: 500;
+    transition: filter .2s;
+    text-decoration: none;
+    display: inline-block;
+  }
+  .btn-ir:hover { filter: brightness(1.1); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Soneda<span>.</span></div>
+</header>
+
+<div class="wrap">
+  <div class="card">
+
+    <!-- Estado: verificando token -->
+    <div id="estado-carregando">
+      <div style="display:flex;align-items:center;gap:12px;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.8rem">
+        <div style="width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0"></div>
+        Verificando link...
+      </div>
+    </div>
+
+    <!-- Estado: token inválido/expirado -->
+    <div id="estado-invalido" class="estado-invalido" style="display:none">
+      <div class="icone">&#x26A0;&#xFE0F;</div>
+      <h3>Link inválido ou expirado</h3>
+      <p>Este link de redefinição não é válido ou já foi utilizado.<br>Links são válidos por 30 minutos e podem ser usados apenas uma vez.</p>
+      <button class="btn-voltar" onclick="window.location.href='/'">← Voltar ao painel</button>
+    </div>
+
+    <!-- Estado: formulário de nova senha -->
+    <div id="estado-form" style="display:none">
+      <h2>Nova Senha</h2>
+      <p>Escolha uma nova senha para sua conta no Painel Soneda.</p>
+      <div class="field">
+        <label>Nova senha</label>
+        <div class="input-wrap">
+          <input type="password" id="nova-senha" placeholder="nova senha" autocomplete="new-password"
+                 onkeydown="if(event.key==='Enter') document.getElementById('confirmar-senha').focus()" />
+          <button type="button" class="btn-olho" onclick="toggleSenha('nova-senha','icone-nova')" title="Mostrar/ocultar">
+            <svg id="icone-nova" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Confirmar senha</label>
+        <div class="input-wrap">
+          <input type="password" id="confirmar-senha" placeholder="confirme a senha" autocomplete="new-password"
+                 onkeydown="if(event.key==='Enter') redefinir()" />
+          <button type="button" class="btn-olho" onclick="toggleSenha('confirmar-senha','icone-confirmar')" title="Mostrar/ocultar">
+            <svg id="icone-confirmar" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <button class="btn-submit" id="btn-redefinir" onclick="redefinir()">Salvar nova senha</button>
+      <div id="form-msg" class="msg"></div>
+    </div>
+
+    <!-- Estado: sucesso -->
+    <div id="estado-sucesso" class="estado-sucesso" style="display:none">
+      <div class="icone">&#x2705;</div>
+      <h3>Senha redefinida!</h3>
+      <p>Sua senha foi atualizada com sucesso.<br>Você já pode fazer login com a nova senha.</p>
+      <a class="btn-ir" href="/">Ir para o painel</a>
+    </div>
+
+  </div>
+</div>
+
+<style>
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<script>
+  const token = new URLSearchParams(window.location.search).get('token');
+
+  function mostrarEstado(id) {
+    ['estado-carregando','estado-invalido','estado-form','estado-sucesso']
+      .forEach(e => document.getElementById(e).style.display = 'none');
+    document.getElementById(id).style.display = 'block';
+  }
+
+  function toggleSenha(inputId, iconeId) {
+    const input = document.getElementById(inputId);
+    const icone = document.getElementById(iconeId);
+    const mostrar = input.type === 'password';
+    input.type = mostrar ? 'text' : 'password';
+    icone.innerHTML = mostrar
+      ? `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+         <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+         <line x1="1" y1="1" x2="23" y2="23"/>`
+      : `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+         <circle cx="12" cy="12" r="3"/>`;
+  }
+
+  // Verifica se o token é válido tentando um redefinir com senha vazia
+  // (o back vai recusar com 400, mas se o token fosse inválido retornaria 400 também —
+  // então usamos um endpoint de validação implícito: tentamos um PUT e vemos se o token existe)
+  // Na verdade, o melhor é só exibir o formulário e validar quando o usuário submeter.
+  // O MongoDB TTL já expirou tokens antigos automaticamente.
+  if (!token) {
+    mostrarEstado('estado-invalido');
+  } else {
+    mostrarEstado('estado-form');
+    setTimeout(() => document.getElementById('nova-senha').focus(), 100);
+  }
+
+  async function redefinir() {
+    const novaSenha      = document.getElementById('nova-senha').value;
+    const confirmarSenha = document.getElementById('confirmar-senha').value;
+    const msgEl          = document.getElementById('form-msg');
+    const btn            = document.getElementById('btn-redefinir');
+
+    msgEl.className = 'msg';
+    msgEl.textContent = '';
+
+    if (!novaSenha) {
+      msgEl.className = 'msg err';
+      msgEl.textContent = 'Informe a nova senha.';
+      return;
+    }
+    if (novaSenha !== confirmarSenha) {
+      msgEl.className = 'msg err';
+      msgEl.textContent = 'As senhas não coincidem.';
+      return;
+    }
+    if (novaSenha.length < 6) {
+      msgEl.className = 'msg err';
+      msgEl.textContent = 'A senha precisa ter pelo menos 6 caracteres.';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Salvando...';
+
+    try {
+      const res  = await fetch('/api/redefinir-senha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, novaSenha })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        // Token inválido ou expirado
+        mostrarEstado('estado-invalido');
+        return;
+      }
+
+      mostrarEstado('estado-sucesso');
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'Salvar nova senha';
+      msgEl.className = 'msg err';
+      msgEl.textContent = 'Erro de conexão. Tente novamente.';
+    }
+  }
+</script>
+
+</body>
+</html>

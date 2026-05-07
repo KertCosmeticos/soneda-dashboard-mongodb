@@ -370,6 +370,27 @@
       </div>
       <button class="btn-login" onclick="admLogin()">Entrar</button>
       <div id="login-err" class="login-err"></div>
+      <div style="text-align:center;margin-top:16px">
+        <button type="button" onclick="importMostrarReset()" style="background:none;border:none;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.72rem;cursor:pointer;text-decoration:underline;text-underline-offset:3px;transition:color .2s" onmouseover="this.style.color='var(--text-dim)'" onmouseout="this.style.color='var(--muted)'">Esqueci minha senha</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TELA DE RESET DE SENHA (importação) -->
+  <div id="import-reset" class="login-wrap" style="display:none">
+    <div class="login-box">
+      <h2>Redefinir Senha</h2>
+      <p>Digite seu nome de usuário. Se houver um e-mail cadastrado, enviaremos um link para criar uma nova senha.</p>
+      <div class="login-field">
+        <label>Usuário</label>
+        <input type="text" id="reset-usuario" placeholder="seu usuário" autocomplete="username"
+               onkeydown="if(event.key==='Enter') importSolicitarReset()" />
+      </div>
+      <button class="btn-login" onclick="importSolicitarReset()">Enviar link</button>
+      <div id="reset-msg" class="login-err" style="color:var(--accent2)"></div>
+      <div style="text-align:center;margin-top:16px">
+        <button type="button" onclick="importVoltarLogin()" style="background:none;border:none;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.72rem;cursor:pointer;text-decoration:underline;text-underline-offset:3px;transition:color .2s" onmouseover="this.style.color='var(--text-dim)'" onmouseout="this.style.color='var(--muted)'">← Voltar ao login</button>
+      </div>
     </div>
   </div>
 
@@ -454,12 +475,13 @@
         <thead>
           <tr>
             <th>Usuário</th>
+            <th>E-mail</th>
             <th>Criado em</th>
             <th style="text-align:right">Ações</th>
           </tr>
         </thead>
         <tbody id="gu-tbody">
-          <tr><td colspan="3"><div class="no-data">Carregando...</div></td></tr>
+          <tr><td colspan="4"><div class="no-data">Carregando...</div></td></tr>
         </tbody>
       </table>
     </div>
@@ -480,13 +502,37 @@
     </div>
     <div class="login-field">
       <label>Senha</label>
-      <input type="password" id="modal-novo-senha" placeholder="senha" autocomplete="new-password"
+      <input type="password" id="modal-novo-senha" placeholder="senha" autocomplete="new-password" />
+    </div>
+    <div class="login-field">
+      <label>E-mail <span style="color:var(--muted);font-size:0.65rem;text-transform:none;letter-spacing:0">(para redefinição de senha)</span></label>
+      <input type="email" id="modal-novo-email" placeholder="email@exemplo.com" autocomplete="off"
              onkeydown="if(event.key==='Enter') guConfirmarNovo()" />
     </div>
     <div id="modal-novo-err" class="modal-err"></div>
     <div class="modal-actions">
       <button class="btn-modal-cancel" onclick="guFecharModal('modal-novo-usuario')">Cancelar</button>
       <button class="btn-modal-ok" onclick="guConfirmarNovo()">Criar Usuário</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Editar E-mail -->
+<div id="modal-editar-email" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <h3>Editar E-mail</h3>
+    <p style="font-family:'DM Mono',monospace;font-size:0.75rem;color:var(--text-dim);margin-bottom:20px">
+      Usuário: <strong id="modal-email-nome" style="color:var(--accent2)"></strong>
+    </p>
+    <div class="login-field">
+      <label>E-mail <span style="color:var(--muted);font-size:0.65rem;text-transform:none;letter-spacing:0">(para redefinição de senha)</span></label>
+      <input type="email" id="modal-email-valor" placeholder="email@exemplo.com"
+             onkeydown="if(event.key==='Enter') guConfirmarEmail()" />
+    </div>
+    <div id="modal-email-err" class="modal-err"></div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="guFecharModal('modal-editar-email')">Cancelar</button>
+      <button class="btn-modal-ok" onclick="guConfirmarEmail()">Salvar E-mail</button>
     </div>
   </div>
 </div>
@@ -3625,14 +3671,20 @@ async function guCarregarUsuarios() {
       const dataCriacao = u.criadoEm
         ? new Date(u.criadoEm).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
         : '—';
-      const id = u._id;
+      const id    = u._id;
+      const email = u.email || '';
+      const emailLabel = email
+        ? `<span style="color:var(--accent2);font-family:'DM Mono',monospace;font-size:0.78rem">${escHtml(email)}</span>`
+        : `<span style="color:var(--muted);font-family:'DM Mono',monospace;font-size:0.74rem;font-style:italic">não cadastrado</span>`;
       return `
         <tr>
           <td class="td-user">${escHtml(u.usuario)}</td>
+          <td>${emailLabel}</td>
           <td class="td-date">${dataCriacao}</td>
           <td>
             <div class="td-actions">
-              <button class="btn-gu senha" onclick="guAbrirModalSenha('${id}','${escHtml(u.usuario)}')">Trocar Senha</button>
+              <button class="btn-gu senha" onclick="guAbrirModalEmail('${id}','${escHtml(u.usuario)}','${escHtml(email)}')">E-mail</button>
+              <button class="btn-gu senha" onclick="guAbrirModalSenha('${id}','${escHtml(u.usuario)}')">Senha</button>
               <button class="btn-gu excluir" onclick="guExcluir('${id}','${escHtml(u.usuario)}')">Excluir</button>
             </div>
           </td>
@@ -3657,9 +3709,96 @@ function guMostrarMsg(texto, tipo) {
   setTimeout(() => { if (el.textContent === texto) el.textContent = ''; }, 4000);
 }
 
+// ── RESET DE SENHA (tela de importação) ──────────────────────────────────────
+
+function importMostrarReset() {
+  document.getElementById('import-login').style.display = 'none';
+  document.getElementById('import-reset').style.display = 'flex';
+  document.getElementById('reset-usuario').value = '';
+  document.getElementById('reset-msg').textContent = '';
+  setTimeout(() => document.getElementById('reset-usuario').focus(), 50);
+}
+
+function importVoltarLogin() {
+  document.getElementById('import-reset').style.display = 'none';
+  document.getElementById('import-login').style.display = 'flex';
+}
+
+async function importSolicitarReset() {
+  const usuario = document.getElementById('reset-usuario').value.trim();
+  const msgEl   = document.getElementById('reset-msg');
+  msgEl.style.color = 'var(--accent2)';
+  msgEl.textContent = '';
+
+  if (!usuario) {
+    msgEl.style.color = '#ff6b6b';
+    msgEl.textContent = 'Informe o nome de usuário.';
+    return;
+  }
+
+  try {
+    msgEl.style.color = 'var(--text-dim)';
+    msgEl.textContent = 'Enviando...';
+
+    const res  = await fetch(`${API_BASE}/api/solicitar-reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario })
+    });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.erro || 'Erro ao solicitar reset.');
+
+    msgEl.style.color = 'var(--accent2)';
+    msgEl.textContent = data.mensagem;
+    document.getElementById('reset-usuario').value = '';
+  } catch (err) {
+    msgEl.style.color = '#ff6b6b';
+    msgEl.textContent = err.message;
+  }
+}
+
+// ── MODAL DE E-MAIL (admin) ───────────────────────────────────────────────────
+
+let guIdEmail = null;
+
+function guAbrirModalEmail(id, nome, emailAtual) {
+  guIdEmail = id;
+  document.getElementById('modal-email-nome').textContent  = nome;
+  document.getElementById('modal-email-valor').value       = emailAtual;
+  document.getElementById('modal-email-err').textContent   = '';
+  document.getElementById('modal-editar-email').style.display = 'flex';
+  setTimeout(() => document.getElementById('modal-email-valor').focus(), 50);
+}
+
+async function guConfirmarEmail() {
+  const email = document.getElementById('modal-email-valor').value.trim();
+  const errEl = document.getElementById('modal-email-err');
+  errEl.textContent = '';
+
+  const token = guGetToken();
+  try {
+    const res  = await fetch(`${API_BASE}/api/admin/usuarios/${guIdEmail}/email`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ email })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.erro || 'Erro ao salvar e-mail.');
+    guFecharModal('modal-editar-email');
+    guMostrarMsg('E-mail atualizado com sucesso.', 'ok');
+    guCarregarUsuarios();
+  } catch (err) {
+    errEl.textContent = err.message;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function guAbrirModalNovo() {
   document.getElementById('modal-novo-user').value  = '';
   document.getElementById('modal-novo-senha').value = '';
+  document.getElementById('modal-novo-email').value = '';
   document.getElementById('modal-novo-err').textContent = '';
   document.getElementById('modal-novo-usuario').style.display = 'flex';
   setTimeout(() => document.getElementById('modal-novo-user').focus(), 50);
@@ -3681,11 +3820,12 @@ function guFecharModal(id) {
 async function guConfirmarNovo() {
   const usuario = document.getElementById('modal-novo-user').value.trim();
   const senha   = document.getElementById('modal-novo-senha').value;
+  const email   = document.getElementById('modal-novo-email').value.trim();
   const errEl   = document.getElementById('modal-novo-err');
   errEl.textContent = '';
 
   if (!usuario || !senha) {
-    errEl.textContent = 'Preencha todos os campos.';
+    errEl.textContent = 'Usuário e senha são obrigatórios.';
     return;
   }
 
@@ -3694,7 +3834,7 @@ async function guConfirmarNovo() {
     const res  = await fetch(`${API_BASE}/api/admin/usuarios`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ usuario, senha })
+      body: JSON.stringify({ usuario, senha, email })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.erro || 'Erro ao criar usuário.');

@@ -6,6 +6,7 @@ const csv = require("csv-parser");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const nodemailer = require("nodemailer");
 require("dotenv").config();
 
 const app = express();
@@ -28,18 +29,29 @@ const client = new MongoClient(uri);
 const upload = multer({ dest: "uploads/" });
 
 // ─────────────────────────────────────────
+// E-MAIL
+// ─────────────────────────────────────────
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+
+// ─────────────────────────────────────────
 // AUTH — SESSÕES
 // ─────────────────────────────────────────
-const sessoes      = new Map(); // tokens de importação
-const sessoesAdmin = new Map(); // tokens de gestão de usuários
+const sessoes      = new Map();
+const sessoesAdmin = new Map();
 
-const TOKEN_EXPIRY_MS = 8 * 60 * 60 * 1000;
+const TOKEN_EXPIRY_MS       = 8 * 60 * 60 * 1000;
+const RESET_TOKEN_EXPIRY_MS = 30 * 60 * 1000; // 30 min
 
 function gerarToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
-// KDF seguro com scrypt
 function hashSenha(senha) {
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto.scryptSync(senha, salt, 64).toString("hex");
@@ -52,39 +64,27 @@ function verificarSenha(senha, hashArmazenado) {
   return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(hashTeste, "hex"));
 }
 
-// Middleware: token de importação
 function verificarToken(req, res, next) {
   const auth  = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-
-  if (!token || !sessoes.has(token)) {
-    return res.status(401).json({ erro: "Não autorizado." });
-  }
-
+  if (!token || !sessoes.has(token)) return res.status(401).json({ erro: "Não autorizado." });
   const sessao = sessoes.get(token);
   if (Date.now() > sessao.expira) {
     sessoes.delete(token);
     return res.status(401).json({ erro: "Sessão expirada." });
   }
-
   next();
 }
 
-// Middleware: token de gestão de usuários (super-admin)
 function verificarTokenAdmin(req, res, next) {
   const auth  = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-
-  if (!token || !sessoesAdmin.has(token)) {
-    return res.status(401).json({ erro: "Não autorizado." });
-  }
-
+  if (!token || !sessoesAdmin.has(token)) return res.status(401).json({ erro: "Não autorizado." });
   const sessao = sessoesAdmin.get(token);
   if (Date.now() > sessao.expira) {
     sessoesAdmin.delete(token);
     return res.status(401).json({ erro: "Sessão expirada." });
   }
-
   next();
 }
 
@@ -107,38 +107,44 @@ async function iniciarServidor() {
     console.log("✅ Conectado ao MongoDB");
     console.log(`📦 Banco em uso: ${dbName}`);
 
-    // Cria usuário inicial de importação a partir das variáveis de ambiente,
-    // caso a coleção esteja vazia.
+    // Seed usuário inicial a partir das variáveis de ambiente
     const totalUsuarios = await db.collection("usuarios_importacao").countDocuments();
     if (totalUsuarios === 0 && process.env.ADMIN_USER && process.env.ADMIN_PASSWORD) {
       await db.collection("usuarios_importacao").insertOne({
-        usuario:   process.env.ADMIN_USER,
-        senha:     hashSenha(process.env.ADMIN_PASSWORD),
+        usuario:  process.env.ADMIN_USER,
+        senha:    hashSenha(process.env.ADMIN_PASSWORD),
+        email:    process.env.EMAIL_USER || "",
         criadoEm: new Date()
       });
       console.log(`👤 Usuário inicial criado: ${process.env.ADMIN_USER}`);
     }
 
+    // Garante índice único no campo usuario
+    await db.collection("usuarios_importacao").createIndex({ usuario: 1 }, { unique: true });
+
+    // TTL automático para tokens de reset expirados
+    await db.collection("tokens_reset").createIndex({ expira: 1 }, { expireAfterSeconds: 0 });
+
     app.get("/", (req, res) => {
       res.sendFile(path.join(frontendPath, "index.html"));
     });
 
+    app.get("/reset-senha", (req, res) => {
+      res.sendFile(path.join(frontendPath, "reset-senha.html"));
+    });
+
     // ─────────────────────────────────────
-    // LOGIN / LOGOUT (área de importação)
+    // LOGIN / LOGOUT (importação)
     // ─────────────────────────────────────
     app.post("/api/login", async (req, res) => {
       const { usuario, senha } = req.body;
-
-      if (!usuario || !senha) {
-        return res.status(401).json({ erro: "Usuário ou senha inválidos." });
-      }
+      if (!usuario || !senha) return res.status(401).json({ erro: "Usuário ou senha inválidos." });
 
       try {
         const user = await db.collection("usuarios_importacao").findOne({ usuario });
         if (!user || !verificarSenha(senha, user.senha)) {
           return res.status(401).json({ erro: "Usuário ou senha inválidos." });
         }
-
         const token = gerarToken();
         sessoes.set(token, { expira: Date.now() + TOKEN_EXPIRY_MS });
         return res.json({ token });
@@ -155,20 +161,101 @@ async function iniciarServidor() {
     });
 
     // ─────────────────────────────────────
+    // RESET DE SENHA (importação)
+    // ─────────────────────────────────────
+    app.post("/api/solicitar-reset", async (req, res) => {
+      const { usuario } = req.body;
+
+      // Sempre responde com a mesma mensagem para não vazar se o usuário existe
+      const respostaNeutra = { ok: true, mensagem: "Se o usuário existir e tiver um e-mail cadastrado, você receberá as instruções em breve." };
+
+      if (!usuario) return res.json(respostaNeutra);
+
+      try {
+        const user = await db.collection("usuarios_importacao").findOne({ usuario });
+        if (!user || !user.email) return res.json(respostaNeutra);
+
+        // Remove tokens antigos do mesmo usuário
+        await db.collection("tokens_reset").deleteMany({ usuarioId: user._id });
+
+        const token = gerarToken();
+        const expira = new Date(Date.now() + RESET_TOKEN_EXPIRY_MS);
+
+        await db.collection("tokens_reset").insertOne({
+          token,
+          usuarioId: user._id,
+          expira
+        });
+
+        const baseUrl = `${req.protocol}://${req.get("host")}`;
+        const link = `${baseUrl}/reset-senha?token=${token}`;
+
+        await transporter.sendMail({
+          from: `"Painel Soneda" <${process.env.EMAIL_USER}>`,
+          to: user.email,
+          subject: "Redefinição de senha — Painel Soneda",
+          html: `
+            <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#0d0f14;color:#e8ecf5;border-radius:12px">
+              <h2 style="font-size:1.4rem;margin-bottom:8px;color:#c8f135">Redefinição de senha</h2>
+              <p style="color:#8891aa;font-size:0.9rem;margin-bottom:24px">Painel Soneda · Área de Importação</p>
+              <p style="margin-bottom:20px">Olá, <strong>${user.usuario}</strong>.</p>
+              <p style="margin-bottom:24px">Recebemos uma solicitação para redefinir sua senha. Clique no botão abaixo para criar uma nova senha. O link é válido por <strong>30 minutos</strong> e pode ser usado apenas uma vez.</p>
+              <a href="${link}" style="display:inline-block;background:#c8f135;color:#0d0f14;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.9rem;margin-bottom:24px">
+                Redefinir minha senha
+              </a>
+              <p style="color:#5a6080;font-size:0.78rem;margin-top:24px;border-top:1px solid #252a3a;padding-top:16px">
+                Se você não solicitou a redefinição de senha, ignore este e-mail. Sua senha permanece a mesma.<br><br>
+                Link alternativo: <a href="${link}" style="color:#c8f135">${link}</a>
+              </p>
+            </div>
+          `
+        });
+
+        console.log(`📧 E-mail de reset enviado para ${user.email}`);
+        res.json(respostaNeutra);
+      } catch (error) {
+        console.error("Erro ao enviar e-mail de reset:", error);
+        res.status(500).json({ erro: "Erro ao enviar e-mail. Tente novamente." });
+      }
+    });
+
+    app.post("/api/redefinir-senha", async (req, res) => {
+      const { token, novaSenha } = req.body;
+      if (!token || !novaSenha) return res.status(400).json({ erro: "Dados inválidos." });
+
+      try {
+        const registro = await db.collection("tokens_reset").findOne({ token });
+
+        if (!registro) return res.status(400).json({ erro: "Link inválido ou já utilizado." });
+        if (new Date() > registro.expira) {
+          await db.collection("tokens_reset").deleteOne({ token });
+          return res.status(400).json({ erro: "Este link expirou. Solicite um novo." });
+        }
+
+        await db.collection("usuarios_importacao").updateOne(
+          { _id: registro.usuarioId },
+          { $set: { senha: hashSenha(novaSenha) } }
+        );
+
+        // Invalida o token imediatamente após uso
+        await db.collection("tokens_reset").deleteOne({ token });
+
+        res.json({ ok: true });
+      } catch (error) {
+        res.status(500).json({ erro: "Erro ao redefinir senha." });
+      }
+    });
+
+    // ─────────────────────────────────────
     // LOGIN / LOGOUT (gestão de usuários)
     // ─────────────────────────────────────
     app.post("/api/admin/login", (req, res) => {
       const { usuario, senha } = req.body;
-
-      if (
-        usuario === process.env.ADMIN_USER &&
-        senha   === process.env.ADMIN_PASSWORD
-      ) {
+      if (usuario === process.env.ADMIN_USER && senha === process.env.ADMIN_PASSWORD) {
         const token = gerarToken();
         sessoesAdmin.set(token, { expira: Date.now() + TOKEN_EXPIRY_MS });
         return res.json({ token });
       }
-
       res.status(401).json({ erro: "Usuário ou senha inválidos." });
     });
 
@@ -196,20 +283,17 @@ async function iniciarServidor() {
     });
 
     app.post("/api/admin/usuarios", verificarTokenAdmin, async (req, res) => {
-      const { usuario, senha } = req.body;
-      if (!usuario || !senha) {
-        return res.status(400).json({ erro: "Usuário e senha são obrigatórios." });
-      }
+      const { usuario, senha, email } = req.body;
+      if (!usuario || !senha) return res.status(400).json({ erro: "Usuário e senha são obrigatórios." });
 
       try {
         const existente = await db.collection("usuarios_importacao").findOne({ usuario });
-        if (existente) {
-          return res.status(400).json({ erro: "Usuário já existe." });
-        }
+        if (existente) return res.status(400).json({ erro: "Usuário já existe." });
 
         await db.collection("usuarios_importacao").insertOne({
           usuario,
           senha:    hashSenha(senha),
+          email:    email ? email.trim().toLowerCase() : "",
           criadoEm: new Date()
         });
         res.json({ ok: true });
@@ -229,10 +313,7 @@ async function iniciarServidor() {
 
     app.put("/api/admin/usuarios/:id/senha", verificarTokenAdmin, async (req, res) => {
       const { senha } = req.body;
-      if (!senha) {
-        return res.status(400).json({ erro: "Nova senha é obrigatória." });
-      }
-
+      if (!senha) return res.status(400).json({ erro: "Nova senha é obrigatória." });
       try {
         await db.collection("usuarios_importacao").updateOne(
           { _id: new ObjectId(req.params.id) },
@@ -244,25 +325,29 @@ async function iniciarServidor() {
       }
     });
 
+    app.put("/api/admin/usuarios/:id/email", verificarTokenAdmin, async (req, res) => {
+      const { email } = req.body;
+      try {
+        await db.collection("usuarios_importacao").updateOne(
+          { _id: new ObjectId(req.params.id) },
+          { $set: { email: email ? email.trim().toLowerCase() : "" } }
+        );
+        res.json({ ok: true });
+      } catch (error) {
+        res.status(500).json({ erro: "Erro ao atualizar e-mail.", detalhe: error.message });
+      }
+    });
+
     // ─────────────────────────────────────
     // CONSULTAS
     // ─────────────────────────────────────
     app.get("/api/dados-brutos", async (req, res) => {
       try {
         const limite = Number(req.query.limite || 5000);
-
-        const dados = await db
-          .collection("dados_brutos")
-          .find({})
-          .limit(limite)
-          .toArray();
-
+        const dados  = await db.collection("dados_brutos").find({}).limit(limite).toArray();
         res.json(dados);
       } catch (error) {
-        res.status(500).json({
-          erro: "Erro ao buscar dados brutos",
-          detalhe: error.message
-        });
+        res.status(500).json({ erro: "Erro ao buscar dados brutos", detalhe: error.message });
       }
     });
 
@@ -308,12 +393,7 @@ async function iniciarServidor() {
                     $map: {
                       input: "$categoria_info",
                       as: "cat",
-                      in: {
-                        $getField: {
-                          field: "NOME PRODUTO",
-                          input: "$$cat"
-                        }
-                      }
+                      in: { $getField: { field: "NOME PRODUTO", input: "$$cat" } }
                     }
                   },
                   0
@@ -322,20 +402,12 @@ async function iniciarServidor() {
               Nome_Loja_DePara: { $arrayElemAt: ["$loja_info.Nome_Fantasia", 0] }
             }
           },
-          {
-            $project: {
-              categoria_info: 0,
-              loja_info: 0
-            }
-          }
+          { $project: { categoria_info: 0, loja_info: 0 } }
         ]).toArray();
 
         res.json(dados);
       } catch (error) {
-        res.status(500).json({
-          erro: "Erro ao buscar dados tratados",
-          detalhe: error.message
-        });
+        res.status(500).json({ erro: "Erro ao buscar dados tratados", detalhe: error.message });
       }
     });
 
@@ -348,58 +420,17 @@ async function iniciarServidor() {
           {
             $group: {
               _id: null,
-
-              total_vendido: {
-                $sum: {
-                  $toDouble: {
-                    $ifNull: ["$Venda Pdv Quantidade", 0]
-                  }
-                }
-              },
-
-              total_valor: {
-                $sum: {
-                  $toDouble: {
-                    $ifNull: ["$Venda Pdv Valor", 0]
-                  }
-                }
-              },
-
-              lojas: {
-                $addToSet: "$Loja"
-              }
+              total_vendido: { $sum: { $toDouble: { $ifNull: ["$Venda Pdv Quantidade", 0] } } },
+              total_valor:   { $sum: { $toDouble: { $ifNull: ["$Venda Pdv Valor", 0] } } },
+              lojas:         { $addToSet: "$Loja" }
             }
           },
-          {
-            $project: {
-              _id: 0,
-              total_vendido: 1,
-              total_valor: 1,
-              total_lojas: {
-                $size: "$lojas"
-              }
-            }
-          }
+          { $project: { _id: 0, total_vendido: 1, total_valor: 1, total_lojas: { $size: "$lojas" } } }
         ];
-
-        const resultado = await db
-          .collection("dados_brutos")
-          .aggregate(pipeline)
-          .toArray();
-
-        res.json(
-          resultado[0] || {
-            total_vendido: 0,
-            total_valor: 0,
-            total_lojas: 0
-          }
-        );
-
+        const resultado = await db.collection("dados_brutos").aggregate(pipeline).toArray();
+        res.json(resultado[0] || { total_vendido: 0, total_valor: 0, total_lojas: 0 });
       } catch (error) {
-        res.status(500).json({
-          erro: "Erro ao gerar resumo",
-          detalhe: error.message
-        });
+        res.status(500).json({ erro: "Erro ao gerar resumo", detalhe: error.message });
       }
     });
 
@@ -412,31 +443,15 @@ async function iniciarServidor() {
           {
             $group: {
               _id: "$Loja",
-              total_venda: {
-                $sum: {
-                  $toDouble: {
-                    $ifNull: ["$Venda Pdv Valor", 0]
-                  }
-                }
-              }
+              total_venda: { $sum: { $toDouble: { $ifNull: ["$Venda Pdv Valor", 0] } } }
             }
           },
-          {
-            $sort: {
-              total_venda: -1
-            }
-          },
-          {
-            $limit: 20
-          }
+          { $sort: { total_venda: -1 } },
+          { $limit: 20 }
         ]).toArray();
-
         res.json(resultado);
       } catch (error) {
-        res.status(500).json({
-          erro: "Erro ao buscar vendas por filial",
-          detalhe: error.message
-        });
+        res.status(500).json({ erro: "Erro ao buscar vendas por filial", detalhe: error.message });
       }
     });
 
@@ -446,25 +461,12 @@ async function iniciarServidor() {
     app.get("/api/dashboard/categorias", async (req, res) => {
       try {
         const resultado = await db.collection("categorias_depara").aggregate([
-          {
-            $group: {
-              _id: "$CATEGORIA",
-              total: { $sum: 1 }
-            }
-          },
-          {
-            $sort: {
-              total: -1
-            }
-          }
+          { $group: { _id: "$CATEGORIA", total: { $sum: 1 } } },
+          { $sort: { total: -1 } }
         ]).toArray();
-
         res.json(resultado);
       } catch (error) {
-        res.status(500).json({
-          erro: "Erro ao buscar categorias",
-          detalhe: error.message
-        });
+        res.status(500).json({ erro: "Erro ao buscar categorias", detalhe: error.message });
       }
     });
 
@@ -474,25 +476,12 @@ async function iniciarServidor() {
     app.get("/api/dashboard/familias", async (req, res) => {
       try {
         const resultado = await db.collection("categorias_depara").aggregate([
-          {
-            $group: {
-              _id: "$FAMILIA",
-              total: { $sum: 1 }
-            }
-          },
-          {
-            $sort: {
-              total: -1
-            }
-          }
+          { $group: { _id: "$FAMILIA", total: { $sum: 1 } } },
+          { $sort: { total: -1 } }
         ]).toArray();
-
         res.json(resultado);
       } catch (error) {
-        res.status(500).json({
-          erro: "Erro ao buscar famílias",
-          detalhe: error.message
-        });
+        res.status(500).json({ erro: "Erro ao buscar famílias", detalhe: error.message });
       }
     });
 
@@ -505,122 +494,72 @@ async function iniciarServidor() {
           {
             $group: {
               _id: "$Data",
-              total_venda: {
-                $sum: {
-                  $toDouble: {
-                    $ifNull: ["$Venda Pdv Valor", 0]
-                  }
-                }
-              }
+              total_venda: { $sum: { $toDouble: { $ifNull: ["$Venda Pdv Valor", 0] } } }
             }
           },
-          {
-            $sort: {
-              _id: 1
-            }
-          }
+          { $sort: { _id: 1 } }
         ]).toArray();
-
         res.json(resultado);
       } catch (error) {
-        res.status(500).json({
-          erro: "Erro ao buscar vendas por dia",
-          detalhe: error.message
-        });
+        res.status(500).json({ erro: "Erro ao buscar vendas por dia", detalhe: error.message });
       }
     });
 
     // ─────────────────────────────────────
     // IMPORTAÇÕES (PROTEGIDAS)
     // ─────────────────────────────────────
-    app.post(
-      "/api/importar/dados-brutos",
-      verificarToken,
-      upload.single("file"),
-      async (req, res) => {
-        const resultados = [];
+    app.post("/api/importar/dados-brutos", verificarToken, upload.single("file"), async (req, res) => {
+      const resultados = [];
+      if (!req.file) return res.status(400).json({ erro: "Nenhum arquivo enviado." });
 
-        if (!req.file) {
-          return res.status(400).json({ erro: "Nenhum arquivo enviado." });
-        }
-
-        fs.createReadStream(req.file.path)
-          .pipe(csv({ separator: ";" }))
-          .on("data", (linha) => {
-            const registro = {};
-
-            Object.keys(linha).forEach((coluna) => {
-              const nomeColuna = limparValor(coluna);
-              registro[nomeColuna] = limparValor(linha[coluna]);
-            });
-
-            registro.importado_em = new Date();
-            resultados.push(registro);
-          })
-          .on("end", async () => {
-            if (resultados.length > 0) {
-              await db.collection("dados_brutos").insertMany(resultados);
-            }
-
-            fs.unlinkSync(req.file.path);
-
-            res.json({
-              mensagem: "Importação realizada 🚀",
-              total: resultados.length
-            });
+      fs.createReadStream(req.file.path)
+        .pipe(csv({ separator: ";" }))
+        .on("data", (linha) => {
+          const registro = {};
+          Object.keys(linha).forEach((coluna) => {
+            registro[limparValor(coluna)] = limparValor(linha[coluna]);
           });
-      }
-    );
+          registro.importado_em = new Date();
+          resultados.push(registro);
+        })
+        .on("end", async () => {
+          if (resultados.length > 0) await db.collection("dados_brutos").insertMany(resultados);
+          fs.unlinkSync(req.file.path);
+          res.json({ mensagem: "Importação realizada 🚀", total: resultados.length });
+        });
+    });
 
-    app.post(
-      "/api/importar/categorias-depara",
-      verificarToken,
-      upload.single("file"),
-      async (req, res) => {
-        const resultados = [];
+    app.post("/api/importar/categorias-depara", verificarToken, upload.single("file"), async (req, res) => {
+      const resultados = [];
+      fs.createReadStream(req.file.path)
+        .pipe(csv({ separator: ";" }))
+        .on("data", (linha) => {
+          const registro = {};
+          Object.keys(linha).forEach((coluna) => { registro[coluna.trim()] = linha[coluna].trim(); });
+          resultados.push(registro);
+        })
+        .on("end", async () => {
+          await db.collection("categorias_depara").deleteMany({});
+          await db.collection("categorias_depara").insertMany(resultados);
+          res.json({ mensagem: "Categorias importadas" });
+        });
+    });
 
-        fs.createReadStream(req.file.path)
-          .pipe(csv({ separator: ";" }))
-          .on("data", (linha) => {
-            const registro = {};
-            Object.keys(linha).forEach((coluna) => {
-              registro[coluna.trim()] = linha[coluna].trim();
-            });
-            resultados.push(registro);
-          })
-          .on("end", async () => {
-            await db.collection("categorias_depara").deleteMany({});
-            await db.collection("categorias_depara").insertMany(resultados);
-
-            res.json({ mensagem: "Categorias importadas" });
-          });
-      }
-    );
-
-    app.post(
-      "/api/importar/lojas-depara",
-      verificarToken,
-      upload.single("file"),
-      async (req, res) => {
-        const resultados = [];
-
-        fs.createReadStream(req.file.path)
-          .pipe(csv({ separator: ";" }))
-          .on("data", (linha) => {
-            const registro = {};
-            Object.keys(linha).forEach((coluna) => {
-              registro[coluna.trim()] = linha[coluna].trim();
-            });
-            resultados.push(registro);
-          })
-          .on("end", async () => {
-            await db.collection("lojas_depara").deleteMany({});
-            await db.collection("lojas_depara").insertMany(resultados);
-
-            res.json({ mensagem: "Lojas importadas" });
-          });
-      }
-    );
+    app.post("/api/importar/lojas-depara", verificarToken, upload.single("file"), async (req, res) => {
+      const resultados = [];
+      fs.createReadStream(req.file.path)
+        .pipe(csv({ separator: ";" }))
+        .on("data", (linha) => {
+          const registro = {};
+          Object.keys(linha).forEach((coluna) => { registro[coluna.trim()] = linha[coluna].trim(); });
+          resultados.push(registro);
+        })
+        .on("end", async () => {
+          await db.collection("lojas_depara").deleteMany({});
+          await db.collection("lojas_depara").insertMany(resultados);
+          res.json({ mensagem: "Lojas importadas" });
+        });
+    });
 
     // ─────────────────────────────────────
     app.listen(PORT, () => {
