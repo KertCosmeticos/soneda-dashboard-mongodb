@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const { MongoClient } = require("mongodb");
+const { MongoClient, ObjectId } = require("mongodb");
 const multer = require("multer");
 const csv = require("csv-parser");
 const fs = require("fs");
@@ -28,17 +28,33 @@ const client = new MongoClient(uri);
 const upload = multer({ dest: "uploads/" });
 
 // ─────────────────────────────────────────
-// AUTH (LOGIN ADM)
+// AUTH — SESSÕES
 // ─────────────────────────────────────────
-const sessoes = new Map();
+const sessoes      = new Map(); // tokens de importação
+const sessoesAdmin = new Map(); // tokens de gestão de usuários
+
 const TOKEN_EXPIRY_MS = 8 * 60 * 60 * 1000;
 
 function gerarToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
+// KDF seguro com scrypt
+function hashSenha(senha) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(senha, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+function verificarSenha(senha, hashArmazenado) {
+  const [salt, hash] = hashArmazenado.split(":");
+  const hashTeste = crypto.scryptSync(senha, salt, 64).toString("hex");
+  return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(hashTeste, "hex"));
+}
+
+// Middleware: token de importação
 function verificarToken(req, res, next) {
-  const auth = req.headers.authorization || "";
+  const auth  = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
 
   if (!token || !sessoes.has(token)) {
@@ -46,9 +62,26 @@ function verificarToken(req, res, next) {
   }
 
   const sessao = sessoes.get(token);
-
   if (Date.now() > sessao.expira) {
     sessoes.delete(token);
+    return res.status(401).json({ erro: "Sessão expirada." });
+  }
+
+  next();
+}
+
+// Middleware: token de gestão de usuários (super-admin)
+function verificarTokenAdmin(req, res, next) {
+  const auth  = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+
+  if (!token || !sessoesAdmin.has(token)) {
+    return res.status(401).json({ erro: "Não autorizado." });
+  }
+
+  const sessao = sessoesAdmin.get(token);
+  if (Date.now() > sessao.expira) {
+    sessoesAdmin.delete(token);
     return res.status(401).json({ erro: "Sessão expirada." });
   }
 
@@ -74,36 +107,141 @@ async function iniciarServidor() {
     console.log("✅ Conectado ao MongoDB");
     console.log(`📦 Banco em uso: ${dbName}`);
 
+    // Cria usuário inicial de importação a partir das variáveis de ambiente,
+    // caso a coleção esteja vazia.
+    const totalUsuarios = await db.collection("usuarios_importacao").countDocuments();
+    if (totalUsuarios === 0 && process.env.ADMIN_USER && process.env.ADMIN_PASSWORD) {
+      await db.collection("usuarios_importacao").insertOne({
+        usuario:   process.env.ADMIN_USER,
+        senha:     hashSenha(process.env.ADMIN_PASSWORD),
+        criadoEm: new Date()
+      });
+      console.log(`👤 Usuário inicial criado: ${process.env.ADMIN_USER}`);
+    }
+
     app.get("/", (req, res) => {
       res.sendFile(path.join(frontendPath, "index.html"));
     });
 
     // ─────────────────────────────────────
-    // LOGIN / LOGOUT
+    // LOGIN / LOGOUT (área de importação)
     // ─────────────────────────────────────
-    app.post("/api/login", (req, res) => {
+    app.post("/api/login", async (req, res) => {
+      const { usuario, senha } = req.body;
+
+      if (!usuario || !senha) {
+        return res.status(401).json({ erro: "Usuário ou senha inválidos." });
+      }
+
+      try {
+        const user = await db.collection("usuarios_importacao").findOne({ usuario });
+        if (!user || !verificarSenha(senha, user.senha)) {
+          return res.status(401).json({ erro: "Usuário ou senha inválidos." });
+        }
+
+        const token = gerarToken();
+        sessoes.set(token, { expira: Date.now() + TOKEN_EXPIRY_MS });
+        return res.json({ token });
+      } catch (error) {
+        res.status(500).json({ erro: "Erro ao verificar credenciais." });
+      }
+    });
+
+    app.post("/api/logout", (req, res) => {
+      const auth  = req.headers.authorization || "";
+      const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+      if (token) sessoes.delete(token);
+      res.json({ ok: true });
+    });
+
+    // ─────────────────────────────────────
+    // LOGIN / LOGOUT (gestão de usuários)
+    // ─────────────────────────────────────
+    app.post("/api/admin/login", (req, res) => {
       const { usuario, senha } = req.body;
 
       if (
         usuario === process.env.ADMIN_USER &&
-        senha === process.env.ADMIN_PASSWORD
+        senha   === process.env.ADMIN_PASSWORD
       ) {
         const token = gerarToken();
-        sessoes.set(token, { expira: Date.now() + TOKEN_EXPIRY_MS });
-
+        sessoesAdmin.set(token, { expira: Date.now() + TOKEN_EXPIRY_MS });
         return res.json({ token });
       }
 
       res.status(401).json({ erro: "Usuário ou senha inválidos." });
     });
 
-    app.post("/api/logout", (req, res) => {
-      const auth = req.headers.authorization || "";
+    app.post("/api/admin/logout", (req, res) => {
+      const auth  = req.headers.authorization || "";
       const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-
-      if (token) sessoes.delete(token);
-
+      if (token) sessoesAdmin.delete(token);
       res.json({ ok: true });
+    });
+
+    // ─────────────────────────────────────
+    // GESTÃO DE USUÁRIOS (super-admin)
+    // ─────────────────────────────────────
+    app.get("/api/admin/usuarios", verificarTokenAdmin, async (req, res) => {
+      try {
+        const usuarios = await db
+          .collection("usuarios_importacao")
+          .find({}, { projection: { senha: 0 } })
+          .sort({ criadoEm: 1 })
+          .toArray();
+        res.json(usuarios);
+      } catch (error) {
+        res.status(500).json({ erro: "Erro ao listar usuários.", detalhe: error.message });
+      }
+    });
+
+    app.post("/api/admin/usuarios", verificarTokenAdmin, async (req, res) => {
+      const { usuario, senha } = req.body;
+      if (!usuario || !senha) {
+        return res.status(400).json({ erro: "Usuário e senha são obrigatórios." });
+      }
+
+      try {
+        const existente = await db.collection("usuarios_importacao").findOne({ usuario });
+        if (existente) {
+          return res.status(400).json({ erro: "Usuário já existe." });
+        }
+
+        await db.collection("usuarios_importacao").insertOne({
+          usuario,
+          senha:    hashSenha(senha),
+          criadoEm: new Date()
+        });
+        res.json({ ok: true });
+      } catch (error) {
+        res.status(500).json({ erro: "Erro ao criar usuário.", detalhe: error.message });
+      }
+    });
+
+    app.delete("/api/admin/usuarios/:id", verificarTokenAdmin, async (req, res) => {
+      try {
+        await db.collection("usuarios_importacao").deleteOne({ _id: new ObjectId(req.params.id) });
+        res.json({ ok: true });
+      } catch (error) {
+        res.status(500).json({ erro: "Erro ao excluir usuário.", detalhe: error.message });
+      }
+    });
+
+    app.put("/api/admin/usuarios/:id/senha", verificarTokenAdmin, async (req, res) => {
+      const { senha } = req.body;
+      if (!senha) {
+        return res.status(400).json({ erro: "Nova senha é obrigatória." });
+      }
+
+      try {
+        await db.collection("usuarios_importacao").updateOne(
+          { _id: new ObjectId(req.params.id) },
+          { $set: { senha: hashSenha(senha) } }
+        );
+        res.json({ ok: true });
+      } catch (error) {
+        res.status(500).json({ erro: "Erro ao alterar senha.", detalhe: error.message });
+      }
     });
 
     // ─────────────────────────────────────
@@ -163,7 +301,7 @@ async function iniciarServidor() {
           {
             $addFields: {
               Categoria_DePara: { $arrayElemAt: ["$categoria_info.CATEGORIA", 0] },
-              Familia_DePara: { $arrayElemAt: ["$categoria_info.FAMILIA", 0] },
+              Familia_DePara:   { $arrayElemAt: ["$categoria_info.FAMILIA", 0] },
               Produto_DePara: {
                 $arrayElemAt: [
                   {
