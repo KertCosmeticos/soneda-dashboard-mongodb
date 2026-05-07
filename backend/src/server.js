@@ -32,7 +32,9 @@ const upload = multer({ dest: "uploads/" });
 // E-MAIL
 // ─────────────────────────────────────────
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
@@ -214,7 +216,10 @@ async function iniciarServidor() {
         console.log(`📧 E-mail de reset enviado para ${user.email}`);
         res.json(respostaNeutra);
       } catch (error) {
-        console.error("Erro ao enviar e-mail de reset:", error);
+        console.error("❌ Erro ao enviar e-mail de reset:");
+        console.error("   code:", error.code);
+        console.error("   message:", error.message);
+        console.error("   response:", error.response);
         res.status(500).json({ erro: "Erro ao enviar e-mail. Tente novamente." });
       }
     });

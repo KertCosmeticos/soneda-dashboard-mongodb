@@ -502,7 +502,14 @@
     </div>
     <div class="login-field">
       <label>Senha</label>
-      <input type="password" id="modal-novo-senha" placeholder="senha" autocomplete="new-password" />
+      <div class="input-senha-wrap">
+        <input type="password" id="modal-novo-senha" placeholder="senha" autocomplete="new-password" />
+        <button type="button" class="btn-olho" onclick="verSenha('modal-novo-senha','icone-modal-novo')" title="Mostrar/ocultar senha">
+          <svg id="icone-modal-novo" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
     </div>
     <div class="login-field">
       <label>E-mail <span style="color:var(--muted);font-size:0.65rem;text-transform:none;letter-spacing:0">(para redefinição de senha)</span></label>
@@ -546,8 +553,15 @@
     </p>
     <div class="login-field">
       <label>Nova Senha</label>
-      <input type="password" id="modal-nova-senha" placeholder="nova senha" autocomplete="new-password"
-             onkeydown="if(event.key==='Enter') guConfirmarSenha()" />
+      <div class="input-senha-wrap">
+        <input type="password" id="modal-nova-senha" placeholder="nova senha" autocomplete="new-password"
+               onkeydown="if(event.key==='Enter') guConfirmarSenha()" />
+        <button type="button" class="btn-olho" onclick="verSenha('modal-nova-senha','icone-modal-trocar')" title="Mostrar/ocultar senha">
+          <svg id="icone-modal-trocar" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
     </div>
     <div id="modal-senha-err" class="modal-err"></div>
     <div class="modal-actions">
@@ -1051,18 +1065,18 @@ function admAtualizarUI() {
   }
 }
 
-function toggleSenha() {
-  const input = document.getElementById('adm-senha');
-  const icone = document.getElementById('icone-olho');
+const OLHO_ABERTO  = `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`;
+const OLHO_FECHADO = `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>`;
+
+function verSenha(inputId, iconeId) {
+  const input  = document.getElementById(inputId);
+  const icone  = document.getElementById(iconeId);
   const mostrar = input.type === 'password';
   input.type = mostrar ? 'text' : 'password';
-  icone.innerHTML = mostrar
-    ? `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-       <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-       <line x1="1" y1="1" x2="23" y2="23"/>`
-    : `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-       <circle cx="12" cy="12" r="3"/>`;
+  icone.innerHTML = mostrar ? OLHO_FECHADO : OLHO_ABERTO;
 }
+
+function toggleSenha() { verSenha('adm-senha', 'icone-olho'); }
 
 async function admLogin() {
   const usuario = document.getElementById('adm-usuario').value.trim();
@@ -3584,18 +3598,7 @@ function guAtualizarUI() {
   }
 }
 
-function guToggleSenha() {
-  const input = document.getElementById('gu-senha');
-  const icone = document.getElementById('gu-icone-olho');
-  const mostrar = input.type === 'password';
-  input.type = mostrar ? 'text' : 'password';
-  icone.innerHTML = mostrar
-    ? `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-       <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-       <line x1="1" y1="1" x2="23" y2="23"/>`
-    : `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-       <circle cx="12" cy="12" r="3"/>`;
-}
+function guToggleSenha() { verSenha('gu-senha', 'gu-icone-olho'); }
 
 async function guLogin() {
   const usuario = document.getElementById('gu-usuario').value.trim();
@@ -3796,8 +3799,11 @@ async function guConfirmarEmail() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function guAbrirModalNovo() {
+  const senhaInput = document.getElementById('modal-novo-senha');
+  senhaInput.value = '';
+  senhaInput.type  = 'password';
+  document.getElementById('icone-modal-novo').innerHTML = OLHO_ABERTO;
   document.getElementById('modal-novo-user').value  = '';
-  document.getElementById('modal-novo-senha').value = '';
   document.getElementById('modal-novo-email').value = '';
   document.getElementById('modal-novo-err').textContent = '';
   document.getElementById('modal-novo-usuario').style.display = 'flex';
@@ -3806,11 +3812,14 @@ function guAbrirModalNovo() {
 
 function guAbrirModalSenha(id, nome) {
   guIdSenha = id;
-  document.getElementById('modal-senha-nome').textContent = nome;
-  document.getElementById('modal-nova-senha').value = '';
-  document.getElementById('modal-senha-err').textContent  = '';
+  const senhaInput = document.getElementById('modal-nova-senha');
+  senhaInput.value = '';
+  senhaInput.type  = 'password';
+  document.getElementById('icone-modal-trocar').innerHTML = OLHO_ABERTO;
+  document.getElementById('modal-senha-nome').textContent  = nome;
+  document.getElementById('modal-senha-err').textContent   = '';
   document.getElementById('modal-trocar-senha').style.display = 'flex';
-  setTimeout(() => document.getElementById('modal-nova-senha').focus(), 50);
+  setTimeout(() => senhaInput.focus(), 50);
 }
 
 function guFecharModal(id) {
