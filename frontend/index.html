@@ -151,6 +151,17 @@
   tbody tr.clickable-row:hover { background:var(--surface2); }
   tbody tr.row-active { background:rgba(200,241,53,0.07) !important; outline:1px solid var(--accent); outline-offset:-1px; }
 
+  /* ROTATIVIDADE */
+  .rot-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-top: 20px; }
+  .rot-card-header { padding: 20px 24px 0; border-bottom: 1px solid var(--border); }
+  .rot-card-title { font-family: 'DM Serif Display', serif; font-size: 1.1rem; margin-bottom: 14px; }
+  .rot-subtabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); }
+  .rot-subtab-btn { font-family: 'DM Mono', monospace; font-size: 0.76rem; color: var(--muted); background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 22px; cursor: pointer; transition: color .2s, border-color .2s; white-space: nowrap; margin-bottom: -1px; letter-spacing: .4px; }
+  .rot-subtab-btn:hover { color: var(--text); }
+  .rot-subtab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .rot-panel { display: none; }
+  .rot-panel.active { display: block; }
+
   /* IMPORTAÇÃO CSV */
   .import-card { max-width: 1300px; margin: 24px auto 0; padding: 0 40px; }
   .import-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 22px; }
@@ -1131,6 +1142,25 @@
     <div class="table-head"><div class="table-head-title">Detalhamento de Estoque por Filial</div></div>
     <div id="d3-table-body"><div class="no-data">Carregando...</div></div>
   </div>
+
+  <!-- TABELA ROTATIVIDADE -->
+  <div class="rot-card">
+    <div class="rot-card-header">
+      <div class="rot-card-title">Análise de Rotatividade de Produtos</div>
+      <div class="rot-subtabs">
+        <button class="rot-subtab-btn active" onclick="d3MudarAbaRot('produtos', this)">Produtos</button>
+        <button class="rot-subtab-btn" onclick="d3MudarAbaRot('categorias', this)">Categorias</button>
+      </div>
+    </div>
+
+    <div id="rot-panel-produtos" class="rot-panel active">
+      <div id="d3-rot-produtos-body"><div class="no-data">Carregando...</div></div>
+    </div>
+
+    <div id="rot-panel-categorias" class="rot-panel">
+      <div id="d3-rot-categorias-body"><div class="no-data">Carregando...</div></div>
+    </div>
+  </div>
 </main>
 </div>
 <!-- /ABA 3 -->
@@ -1143,6 +1173,7 @@ let rawData      = [];
 let deParaMap    = {};
 let catMap       = {};
 let familiaMap   = {};
+let produtoMap   = {};
 let chartInst      = null;
 let vChartInst     = null;
 let d2Chart        = null;
@@ -1171,6 +1202,8 @@ let t2Sort         = { col: 'qty', dir: 'desc' };
 let cat2Sort       = { col: 'qty', dir: 'desc' };
 let fam2Sort       = { col: 'qty', dir: 'desc' };
 let t3Sort         = { col: 'qty', dir: 'desc' };
+let rotProdSort    = { col: 'qty', dir: 'desc' };
+let rotCatSort     = { col: 'qty', dir: 'desc' };
 let seSort         = { col: 'sellout', dir: 'desc' };
 let seRiskSort     = { col: 'sellout', dir: 'desc' };
 let seViewMode     = 'loja';
@@ -1405,22 +1438,26 @@ async function init() {
             const keys  = Object.keys(r).filter(k => k !== '_id');
             const nkeys = keys.map(semAcento);
 
-            const codIdx = nkeys.findIndex(nk => nk === 'codbarras' || nk === 'gtin' || nk === 'ean' || nk === 'gtinplu' || /^cod.*barra/.test(nk));
-            const famIdx = nkeys.findIndex(nk => /^famil/.test(nk));
-            const catIdx = nkeys.findIndex(nk => /^categ/.test(nk));
+            const codIdx  = nkeys.findIndex(nk => nk === 'codbarras' || nk === 'gtin' || nk === 'ean' || nk === 'gtinplu' || /^cod.*barra/.test(nk));
+            const famIdx  = nkeys.findIndex(nk => /^famil/.test(nk));
+            const catIdx  = nkeys.findIndex(nk => /^categ/.test(nk));
+            const prodIdx = nkeys.findIndex(nk => /^nome.?prod|^produto|^descri/.test(nk));
 
-            const codKey = codIdx >= 0 ? keys[codIdx] : keys[0];
-            const famKey = famIdx >= 0 ? keys[famIdx] : null;
-            const catKey = catIdx >= 0 ? keys[catIdx] : null;
+            const codKey  = codIdx  >= 0 ? keys[codIdx]  : keys[0];
+            const famKey  = famIdx  >= 0 ? keys[famIdx]  : null;
+            const catKey  = catIdx  >= 0 ? keys[catIdx]  : null;
+            const prodKey = prodIdx >= 0 ? keys[prodIdx] : null;
 
             const ean = normalizarCodigoBarras(r[codKey]);
             if (!ean) return;
 
-            const vFam = famKey ? (r[famKey] || '').toString().trim() : '';
-            const vCat = catKey ? (r[catKey] || '').toString().trim() : '';
+            const vFam  = famKey  ? (r[famKey]  || '').toString().trim() : '';
+            const vCat  = catKey  ? (r[catKey]  || '').toString().trim() : '';
+            const vProd = prodKey ? (r[prodKey] || '').toString().trim() : '';
 
-            if (valido(vFam)) familiaMap[ean] = vFam;
-            if (valido(vCat)) catMap[ean] = vCat;
+            if (valido(vFam))  familiaMap[ean] = vFam;
+            if (valido(vCat))  catMap[ean]     = vCat;
+            if (valido(vProd)) produtoMap[ean]  = vProd;
           });
         }
         console.log(`[Categorias] ${Object.keys(catMap).length} categorias e ${Object.keys(familiaMap).length} famílias carregadas`);
@@ -1539,6 +1576,11 @@ function getCat(r) {
 function getFamilia(r) {
   const gtin = normalizarCodigoBarras(col(r, 'GTIN', 'gtin', 'Gtin', 'GTIN/PLU', 'Gtin/Plu', 'gtin/plu', 'PLU', 'Ean', 'EAN', 'codbarras', 'CODBARRAS'));
   return (gtin && familiaMap[gtin]) ? familiaMap[gtin] : '';
+}
+
+function getProduto(r) {
+  const ean = normalizarCodigoBarras(col(r, 'GTIN', 'gtin', 'Gtin', 'GTIN/PLU', 'Gtin/Plu', 'gtin/plu', 'PLU', 'Ean', 'EAN', 'codbarras', 'CODBARRAS'));
+  return (ean && produtoMap[ean]) ? produtoMap[ean] : '';
 }
 
 function setEstado(html) {
@@ -2879,12 +2921,126 @@ function d3Renderizar() {
   document.getElementById('d3-table-body').innerHTML = byLojaTabela.length === 0
     ? '<div class="no-data">Nenhum dado para os filtros selecionados</div>'
     : `<table><thead><tr>${th3('Filial','loja')}${th3('Nome Fantasia','nome')}${th3('Estoque Atual','qty')}${th3('Volume','volume')}</tr></thead><tbody>${linhas3}</tbody></table>`;
+
+  d3RenderRotatividade(dados);
 }
 
 function t3OrdenarPor(coluna) {
   t3Sort.dir = t3Sort.col === coluna && t3Sort.dir === 'desc' ? 'asc' : 'desc';
   t3Sort.col = coluna;
   d3Renderizar();
+}
+
+function d3MudarAbaRot(aba, btn) {
+  document.querySelectorAll('.rot-subtab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.rot-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('rot-panel-' + aba).classList.add('active');
+}
+
+function rotProdOrdenarPor(coluna) {
+  rotProdSort.dir = rotProdSort.col === coluna && rotProdSort.dir === 'desc' ? 'asc' : 'desc';
+  rotProdSort.col = coluna;
+  d3RenderRotatividade(d3Filtrar());
+}
+
+function rotCatOrdenarPor(coluna) {
+  rotCatSort.dir = rotCatSort.col === coluna && rotCatSort.dir === 'desc' ? 'asc' : 'desc';
+  rotCatSort.col = coluna;
+  d3RenderRotatividade(d3Filtrar());
+}
+
+function d3RenderRotatividade(dados) {
+  const estKey = (r) => parseBR(col(r, 'Estoque Diario', 'Estoque Diário', 'Estoque', 'estoque'));
+
+  // ── Aba Produtos ──
+  const mapProd = {};
+  dados.forEach(r => {
+    const nome = getProduto(r);
+    if (!nome) return;
+    const est = estKey(r);
+    if (!mapProd[nome]) mapProd[nome] = { nome, qty: 0 };
+    mapProd[nome].qty += est;
+  });
+
+  const byProd = Object.values(mapProd);
+  const totalProd = byProd.reduce((s, r) => s + r.qty, 0);
+
+  byProd.sort((a, b) => {
+    let va, vb;
+    if (rotProdSort.col === 'nome') { va = a.nome.toLowerCase(); vb = b.nome.toLowerCase(); }
+    else if (rotProdSort.col === 'pct') { va = totalProd > 0 ? a.qty / totalProd : 0; vb = totalProd > 0 ? b.qty / totalProd : 0; }
+    else { va = a.qty; vb = b.qty; }
+    if (va < vb) return rotProdSort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return rotProdSort.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const thP = (label, key) => {
+    const cls = rotProdSort.col === key ? ` class="sort-${rotProdSort.dir}"` : '';
+    return `<th${cls} onclick="rotProdOrdenarPor('${key}')">${label}</th>`;
+  };
+  const maxProd = Math.max(...byProd.map(r => r.qty), 1);
+  const linhasProd = byProd.map(r => {
+    const pct  = totalProd > 0 ? ((r.qty / totalProd) * 100).toFixed(1) : '0.0';
+    const barW = ((r.qty / maxProd) * 100).toFixed(1);
+    return `<tr>
+      <td class="td-nome">${r.nome}</td>
+      <td class="td-qty">${r.qty.toLocaleString('pt-BR')}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="width:${barW}%;max-width:150px"></div>
+        <span style="font-size:.78rem;color:var(--text-dim);font-family:'DM Mono',monospace">${pct}%</span>
+      </div></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('d3-rot-produtos-body').innerHTML = byProd.length === 0
+    ? '<div class="no-data">Nenhum produto encontrado. Verifique se a tabela de de-para possui a coluna de nome do produto.</div>'
+    : `<table><thead><tr>${thP('Produto','nome')}${thP('Qtd em Estoque','qty')}${thP('Participação','pct')}</tr></thead><tbody>${linhasProd}</tbody></table>`;
+
+  // ── Aba Categorias ──
+  const mapCat = {};
+  dados.forEach(r => {
+    const cat = getCat(r) || 'SEM CATEGORIA';
+    const est = estKey(r);
+    if (!mapCat[cat]) mapCat[cat] = { cat, qty: 0 };
+    mapCat[cat].qty += est;
+  });
+
+  const byCat = Object.values(mapCat);
+  const totalCat = byCat.reduce((s, r) => s + r.qty, 0);
+
+  byCat.sort((a, b) => {
+    let va, vb;
+    if (rotCatSort.col === 'cat') { va = a.cat.toLowerCase(); vb = b.cat.toLowerCase(); }
+    else if (rotCatSort.col === 'pct') { va = totalCat > 0 ? a.qty / totalCat : 0; vb = totalCat > 0 ? b.qty / totalCat : 0; }
+    else { va = a.qty; vb = b.qty; }
+    if (va < vb) return rotCatSort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return rotCatSort.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const thC = (label, key) => {
+    const cls = rotCatSort.col === key ? ` class="sort-${rotCatSort.dir}"` : '';
+    return `<th${cls} onclick="rotCatOrdenarPor('${key}')">${label}</th>`;
+  };
+  const maxCat = Math.max(...byCat.map(r => r.qty), 1);
+  const linhasCat = byCat.map(r => {
+    const pct  = totalCat > 0 ? ((r.qty / totalCat) * 100).toFixed(1) : '0.0';
+    const barW = ((r.qty / maxCat) * 100).toFixed(1);
+    return `<tr>
+      <td class="td-nome">${r.cat}</td>
+      <td class="td-qty">${r.qty.toLocaleString('pt-BR')}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="width:${barW}%;max-width:150px"></div>
+        <span style="font-size:.78rem;color:var(--text-dim);font-family:'DM Mono',monospace">${pct}%</span>
+      </div></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('d3-rot-categorias-body').innerHTML = byCat.length === 0
+    ? '<div class="no-data">Nenhum dado para os filtros selecionados</div>'
+    : `<table><thead><tr>${thC('Categoria','cat')}${thC('Qtd em Estoque','qty')}${thC('Participação','pct')}</tr></thead><tbody>${linhasCat}</tbody></table>`;
 }
 
 
