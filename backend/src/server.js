@@ -759,94 +759,168 @@ async function iniciarServidor() {
     // IMPORTAÇÕES (PROTEGIDAS)
     // ─────────────────────────────────────
     app.post("/api/importar/dados-brutos", verificarToken, upload.single("file"), async (req, res) => {
-      const resultados = [];
       if (!req.file) return res.status(400).json({ erro: "Nenhum arquivo enviado." });
+
+      // Desabilita timeout do socket para permitir imports grandes
+      req.socket.setTimeout(0);
+      res.setTimeout(0);
 
       const importId    = crypto.randomBytes(8).toString("hex");
       const nomeArquivo = req.file.originalname || req.file.filename;
+      const resultados  = [];
+      let   respondido  = false;
 
-      fs.createReadStream(req.file.path)
-        .pipe(csv({ separator: ";" }))
-        .on("data", (linha) => {
-          const registro = {};
-          Object.keys(linha).forEach((coluna) => {
-            registro[limparValor(coluna)] = limparValor(linha[coluna]);
-          });
-          registro.importado_em = new Date();
-          registro._import_id   = importId;
-          resultados.push(registro);
-        })
-        .on("end", async () => {
-          if (resultados.length > 0) await db.collection("dados_brutos").insertMany(resultados);
-          fs.unlinkSync(req.file.path);
-          await db.collection("logs_importacao").insertOne({
-            importId,
-            tipo:     "dados_brutos",
-            arquivo:  nomeArquivo,
-            usuario:  req.usuarioLogado,
-            total:    resultados.length,
-            data:     new Date()
-          });
-          res.json({ mensagem: "Importação realizada 🚀", total: resultados.length });
+      const responderErro = (status, msg, detalhe) => {
+        if (respondido) return;
+        respondido = true;
+        try { fs.unlinkSync(req.file.path); } catch (_) {}
+        res.status(status).json({ erro: msg, detalhe });
+      };
+
+      const stream = fs.createReadStream(req.file.path).pipe(csv({ separator: ";" }));
+
+      stream.on("data", (linha) => {
+        const registro = {};
+        Object.keys(linha).forEach((coluna) => {
+          registro[limparValor(coluna)] = limparValor(linha[coluna]);
         });
+        registro.importado_em = new Date();
+        registro._import_id   = importId;
+        resultados.push(registro);
+      });
+
+      stream.on("error", (err) => responderErro(500, "Erro ao ler arquivo CSV", err.message));
+
+      stream.on("end", async () => {
+        try {
+          const LOTE = 500;
+          for (let i = 0; i < resultados.length; i += LOTE) {
+            await db.collection("dados_brutos").insertMany(
+              resultados.slice(i, i + LOTE),
+              { ordered: false }
+            );
+          }
+          try { fs.unlinkSync(req.file.path); } catch (_) {}
+          await db.collection("logs_importacao").insertOne({
+            importId, tipo: "dados_brutos", arquivo: nomeArquivo,
+            usuario: req.usuarioLogado, total: resultados.length, data: new Date()
+          });
+          if (!respondido) {
+            respondido = true;
+            res.json({ mensagem: "Importação realizada 🚀", total: resultados.length });
+          }
+        } catch (error) {
+          responderErro(500, "Erro ao salvar no banco de dados", error.message);
+        }
+      });
     });
 
     app.post("/api/importar/categorias-depara", verificarToken, upload.single("file"), async (req, res) => {
-      const resultados  = [];
+      if (!req.file) return res.status(400).json({ erro: "Nenhum arquivo enviado." });
+
+      req.socket.setTimeout(0);
+      res.setTimeout(0);
+
       const importId    = crypto.randomBytes(8).toString("hex");
       const nomeArquivo = req.file.originalname || req.file.filename;
+      const resultados  = [];
+      let   respondido  = false;
 
-      fs.createReadStream(req.file.path)
-        .pipe(csv({ separator: ";" }))
-        .on("data", (linha) => {
-          const registro = {};
-          Object.keys(linha).forEach((coluna) => { registro[coluna.trim()] = linha[coluna].trim(); });
-          registro._import_id = importId;
-          resultados.push(registro);
-        })
-        .on("end", async () => {
+      const responderErro = (status, msg, detalhe) => {
+        if (respondido) return;
+        respondido = true;
+        try { fs.unlinkSync(req.file.path); } catch (_) {}
+        res.status(status).json({ erro: msg, detalhe });
+      };
+
+      const stream = fs.createReadStream(req.file.path).pipe(csv({ separator: ";" }));
+
+      stream.on("data", (linha) => {
+        const registro = {};
+        Object.keys(linha).forEach((coluna) => { registro[coluna.trim()] = linha[coluna].trim(); });
+        registro._import_id = importId;
+        resultados.push(registro);
+      });
+
+      stream.on("error", (err) => responderErro(500, "Erro ao ler arquivo CSV", err.message));
+
+      stream.on("end", async () => {
+        try {
           await db.collection("categorias_depara").deleteMany({});
-          if (resultados.length > 0) await db.collection("categorias_depara").insertMany(resultados);
-          fs.unlinkSync(req.file.path);
+          const LOTE = 500;
+          for (let i = 0; i < resultados.length; i += LOTE) {
+            await db.collection("categorias_depara").insertMany(
+              resultados.slice(i, i + LOTE),
+              { ordered: false }
+            );
+          }
+          try { fs.unlinkSync(req.file.path); } catch (_) {}
           await db.collection("logs_importacao").insertOne({
-            importId,
-            tipo:    "categorias_depara",
-            arquivo: nomeArquivo,
-            usuario: req.usuarioLogado,
-            total:   resultados.length,
-            data:    new Date()
+            importId, tipo: "categorias_depara", arquivo: nomeArquivo,
+            usuario: req.usuarioLogado, total: resultados.length, data: new Date()
           });
-          res.json({ mensagem: "Categorias importadas" });
-        });
+          if (!respondido) {
+            respondido = true;
+            res.json({ mensagem: "Categorias importadas", total: resultados.length });
+          }
+        } catch (error) {
+          responderErro(500, "Erro ao salvar no banco de dados", error.message);
+        }
+      });
     });
 
     app.post("/api/importar/lojas-depara", verificarToken, upload.single("file"), async (req, res) => {
-      const resultados  = [];
+      if (!req.file) return res.status(400).json({ erro: "Nenhum arquivo enviado." });
+
+      req.socket.setTimeout(0);
+      res.setTimeout(0);
+
       const importId    = crypto.randomBytes(8).toString("hex");
       const nomeArquivo = req.file.originalname || req.file.filename;
+      const resultados  = [];
+      let   respondido  = false;
 
-      fs.createReadStream(req.file.path)
-        .pipe(csv({ separator: ";" }))
-        .on("data", (linha) => {
-          const registro = {};
-          Object.keys(linha).forEach((coluna) => { registro[coluna.trim()] = linha[coluna].trim(); });
-          registro._import_id = importId;
-          resultados.push(registro);
-        })
-        .on("end", async () => {
+      const responderErro = (status, msg, detalhe) => {
+        if (respondido) return;
+        respondido = true;
+        try { fs.unlinkSync(req.file.path); } catch (_) {}
+        res.status(status).json({ erro: msg, detalhe });
+      };
+
+      const stream = fs.createReadStream(req.file.path).pipe(csv({ separator: ";" }));
+
+      stream.on("data", (linha) => {
+        const registro = {};
+        Object.keys(linha).forEach((coluna) => { registro[coluna.trim()] = linha[coluna].trim(); });
+        registro._import_id = importId;
+        resultados.push(registro);
+      });
+
+      stream.on("error", (err) => responderErro(500, "Erro ao ler arquivo CSV", err.message));
+
+      stream.on("end", async () => {
+        try {
           await db.collection("lojas_depara").deleteMany({});
-          if (resultados.length > 0) await db.collection("lojas_depara").insertMany(resultados);
-          fs.unlinkSync(req.file.path);
+          const LOTE = 500;
+          for (let i = 0; i < resultados.length; i += LOTE) {
+            await db.collection("lojas_depara").insertMany(
+              resultados.slice(i, i + LOTE),
+              { ordered: false }
+            );
+          }
+          try { fs.unlinkSync(req.file.path); } catch (_) {}
           await db.collection("logs_importacao").insertOne({
-            importId,
-            tipo:    "lojas_depara",
-            arquivo: nomeArquivo,
-            usuario: req.usuarioLogado,
-            total:   resultados.length,
-            data:    new Date()
+            importId, tipo: "lojas_depara", arquivo: nomeArquivo,
+            usuario: req.usuarioLogado, total: resultados.length, data: new Date()
           });
-          res.json({ mensagem: "Lojas importadas" });
-        });
+          if (!respondido) {
+            respondido = true;
+            res.json({ mensagem: "Lojas importadas", total: resultados.length });
+          }
+        } catch (error) {
+          responderErro(500, "Erro ao salvar no banco de dados", error.message);
+        }
+      });
     });
 
     // ─────────────────────────────────────
@@ -886,9 +960,12 @@ async function iniciarServidor() {
     });
 
     // ─────────────────────────────────────
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`🚀 Servidor rodando na porta ${PORT}`);
     });
+    // Aumenta timeout para suportar imports de arquivos grandes
+    server.timeout        = 10 * 60 * 1000; // 10 minutos
+    server.keepAliveTimeout = 10 * 60 * 1000;
 
   } catch (erro) {
     console.error("❌ Erro ao iniciar servidor:", erro);

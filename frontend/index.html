@@ -1367,20 +1367,42 @@ async function enviarCSV(inputId, rota) {
     return;
   }
 
+  const arquivo = fileInput.files[0];
   const formData = new FormData();
-  formData.append('file', fileInput.files[0]);
+  formData.append('file', arquivo);
 
   try {
-    status.textContent = 'Enviando CSV para o MongoDB...';
+    const kb = Math.round(arquivo.size / 1024);
+    status.textContent = `Enviando arquivo (${kb.toLocaleString('pt-BR')} KB) para o servidor...`;
     status.className = 'import-status';
 
-    const response = await fetch(`${API_BASE}${rota}`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: formData,
-    });
+    // Intervalo para mostrar que está processando
+    let dots = 0;
+    const timer = setInterval(() => {
+      dots = (dots + 1) % 4;
+      status.textContent = `Processando arquivo${'.'.repeat(dots)} (isso pode levar alguns minutos para arquivos grandes)`;
+    }, 800);
 
-    const data = await response.json();
+    let response;
+    try {
+      response = await fetch(`${API_BASE}${rota}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData,
+      });
+    } finally {
+      clearInterval(timer);
+    }
+
+    // Lê como texto primeiro para evitar SyntaxError quando o servidor retorna mensagem não-JSON
+    const texto = await response.text();
+    let data;
+    try {
+      data = JSON.parse(texto);
+    } catch (_) {
+      throw new Error(`Servidor não respondeu corretamente (${response.status}). Arquivo pode ser muito grande ou a conexão caiu. Tente novamente.`);
+    }
+
     if (response.status === 401) {
       sessionStorage.removeItem('adm_token');
       admAtualizarUI();
@@ -1388,7 +1410,7 @@ async function enviarCSV(inputId, rota) {
     }
     if (!response.ok) throw new Error(data.erro || data.detalhe || 'Erro ao importar CSV');
 
-    status.textContent = `${data.mensagem || 'Importação realizada com sucesso'} (${data.total || 0} registros).`;
+    status.textContent = `${data.mensagem || 'Importação realizada com sucesso'} (${(data.total || 0).toLocaleString('pt-BR')} registros).`;
     status.className = 'import-status ok';
 
   } catch (error) {
