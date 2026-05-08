@@ -2,3 +2,6 @@ git status
 git add .
 git commit -m "atualizacao painel soneda"
 git push origin main
+
+
+

@@ -1686,12 +1686,12 @@ function renderGrafico(byLoja) {
   }
   ocultarEstado();
 
-  let canvas = document.getElementById('myChart');
-  if (!canvas) {
-    canvas = document.createElement('canvas');
-    canvas.id = 'myChart';
-    document.getElementById('chart-wrap').appendChild(canvas);
-  }
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+  const oldMyChart = document.getElementById('myChart');
+  if (oldMyChart) oldMyChart.remove();
+  const canvas = document.createElement('canvas');
+  canvas.id = 'myChart';
+  document.getElementById('chart-wrap').appendChild(canvas);
 
   const labels = byLoja.map(r => r.nome);
   const values = byLoja.map(r => r.qty);
@@ -1708,8 +1708,6 @@ function renderGrafico(byLoja) {
     const t = n > 1 ? i/(n-1) : 0;
     return `rgba(${Math.round(200-t*80)},${Math.round(241-t*100)},${Math.round(53+t*100)},1)`;
   });
-
-  if (chartInst) chartInst.destroy();
 
   chartInst = new Chart(canvas, {
     type: 'bar',
@@ -1803,13 +1801,12 @@ function renderCat1(data) {
     return 0;
   });
 
-  let canvas = document.getElementById('cat1-canvas');
-  if (!canvas) {
-    canvas = document.createElement('canvas');
-    canvas.id = 'cat1-canvas';
-    document.getElementById('cat1-wrap').appendChild(canvas);
-  }
-  if (cat1Chart) cat1Chart.destroy();
+  if (cat1Chart) { cat1Chart.destroy(); cat1Chart = null; }
+  const oldCat1Canvas = document.getElementById('cat1-canvas');
+  if (oldCat1Canvas) oldCat1Canvas.remove();
+  const canvas = document.createElement('canvas');
+  canvas.id = 'cat1-canvas';
+  document.getElementById('cat1-wrap').appendChild(canvas);
 
   const selCat = f_active.dim === 'cat' ? f_active.val : null;
   cat1Chart = new Chart(canvas, {
@@ -1908,13 +1905,12 @@ function renderFam1(data) {
     return 0;
   });
 
-  let canvas = document.getElementById('fam1-canvas');
-  if (!canvas) {
-    canvas = document.createElement('canvas');
-    canvas.id = 'fam1-canvas';
-    document.getElementById('fam1-wrap').appendChild(canvas);
-  }
-  if (fam1Chart) fam1Chart.destroy();
+  if (fam1Chart) { fam1Chart.destroy(); fam1Chart = null; }
+  const oldFam1Canvas = document.getElementById('fam1-canvas');
+  if (oldFam1Canvas) oldFam1Canvas.remove();
+  const canvas = document.createElement('canvas');
+  canvas.id = 'fam1-canvas';
+  document.getElementById('fam1-wrap').appendChild(canvas);
 
   const selFam = f_active.dim === 'familia' ? f_active.val : null;
   fam1Chart = new Chart(canvas, {
@@ -2199,14 +2195,12 @@ function d2Renderizar() {
   }
   if (d2State) d2State.style.display = 'none';
 
-  let canvas = document.getElementById('d2-myChart');
-  if (!canvas) {
-    canvas = document.createElement('canvas');
-    canvas.id = 'd2-myChart';
-    document.getElementById('d2-chart-wrap').appendChild(canvas);
-  }
-
-  if (d2Chart) d2Chart.destroy();
+  if (d2Chart) { d2Chart.destroy(); d2Chart = null; }
+  const oldD2Canvas = document.getElementById('d2-myChart');
+  if (oldD2Canvas) oldD2Canvas.remove();
+  const canvas = document.createElement('canvas');
+  canvas.id = 'd2-myChart';
+  document.getElementById('d2-chart-wrap').appendChild(canvas);
 
   d2Chart = new Chart(canvas, {
     type: 'line',
@@ -2344,13 +2338,12 @@ function renderCat2(data) {
     mapCatDia[c][dk] = (mapCatDia[c][dk] || 0) + qty;
   });
 
-  let canvas2 = document.getElementById('cat2-canvas');
-  if (!canvas2) {
-    canvas2 = document.createElement('canvas');
-    canvas2.id = 'cat2-canvas';
-    document.getElementById('cat2-wrap').appendChild(canvas2);
-  }
-  if (cat2Chart) cat2Chart.destroy();
+  if (cat2Chart) { cat2Chart.destroy(); cat2Chart = null; }
+  const oldCat2Canvas = document.getElementById('cat2-canvas');
+  if (oldCat2Canvas) oldCat2Canvas.remove();
+  const canvas2 = document.createElement('canvas');
+  canvas2.id = 'cat2-canvas';
+  document.getElementById('cat2-wrap').appendChild(canvas2);
 
   const d2SelC = d2_active.dim === 'cat' ? d2_active.val : null;
 
@@ -2506,13 +2499,12 @@ function renderFam2(data) {
     mapFamDia[f][dk] = (mapFamDia[f][dk] || 0) + qty;
   });
 
-  let canvas2 = document.getElementById('fam2-canvas');
-  if (!canvas2) {
-    canvas2 = document.createElement('canvas');
-    canvas2.id = 'fam2-canvas';
-    document.getElementById('fam2-wrap').appendChild(canvas2);
-  }
-  if (fam2Chart) fam2Chart.destroy();
+  if (fam2Chart) { fam2Chart.destroy(); fam2Chart = null; }
+  const oldFam2Canvas = document.getElementById('fam2-canvas');
+  if (oldFam2Canvas) oldFam2Canvas.remove();
+  const canvas2 = document.createElement('canvas');
+  canvas2.id = 'fam2-canvas';
+  document.getElementById('fam2-wrap').appendChild(canvas2);
 
   fam2Chart = new Chart(canvas2, {
     type: 'line',
@@ -2716,9 +2708,12 @@ function d3Renderizar() {
     if (oldBarCanvas) oldBarCanvas.remove();
   } else {
     if(barState) barState.style.display = 'none';
-    let c1 = document.getElementById('d3-bar-canvas');
-    if (!c1) { c1 = document.createElement('canvas'); c1.id = 'd3-bar-canvas'; document.getElementById('d3-chart-wrap').appendChild(c1); }
-    if (d3BarChart) d3BarChart.destroy();
+    if (d3BarChart) { d3BarChart.destroy(); d3BarChart = null; }
+    const oldD3BarCanvas = document.getElementById('d3-bar-canvas');
+    if (oldD3BarCanvas) oldD3BarCanvas.remove();
+    const c1 = document.createElement('canvas');
+    c1.id = 'd3-bar-canvas';
+    document.getElementById('d3-chart-wrap').appendChild(c1);
     const n = byLoja.length;
     const d3Sel = d3_active.dim === 'loja' ? d3_active.val : null;
     d3BarChart = new Chart(c1, {
@@ -2812,9 +2807,12 @@ function d3Renderizar() {
 
     renderD3LineLegend();
 
-    let c2 = document.getElementById('d3-line-canvas');
-    if (!c2) { c2 = document.createElement('canvas'); c2.id = 'd3-line-canvas'; document.getElementById('d3-line-wrap').appendChild(c2); }
-    if (d3LineChart) d3LineChart.destroy();
+    if (d3LineChart) { d3LineChart.destroy(); d3LineChart = null; }
+    const oldD3LineCanvas = document.getElementById('d3-line-canvas');
+    if (oldD3LineCanvas) oldD3LineCanvas.remove();
+    const c2 = document.createElement('canvas');
+    c2.id = 'd3-line-canvas';
+    document.getElementById('d3-line-wrap').appendChild(c2);
 
     d3LineChart = new Chart(c2, {
       type: 'line',
@@ -3080,14 +3078,12 @@ function seRenderGrafico(byLoja) {
     .sort((a,b) => b.sellout - a.sellout)
     .slice(0, 30);
 
-  let canvas = document.getElementById('se-chart-canvas');
-  if (!canvas) {
-    canvas = document.createElement('canvas');
-    canvas.id = 'se-chart-canvas';
-    document.getElementById('se-chart-wrap').appendChild(canvas);
-  }
-
-  if (seChart) seChart.destroy();
+  if (seChart) { seChart.destroy(); seChart = null; }
+  const oldSeCanvas = document.getElementById('se-chart-canvas');
+  if (oldSeCanvas) oldSeCanvas.remove();
+  const canvas = document.createElement('canvas');
+  canvas.id = 'se-chart-canvas';
+  document.getElementById('se-chart-wrap').appendChild(canvas);
 
   seChart = new Chart(canvas, {
     type: 'bar',
@@ -3407,12 +3403,12 @@ function vRenderGrafico(byLoja) {
   }
   if (stateEl) stateEl.style.display = 'none';
 
-  let canvas = document.getElementById('v-myChart');
-  if (!canvas) {
-    canvas = document.createElement('canvas');
-    canvas.id = 'v-myChart';
-    document.getElementById('v-chart-wrap').appendChild(canvas);
-  }
+  if (vChartInst) { vChartInst.destroy(); vChartInst = null; }
+  const oldVCanvas = document.getElementById('v-myChart');
+  if (oldVCanvas) oldVCanvas.remove();
+  const canvas = document.createElement('canvas');
+  canvas.id = 'v-myChart';
+  document.getElementById('v-chart-wrap').appendChild(canvas);
 
   const n = byLoja.length;
   const vSel = v_active.dim === 'loja' ? v_active.val : null;
@@ -3427,7 +3423,6 @@ function vRenderGrafico(byLoja) {
     return `rgba(${Math.round(79+t*121)},${Math.round(255-t*100)},${Math.round(176-t*50)},1)`;
   });
 
-  if (vChartInst) vChartInst.destroy();
   vChartInst = new Chart(canvas, {
     type: 'bar',
     data: {
@@ -3547,9 +3542,12 @@ function vRenderCat1(data) {
     return 0;
   });
 
-  let canvas = document.getElementById('v-cat1-canvas');
-  if (!canvas) { canvas = document.createElement('canvas'); canvas.id = 'v-cat1-canvas'; document.getElementById('v-cat1-wrap').appendChild(canvas); }
-  if (vCat1Chart) vCat1Chart.destroy();
+  if (vCat1Chart) { vCat1Chart.destroy(); vCat1Chart = null; }
+  const oldVCat1Canvas = document.getElementById('v-cat1-canvas');
+  if (oldVCat1Canvas) oldVCat1Canvas.remove();
+  const canvas = document.createElement('canvas');
+  canvas.id = 'v-cat1-canvas';
+  document.getElementById('v-cat1-wrap').appendChild(canvas);
 
   const vSelC = v_active.dim === 'cat' ? v_active.val : null;
   vCat1Chart = new Chart(canvas, {
@@ -3647,14 +3645,12 @@ function vRenderFam1(data) {
     return 0;
   });
 
-  let canvas = document.getElementById('v-fam1-canvas');
-  if (!canvas) {
-    canvas = document.createElement('canvas');
-    canvas.id = 'v-fam1-canvas';
-    document.getElementById('v-fam1-wrap').appendChild(canvas);
-  }
-
-  if (vFam1Chart) vFam1Chart.destroy();
+  if (vFam1Chart) { vFam1Chart.destroy(); vFam1Chart = null; }
+  const oldVFam1Canvas = document.getElementById('v-fam1-canvas');
+  if (oldVFam1Canvas) oldVFam1Canvas.remove();
+  const canvas = document.createElement('canvas');
+  canvas.id = 'v-fam1-canvas';
+  document.getElementById('v-fam1-wrap').appendChild(canvas);
 
   const vSelF = v_active.dim === 'familia' ? v_active.val : null;
   vFam1Chart = new Chart(canvas, {
