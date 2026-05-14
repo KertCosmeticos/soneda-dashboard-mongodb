@@ -3,14 +3,3 @@ git add .
 git commit -m "atualizacao painel soneda"
 git push origin main
 
-
-
-o ano vem da coluna ano
-as datas vem da coluna Data
-o estoque vem da coluna Estoque Diario
-o codbarras vem da coluna GTIN/PLU
-as filiais vem da coluna Loja
-o nome do mes vem da coluna Mês
-o nome dos produtos vem da coluna Produto
-as vendas Sell out vem da coluna Venda (Qtd)
-as vendas valor vem da coluna Venda (R$)

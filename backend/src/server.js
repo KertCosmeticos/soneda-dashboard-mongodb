@@ -99,6 +99,28 @@ function limparValor(valor) {
   return String(valor).replace(/^﻿/, '').trim();
 }
 
+function parseBRNumber(val) {
+  const s = String(val ?? '').trim();
+  if (/^\d{1,3}(?:\.\d{3})*,\d+$/.test(s) || /^\d+,\d+$/.test(s)) {
+    return parseFloat(s.replace(/\./g, '').replace(',', '.'));
+  }
+  return val;
+}
+
+function brToDouble(expr) {
+  return {
+    $convert: {
+      input: {
+        $replaceAll: {
+          input: { $replaceAll: { input: { $toString: { $ifNull: [expr, "0"] } }, find: ".", replacement: "" } },
+          find: ",", replacement: "."
+        }
+      },
+      to: "double", onError: 0, onNull: 0
+    }
+  };
+}
+
 // ─────────────────────────────────────────
 // SERVIDOR
 // ─────────────────────────────────────────
@@ -670,8 +692,8 @@ async function iniciarServidor() {
           {
             $group: {
               _id: null,
-              total_vendido: { $sum: { $toDouble: { $ifNull: [{ $getField: "Venda (Qtd)" }, 0] } } },
-              total_valor:   { $sum: { $toDouble: { $ifNull: [{ $getField: "Venda (R$)" }, 0] } } },
+              total_vendido: { $sum: brToDouble({ $getField: "Venda (Qtd)" }) },
+              total_valor:   { $sum: brToDouble({ $getField: "Venda (R$)" }) },
               lojas:         { $addToSet: "$Loja" }
             }
           },
@@ -693,7 +715,7 @@ async function iniciarServidor() {
           {
             $group: {
               _id: "$Loja",
-              total_venda: { $sum: { $toDouble: { $ifNull: [{ $getField: "Venda (R$)" }, 0] } } }
+              total_venda: { $sum: brToDouble({ $getField: "Venda (R$)" }) }
             }
           },
           { $sort: { total_venda: -1 } },
@@ -744,7 +766,7 @@ async function iniciarServidor() {
           {
             $group: {
               _id: { ano: "$Ano", mes: "$Mês" },
-              total_venda: { $sum: { $toDouble: { $ifNull: [{ $getField: "Venda (R$)" }, 0] } } }
+              total_venda: { $sum: brToDouble({ $getField: "Venda (R$)" }) }
             }
           },
           { $sort: { "_id.ano": 1, "_id.mes": 1 } }
@@ -768,9 +790,9 @@ async function iniciarServidor() {
         stream.on("data", (linha) => {
           const registro = {};
           Object.keys(linha).forEach((coluna) => {
-            const k = limparColunas ? coluna.trim() : limparValor(coluna);
-            const v = limparColunas ? linha[coluna].trim() : limparValor(linha[coluna]);
-            registro[k] = v;
+            const k    = limparColunas ? coluna.trim() : limparValor(coluna);
+            const rawV = limparColunas ? linha[coluna].trim() : limparValor(linha[coluna]);
+            registro[k] = parseBRNumber(rawV);
           });
           if (opcoes.extraCampos) Object.assign(registro, opcoes.extraCampos);
           resultados.push(registro);

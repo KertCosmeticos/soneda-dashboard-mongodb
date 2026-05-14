@@ -1467,7 +1467,7 @@ async function init() {
           const keys    = Object.keys(r).filter(k => k !== '_id');
           const codKey  = keys.find(k => /cod.?loja|codigo.?loja|cod_loja|loja|filial/i.test(k)) || keys[0];
           const nomeKey = keys.find(k => /nome.?fantasia|nome_fantasia|nome.?loja|nome|fantasia/i.test(k)) || keys[1];
-          const cod  = (r[codKey]  || '').toString().trim();
+          const cod  = normCodLoja((r[codKey]  || '').toString().trim());
           const nome = (r[nomeKey] || '').toString().trim();
           if (cod && nome) deParaMap[cod] = nome;
         });
@@ -1522,6 +1522,7 @@ async function init() {
         // Strip BOM (﻿) from field names (e.g. first column from Excel CSV exports)
         const c = {};
         Object.keys(r).forEach(k => { c[k.replace(/^﻿/, '')] = r[k]; });
+        if (c.Loja) c.Loja = normCodLoja(c.Loja);
         // Synthesize Data (DD/MM/YYYY) from Mês + Ano when no Data column exists
         if (!c.Data && !c.data) {
           const MN = { Jan:1,Fev:2,Mar:3,Abr:4,Mai:5,Jun:6,Jul:7,Ago:8,Set:9,Out:10,Nov:11,Dez:12 };
@@ -1571,6 +1572,12 @@ function col(row, ...nomes) {
 
 function parseBR(raw) {
   return parseFloat((raw || '').replace(/R\$\s*/i, '').replace(/\./g, '').replace(',', '.')) || 0;
+}
+
+function normCodLoja(v) {
+  const s = String(v ?? '').trim();
+  const n = parseInt(s, 10);
+  return !isNaN(n) ? String(n) : s;
 }
 
 function normalizarCodigoBarras(valor) {
