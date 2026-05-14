@@ -1774,6 +1774,20 @@ function buildAgreParams(prefix, activeObj) {
   return params;
 }
 
+// ── CACHE DE AGREGADOS (sessionStorage, TTL 5 min) ───────────────────────────
+function agreCache(key, data) {
+  const k = 'agre__' + key;
+  if (data !== undefined) {
+    try { sessionStorage.setItem(k, JSON.stringify({ t: Date.now(), d: data })); } catch(e) {}
+    return data;
+  }
+  try {
+    const item = JSON.parse(sessionStorage.getItem(k) || 'null');
+    if (item && (Date.now() - item.t) < 5 * 60 * 1000) return item.d;
+  } catch(e) {}
+  return null;
+}
+
 // ── RENDER PRINCIPAL ──────────────────────────────────────────────────────────
 async function renderizar() {
   mostrarBanner('f-active-banner', f_active,
@@ -1785,27 +1799,42 @@ async function renderizar() {
     [ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos';
   document.getElementById('loja-ativa').style.display = 'none';
 
-  // Render imediato com dados locais (5k registros)
-  const byLojaFull = agruparPorLoja(filtrar());
-  renderKPIs(byLojaFull);
-  fetchKPIs();
-  const byLojaChart = agruparPorLoja(filtrar('loja'));
-  renderGrafico(byLojaChart);
-  renderTabela(byLojaChart);
-  renderCat1(filtrar('cat'));
-  renderFam1(filtrar('familia'));
+  const cacheKey = buildAgreParams('f', f_active).toString();
+  const cached   = agreCache(cacheKey);
+  const toByLoja = ag => ag.por_loja
+    .map(r => ({ loja: normCodLoja(String(r.loja||'')), nome: deParaMap[normCodLoja(String(r.loja||''))], qty: r.qty }))
+    .filter(r => r.nome);
 
-  // Atualização em background com todos os dados do backend
+  fetchKPIs();
+
+  if (cached) {
+    const byLoja = toByLoja(cached);
+    renderKPIs(byLoja);
+    renderGrafico(byLoja);
+    renderTabela(byLoja);
+    if (cached.por_cat.length > 0) renderCat1(null, cached.por_cat); else renderCat1(filtrar('cat'));
+    if (cached.por_fam.length > 0) renderFam1(null, cached.por_fam); else renderFam1(filtrar('familia'));
+  } else {
+    renderKPIs([]);
+    setEstado('Carregando dados...');
+  }
+
   try {
     const ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('f', f_active)}`);
-    const byLoja = ag.por_loja
-      .map(r => ({ loja: normCodLoja(String(r.loja||'')), nome: deParaMap[normCodLoja(String(r.loja||''))], qty: r.qty }))
-      .filter(r => r.nome);
-    if (byLoja.length > 0) { renderGrafico(byLoja); renderTabela(byLoja); }
-    if (ag.por_cat.length > 0) renderCat1(null, ag.por_cat);
-    if (ag.por_fam.length > 0) renderFam1(null, ag.por_fam);
+    agreCache(cacheKey, ag);
+    const byLoja = toByLoja(ag);
+    renderKPIs(byLoja);
+    renderGrafico(byLoja);
+    renderTabela(byLoja);
+    if (ag.por_cat.length > 0) renderCat1(null, ag.por_cat); else renderCat1(filtrar('cat'));
+    if (ag.por_fam.length > 0) renderFam1(null, ag.por_fam); else renderFam1(filtrar('familia'));
   } catch(e) {
     console.warn('Agregados backend indisponíveis:', e.message);
+    if (!cached) {
+      const byLojaChart = agruparPorLoja(filtrar('loja'));
+      renderGrafico(byLojaChart); renderTabela(byLojaChart);
+      renderCat1(filtrar('cat')); renderFam1(filtrar('familia'));
+    }
   }
 }
 
@@ -2341,20 +2370,30 @@ async function d2Renderizar() {
     const dt = parseDataBR(String(r.data || ''));
     return { data: String(r.data||''), iso: dt ? dataParaISO(dt) : String(r.data||''), qty: r.qty };
   };
-
-  // Render imediato com dados locais
-  d2AtualizarGrafico(d2AgruparPorDia(d2Filtrar()), d2AgruparPorDia(d2Filtrar('data')));
-
-  // Atualização em background com todos os dados do backend
-  fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('d2', d2_active)}`).then(ag => {
-    const allDia = ag.por_dia.filter(r => r.data).map(toDia)
+  const agToDia = ag => {
+    const all = ag.por_dia.filter(r => r.data).map(toDia)
       .sort((a,b) => String(a.iso||a.data).localeCompare(String(b.iso||b.data)));
-    if (allDia.length > 0) {
-      const pd = d2_active.dim === 'data'
-        ? allDia.filter(r => normalizeFilterValue(r.data) === normalizeFilterValue(d2_active.val))
-        : allDia;
-      d2AtualizarGrafico(pd, allDia);
-    }
+    return d2_active.dim === 'data'
+      ? [all.filter(r => normalizeFilterValue(r.data) === normalizeFilterValue(d2_active.val)), all]
+      : [all, all];
+  };
+
+  const cacheKey = 'd2:' + buildAgreParams('d2', d2_active).toString();
+  const cached   = agreCache(cacheKey);
+
+  if (cached) {
+    const [pd, all] = agToDia(cached);
+    d2AtualizarGrafico(pd, all);
+  } else {
+    const d2State = document.getElementById('d2-chart-state');
+    if (d2State) { d2State.style.display = 'flex'; d2State.innerHTML = 'Carregando dados...'; }
+    if (d2Chart) { d2Chart.destroy(); d2Chart = null; }
+  }
+
+  fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('d2', d2_active)}`).then(ag => {
+    agreCache(cacheKey, ag);
+    const [pd, all] = agToDia(ag);
+    if (all.length > 0) d2AtualizarGrafico(pd, all);
   }).catch(e => console.warn('Agregados backend indisponíveis:', e.message));
 }
 
@@ -4052,33 +4091,36 @@ async function vRenderizar() {
   document.getElementById('v-chart-sub').textContent = [ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos';
   document.getElementById('v-loja-ativa').style.display = 'none';
 
-  // Render imediato com dados locais
-  const vTodosFiltrados = vFiltrar();
-  const byLojaChartLocal = vAgruparPorLoja(vFiltrar('loja'));
-  const byLojaFullLocal  = vAgruparPorLoja(vTodosFiltrados);
-  vRenderKPIs(byLojaFullLocal, null);
-  vRenderGrafico(byLojaChartLocal);
-  vRenderTabela(byLojaChartLocal);
-  vRenderCat1(vFiltrar('cat'));
-  vRenderFam1(vFiltrar('familia'));
+  const cacheKey = buildAgreParams('v', v_active).toString();
+  const cached   = agreCache(cacheKey);
+  const toByLoja = ag => ag.por_loja
+    .map(r => ({ loja: normCodLoja(String(r.loja||'')), nome: deParaMap[normCodLoja(String(r.loja||''))], val: r.valor }))
+    .filter(r => r.nome);
+  const renderFromAg = (ag, byLoja) => {
+    const kpis = { total_valor: byLoja.reduce((s,r) => s + r.val, 0), total_lojas: byLoja.filter(r => r.val > 0).length };
+    vRenderKPIs(byLoja, kpis); vRenderGrafico(byLoja); vRenderTabela(byLoja);
+    if (ag.por_cat.length > 0) vRenderCat1(null, ag.por_cat); else vRenderCat1(vFiltrar('cat'));
+    if (ag.por_fam.length > 0) vRenderFam1(null, ag.por_fam); else vRenderFam1(vFiltrar('familia'));
+  };
 
-  // Atualização em background com todos os dados do backend
+  if (cached) {
+    renderFromAg(cached, toByLoja(cached));
+  } else {
+    vRenderKPIs([], { total_valor: 0, total_lojas: 0 });
+  }
+
   fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('v', v_active)}`).then(ag => {
-    const byLoja = ag.por_loja
-      .map(r => ({ loja: normCodLoja(String(r.loja||'')), nome: deParaMap[normCodLoja(String(r.loja||''))], val: r.valor }))
-      .filter(r => r.nome);
-    if (byLoja.length > 0) {
-      const kpis = {
-        total_valor: byLoja.reduce((s,r) => s + r.val, 0),
-        total_lojas: byLoja.filter(r => r.val > 0).length
-      };
-      vRenderKPIs(byLoja, kpis);
-      vRenderGrafico(byLoja);
-      vRenderTabela(byLoja);
+    agreCache(cacheKey, ag);
+    renderFromAg(ag, toByLoja(ag));
+  }).catch(e => {
+    console.warn('Agregados backend indisponíveis:', e.message);
+    if (!cached) {
+      const byLojaChart = vAgruparPorLoja(vFiltrar('loja'));
+      vRenderKPIs(vAgruparPorLoja(vFiltrar()), null);
+      vRenderGrafico(byLojaChart); vRenderTabela(byLojaChart);
+      vRenderCat1(vFiltrar('cat')); vRenderFam1(vFiltrar('familia'));
     }
-    if (ag.por_cat.length > 0) vRenderCat1(null, ag.por_cat);
-    if (ag.por_fam.length > 0) vRenderFam1(null, ag.por_fam);
-  }).catch(e => console.warn('Agregados backend indisponíveis:', e.message));
+  });
 }
 
 // ── FILTRO DE MÊS/ANO ATUAL ───────────────────────────────────────────────────

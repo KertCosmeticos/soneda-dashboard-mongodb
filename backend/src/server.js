@@ -209,6 +209,9 @@ async function iniciarServidor() {
 
     // Índices de performance para dados_brutos (queries de dashboard)
     await Promise.all([
+      // Compostos cobrem $match de período + $group por dimensão
+      db.collection("dados_brutos").createIndex({ "Ano": 1, "Mês": 1, "Loja": 1 }),
+      db.collection("dados_brutos").createIndex({ "Ano": 1, "Mês": 1, "Data": 1 }),
       db.collection("dados_brutos").createIndex({ "Ano": 1, "Mês": 1 }),
       db.collection("dados_brutos").createIndex({ "Loja": 1 }),
       db.collection("dados_brutos").createIndex({ "GTIN/PLU": 1 }),
@@ -818,12 +821,14 @@ async function iniciarServidor() {
         const catCount = needsCatLookup ? 1 :
           await db.collection("categorias_depara").estimatedDocumentCount();
 
+        const AGG_OPTS = { allowDiskUse: true };
+
         const [por_loja, catFamResult, por_dia] = await Promise.all([
           db.collection("dados_brutos").aggregate([
             ...baseStages({ noActLoja: true }),
             { $group: { _id: "$Loja", ...grp } },
             { $sort: { qty: -1 } }
-          ]).toArray(),
+          ], AGG_OPTS).toArray(),
 
           catCount > 0 ? Promise.all([
             db.collection("dados_brutos").aggregate([
@@ -831,20 +836,20 @@ async function iniciarServidor() {
               { $group: { _id: "$_cat", ...grp } },
               { $match: { _id: { $ne: null } } },
               { $sort: { qty: -1 } }
-            ]).toArray(),
+            ], AGG_OPTS).toArray(),
             db.collection("dados_brutos").aggregate([
               ...baseStages({ noActFam: true, needsJoin: true }),
               { $group: { _id: "$_fam", ...grp } },
               { $match: { _id: { $ne: null } } },
               { $sort: { qty: -1 } }
-            ]).toArray()
+            ], AGG_OPTS).toArray()
           ]) : Promise.resolve([[], []]),
 
           db.collection("dados_brutos").aggregate([
             ...baseStages({}),
             { $group: { _id: "$Data", ...grp } },
             { $sort: { _id: 1 } }
-          ]).toArray()
+          ], AGG_OPTS).toArray()
         ]);
 
         const [por_cat, por_fam] = catFamResult;
