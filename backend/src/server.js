@@ -107,6 +107,18 @@ function parseBRNumber(val) {
   return val;
 }
 
+// Normaliza código de barras: trata notação científica do Excel (ex: "7,891E+12" → "7891000000000")
+function normalizarEAN(val) {
+  let s = String(val ?? '').trim().replace(/^["']|["']$/g, '');
+  // Notação científica BR: "7,891E+12" → "7.891E+12"
+  s = s.replace(/^(\d+),(\d*[eE])/i, '$1.$2');
+  // Notação científica: "7.891E+12" → número inteiro
+  if (/^\d+\.?\d*[eE][+\-]?\d+$/i.test(s)) s = String(Math.round(Number(s)));
+  // Remove zeros decimais e caracteres não-numéricos
+  s = s.replace(/\.0+$/, '').replace(/[^\d]/g, '');
+  return s || String(val ?? '').trim();
+}
+
 function brToDouble(expr) {
   // Strip "R$ " / "R$" prefix, remove thousands dots, replace comma decimal → double
   const str = { $toString: { $ifNull: [expr, "0"] } };
@@ -787,8 +799,14 @@ async function iniciarServidor() {
         const aCat     = req.query.ativo_cat     || null;
         const aFamilia = req.query.ativo_familia || null;
 
+        // Usa pipeline $lookup + $getField para suportar "/" no nome do campo GTIN/PLU
         const joinCat = [
-          { $lookup: { from: "categorias_depara", localField: "GTIN/PLU", foreignField: "CODBARRAS", as: "_c" } },
+          { $lookup: {
+              from: "categorias_depara",
+              let: { gtin: { $getField: "GTIN/PLU" } },
+              pipeline: [{ $match: { $expr: { $eq: ["$$gtin", "$CODBARRAS"] } } }],
+              as: "_c"
+          }},
           { $addFields: { _cat: { $arrayElemAt: ["$_c.CATEGORIA", 0] }, _fam: { $arrayElemAt: ["$_c.FAMILIA", 0] } } }
         ];
 
@@ -951,7 +969,10 @@ async function iniciarServidor() {
           Object.keys(linha).forEach((coluna) => {
             const k    = limparColunas ? coluna.trim() : limparValor(coluna);
             const rawV = limparColunas ? linha[coluna].trim() : limparValor(linha[coluna]);
-            registro[k] = parseBRNumber(rawV);
+            let v = parseBRNumber(rawV);
+            // Normaliza campos de código de barras (trata notação científica do Excel)
+            if (/^(codbarras|gtin|ean|plu)/i.test(k.trim()) || k.trim() === 'GTIN/PLU') v = normalizarEAN(v);
+            registro[k] = v;
           });
           if (opcoes.extraCampos) Object.assign(registro, opcoes.extraCampos);
           resultados.push(registro);

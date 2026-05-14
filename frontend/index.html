@@ -1437,6 +1437,8 @@ async function enviarCSV(inputId, rota) {
     setProgresso(totalLotes, totalLotes, '');
     status.innerHTML = `✔ Importação concluída — <strong>${totalInserido.toLocaleString('pt-BR')}</strong> registros inseridos em ${totalLotes} lote${totalLotes > 1 ? 's' : ''}.`;
     status.className = 'import-status ok';
+    // Limpa cache de agregados para que o painel recarregue com dados novos
+    Object.keys(sessionStorage).filter(k => k.startsWith('agre__')).forEach(k => sessionStorage.removeItem(k));
 
   } catch (error) {
     console.error(error);
@@ -1971,8 +1973,8 @@ function agruparPorCategoria(data) {
 
 function renderCat1(data, preAg) {
   let byCat = preAg
-    ? preAg.map(r => ({ cat: r.cat || 'SEM CATEGORIA', qty: r.qty }))
-    : agruparPorCategoria(data || []);
+    ? preAg.map(r => ({ cat: r.cat || 'SEM CATEGORIA', qty: r.qty })).filter(r => r.cat !== 'SEM CATEGORIA' && r.cat !== null)
+    : agruparPorCategoria(data || []).filter(r => r.cat !== 'SEM CATEGORIA');
   const total = byCat.reduce((s,r) => s + r.qty, 0);
 
   const ano = document.getElementById('f-ano').value;
@@ -1980,7 +1982,16 @@ function renderCat1(data, preAg) {
   document.getElementById('cat1-sub').textContent = [ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos';
 
   const state = document.getElementById('cat1-state');
-  if (byCat.length === 0) { if(state) { state.style.display='flex'; state.innerHTML='Nenhum dado.'; } return; }
+  const semDepara = Object.keys(catMap).length === 0 && !preAg;
+  if (byCat.length === 0) {
+    if (state) {
+      state.style.display = 'flex';
+      state.innerHTML = semDepara
+        ? 'Importe o <strong>De/Para Categorias</strong> na aba Importar para ver este gráfico.'
+        : 'Nenhuma categoria encontrada para os filtros selecionados.';
+    }
+    return;
+  }
   if (state) state.style.display = 'none';
 
   byCat = [...byCat].sort((a,b) => {
@@ -2077,8 +2088,8 @@ function agruparPorFamilia(data) {
 
 function renderFam1(data, preAg) {
   let byFam = preAg
-    ? preAg.map(r => ({ fam: r.fam || 'SEM FAMÍLIA', qty: r.qty }))
-    : agruparPorFamilia(data || []);
+    ? preAg.map(r => ({ fam: r.fam || 'SEM FAMÍLIA', qty: r.qty })).filter(r => r.fam !== 'SEM FAMÍLIA' && r.fam !== null)
+    : agruparPorFamilia(data || []).filter(r => r.fam !== 'SEM FAMÍLIA');
   const total = byFam.reduce((s,r) => s + r.qty, 0);
 
   const ano = document.getElementById('f-ano').value;
@@ -2086,7 +2097,16 @@ function renderFam1(data, preAg) {
   document.getElementById('fam1-sub').textContent = [ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos';
 
   const state = document.getElementById('fam1-state');
-  if (byFam.length === 0) { if(state) { state.style.display='flex'; state.innerHTML='Nenhum dado.'; } return; }
+  const semDepara = Object.keys(familiaMap).length === 0 && !preAg;
+  if (byFam.length === 0) {
+    if (state) {
+      state.style.display = 'flex';
+      state.innerHTML = semDepara
+        ? 'Importe o <strong>De/Para Categorias</strong> na aba Importar para ver este gráfico.'
+        : 'Nenhuma família encontrada para os filtros selecionados.';
+    }
+    return;
+  }
   if (state) state.style.display = 'none';
 
   byFam = [...byFam].sort((a,b) => {
@@ -3852,11 +3872,12 @@ function vt1OrdenarPor(coluna) {
 function vRenderCat1(data, preAg) {
   let byCat;
   if (preAg) {
-    byCat = preAg.map(r => ({ cat: r.cat || 'SEM CATEGORIA', val: r.valor }));
+    byCat = preAg.map(r => ({ cat: r.cat || 'SEM CATEGORIA', val: r.valor })).filter(r => r.cat !== 'SEM CATEGORIA' && r.cat !== null);
   } else {
     const map = {};
     (data || []).forEach(r => {
-      const cat = getCat(r) || 'SEM CATEGORIA';
+      const cat = getCat(r);
+      if (!cat) return;
       const val = parseBR(col(r,'Venda (R$)','Venda(R$)','Venda R$','venda (r$)','Venda Valor','Venda NF Valor','Venda PDV Valor','venda_valor','Valor Venda'));
       if (!map[cat]) map[cat] = { cat, val: 0 };
       map[cat].val += val;
@@ -3870,7 +3891,16 @@ function vRenderCat1(data, preAg) {
   document.getElementById('v-cat1-sub').textContent = [ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos';
 
   const state = document.getElementById('v-cat1-state');
-  if (byCat.length === 0) { if(state) { state.style.display='flex'; state.innerHTML='Nenhum dado.'; } return; }
+  const semDepara = Object.keys(catMap).length === 0 && !preAg;
+  if (byCat.length === 0) {
+    if (state) {
+      state.style.display = 'flex';
+      state.innerHTML = semDepara
+        ? 'Importe o <strong>De/Para Categorias</strong> na aba Importar para ver este gráfico.'
+        : 'Nenhuma categoria encontrada para os filtros selecionados.';
+    }
+    return;
+  }
   if (state) state.style.display = 'none';
 
   byCat = [...byCat].sort((a,b) => {
@@ -3953,11 +3983,12 @@ function vCat1OrdenarPor(coluna) {
 function vRenderFam1(data, preAg) {
   let byFam;
   if (preAg) {
-    byFam = preAg.map(r => ({ fam: r.fam || 'SEM FAMÍLIA', val: r.valor }));
+    byFam = preAg.map(r => ({ fam: r.fam || 'SEM FAMÍLIA', val: r.valor })).filter(r => r.fam !== 'SEM FAMÍLIA' && r.fam !== null);
   } else {
     const map = {};
     (data || []).forEach(r => {
-      const fam = getFamilia(r) || 'SEM FAMÍLIA';
+      const fam = getFamilia(r);
+      if (!fam) return;
       const val = parseBR(col(r,'Venda (R$)','Venda(R$)','Venda R$','venda (r$)','Venda Valor','Venda NF Valor','Venda PDV Valor','venda_valor','Valor Venda'));
       if (!map[fam]) map[fam] = { fam, val: 0 };
       map[fam].val += val;
@@ -3971,8 +4002,14 @@ function vRenderFam1(data, preAg) {
   document.getElementById('v-fam1-sub').textContent = [ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos';
 
   const state = document.getElementById('v-fam1-state');
+  const semDepara = Object.keys(familiaMap).length === 0 && !preAg;
   if (byFam.length === 0) {
-    if (state) { state.style.display = 'flex'; state.innerHTML = 'Nenhum dado.'; }
+    if (state) {
+      state.style.display = 'flex';
+      state.innerHTML = semDepara
+        ? 'Importe o <strong>De/Para Categorias</strong> na aba Importar para ver este gráfico.'
+        : 'Nenhuma família encontrada para os filtros selecionados.';
+    }
     document.getElementById('v-fam1-table-body').innerHTML = '<div class="no-data">Nenhum dado</div>';
     if (vFam1Chart) { vFam1Chart.destroy(); vFam1Chart = null; }
     return;
