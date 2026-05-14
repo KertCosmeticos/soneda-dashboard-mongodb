@@ -100,7 +100,7 @@ function limparValor(valor) {
 }
 
 function parseBRNumber(val) {
-  const s = String(val ?? '').trim();
+  let s = String(val ?? '').trim().replace(/^R\$\s*/i, '');
   if (/^\d{1,3}(?:\.\d{3})*,\d+$/.test(s) || /^\d+,\d+$/.test(s)) {
     return parseFloat(s.replace(/\./g, '').replace(',', '.'));
   }
@@ -108,17 +108,33 @@ function parseBRNumber(val) {
 }
 
 function brToDouble(expr) {
+  // Strip "R$ " / "R$" prefix, remove thousands dots, replace comma decimal → double
+  const str = { $toString: { $ifNull: [expr, "0"] } };
+  const noPrefix = {
+    $replaceAll: {
+      input: { $replaceAll: { input: str, find: "R$ ", replacement: "" } },
+      find: "R$", replacement: ""
+    }
+  };
   return {
     $convert: {
       input: {
         $replaceAll: {
-          input: { $replaceAll: { input: { $toString: { $ifNull: [expr, "0"] } }, find: ".", replacement: "" } },
+          input: { $replaceAll: { input: noPrefix, find: ".", replacement: "" } },
           find: ",", replacement: "."
         }
       },
       to: "double", onError: 0, onNull: 0
     }
   };
+}
+
+// Tries "Venda (R$)" first; if 0, tries "Venda Pdv Valor" then "Venda Nf Valor"
+function brValorExpr() {
+  const rv  = brToDouble({ $getField: "Venda (R$)" });
+  const pdv = brToDouble({ $getField: "Venda Pdv Valor" });
+  const nf  = brToDouble({ $getField: "Venda Nf Valor"  });
+  return { $cond: [{ $gt: [rv, 0] }, rv, { $cond: [{ $gt: [pdv, 0] }, pdv, nf] }] };
 }
 
 // ─────────────────────────────────────────
@@ -693,7 +709,7 @@ async function iniciarServidor() {
             $group: {
               _id: null,
               total_vendido: { $sum: brToDouble({ $getField: "Venda (Qtd)" }) },
-              total_valor:   { $sum: brToDouble({ $getField: "Venda (R$)" }) },
+              total_valor:   { $sum: brValorExpr() },
               lojas:         { $addToSet: "$Loja" }
             }
           },
@@ -726,7 +742,7 @@ async function iniciarServidor() {
               $group: {
                 _id: null,
                 total_vendido: { $sum: brToDouble({ $getField: "Venda (Qtd)" }) },
-                total_valor:   { $sum: brToDouble({ $getField: "Venda (R$)" }) },
+                total_valor:   { $sum: brValorExpr() },
                 lojas:         { $addToSet: "$Loja" }
               }
             },
@@ -750,6 +766,84 @@ async function iniciarServidor() {
     });
 
     // ─────────────────────────────────────
+    // AGREGADOS DASHBOARD (qtd + valor, por loja / cat / fam / dia)
+    // ─────────────────────────────────────
+    app.get("/api/dashboard/agregados", async (req, res) => {
+      try {
+        const { ano, mes, loja, cat, familia } = req.query;
+        const aLoja    = req.query.ativo_loja    || null;
+        const aCat     = req.query.ativo_cat     || null;
+        const aFamilia = req.query.ativo_familia || null;
+
+        const joinCat = [
+          { $lookup: { from: "categorias_depara", localField: "GTIN/PLU", foreignField: "CODBARRAS", as: "_c" } },
+          { $addFields: { _cat: { $arrayElemAt: ["$_c.CATEGORIA", 0] }, _fam: { $arrayElemAt: ["$_c.FAMILIA", 0] } } }
+        ];
+
+        const grp = {
+          qty:   { $sum: brToDouble({ $getField: "Venda (Qtd)" }) },
+          valor: { $sum: brValorExpr() }
+        };
+
+        function baseStages(opt = {}) {
+          const s = [];
+          const m = {};
+          if (ano) m["Ano"] = String(ano);
+          if (mes) m["Mês"] = String(mes);
+          if (loja)                    m["Loja"] = String(loja);
+          if (aLoja && !opt.noActLoja) m["Loja"] = String(aLoja);
+          if (Object.keys(m).length)   s.push({ $match: m });
+
+          const cf = [];
+          if (cat)                       cf.push({ $match: { _cat: cat } });
+          if (familia)                   cf.push({ $match: { _fam: familia } });
+          if (aCat    && !opt.noActCat)  cf.push({ $match: { _cat: aCat } });
+          if (aFamilia && !opt.noActFam) cf.push({ $match: { _fam: aFamilia } });
+
+          if (cf.length || opt.needsJoin) s.push(...joinCat, ...cf);
+          return s;
+        }
+
+        const [por_loja, por_cat, por_fam, por_dia] = await Promise.all([
+          db.collection("dados_brutos").aggregate([
+            ...baseStages({ noActLoja: true }),
+            { $group: { _id: "$Loja", ...grp } },
+            { $sort: { qty: -1 } }
+          ]).toArray(),
+
+          db.collection("dados_brutos").aggregate([
+            ...baseStages({ noActCat: true, needsJoin: true }),
+            { $group: { _id: "$_cat", ...grp } },
+            { $match: { _id: { $ne: null } } },
+            { $sort: { qty: -1 } }
+          ]).toArray(),
+
+          db.collection("dados_brutos").aggregate([
+            ...baseStages({ noActFam: true, needsJoin: true }),
+            { $group: { _id: "$_fam", ...grp } },
+            { $match: { _id: { $ne: null } } },
+            { $sort: { qty: -1 } }
+          ]).toArray(),
+
+          db.collection("dados_brutos").aggregate([
+            ...baseStages({}),
+            { $group: { _id: "$Data", ...grp } },
+            { $sort: { _id: 1 } }
+          ]).toArray()
+        ]);
+
+        res.json({
+          por_loja: por_loja.map(r => ({ loja: r._id, qty: r.qty, valor: r.valor })),
+          por_cat:  por_cat.map(r  => ({ cat:  r._id || "SEM CATEGORIA", qty: r.qty, valor: r.valor })),
+          por_fam:  por_fam.map(r  => ({ fam:  r._id || "SEM FAMÍLIA",   qty: r.qty, valor: r.valor })),
+          por_dia:  por_dia.map(r  => ({ data: r._id, qty: r.qty, valor: r.valor }))
+        });
+      } catch(e) {
+        res.status(500).json({ erro: "Erro ao agregar dados", detalhe: e.message });
+      }
+    });
+
+    // ─────────────────────────────────────
     // VENDAS POR FILIAL
     // ─────────────────────────────────────
     app.get("/api/dashboard/vendas-por-filial", async (req, res) => {
@@ -758,7 +852,7 @@ async function iniciarServidor() {
           {
             $group: {
               _id: "$Loja",
-              total_venda: { $sum: brToDouble({ $getField: "Venda (R$)" }) }
+              total_venda: { $sum: brValorExpr() }
             }
           },
           { $sort: { total_venda: -1 } },
@@ -809,7 +903,7 @@ async function iniciarServidor() {
           {
             $group: {
               _id: { ano: "$Ano", mes: "$Mês" },
-              total_venda: { $sum: brToDouble({ $getField: "Venda (R$)" }) }
+              total_venda: { $sum: brValorExpr() }
             }
           },
           { $sort: { "_id.ano": 1, "_id.mes": 1 } }

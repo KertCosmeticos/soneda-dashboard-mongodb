@@ -1758,8 +1758,24 @@ function agruparPorLoja(data) {
   return Object.values(map).sort((a,b) => b.qty - a.qty);
 }
 
+function buildAgreParams(prefix, activeObj) {
+  const g = id => document.getElementById(id)?.value || '';
+  const params = new URLSearchParams();
+  const ano = g(`${prefix}-ano`), mes = g(`${prefix}-mes`),
+        loja = g(`${prefix}-loja`), cat = g(`${prefix}-cat`),
+        familia = g(`${prefix}-familia`);
+  if (ano)    params.set('ano', ano);
+  if (mes)    params.set('mes', mes);
+  if (loja)   params.set('loja', loja);
+  if (cat)    params.set('cat', cat);
+  if (familia) params.set('familia', familia);
+  if (activeObj?.val && ['loja','cat','familia'].includes(activeObj.dim))
+    params.set(`ativo_${activeObj.dim}`, activeObj.val);
+  return params;
+}
+
 // ── RENDER PRINCIPAL ──────────────────────────────────────────────────────────
-function renderizar() {
+async function renderizar() {
   mostrarBanner('f-active-banner', f_active,
     {loja:'FILIAL', cat:'CATEGORIA', familia:'FAMÍLIA'}, 'fLimparAtivo');
 
@@ -1771,16 +1787,27 @@ function renderizar() {
 
   // Gráficos/tabelas da dimensão selecionada mantêm todas as linhas visíveis e destacam a linha ativa.
   // KPIs e demais visuais recebem o filtro ativo normalmente.
-  const todosFiltrados = filtrar();
-  const byLojaChart = agruparPorLoja(filtrar('loja'));
-  const byLojaFull  = agruparPorLoja(todosFiltrados);
-
+  const byLojaFull = agruparPorLoja(filtrar());
   renderKPIs(byLojaFull);
   fetchKPIs();
-  renderGrafico(byLojaChart);
-  renderTabela(byLojaChart);
-  renderCat1(filtrar('cat'));
-  renderFam1(filtrar('familia'));
+
+  try {
+    const ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('f', f_active)}`);
+    const byLoja = ag.por_loja
+      .map(r => ({ loja: normCodLoja(String(r.loja||'')), nome: deParaMap[normCodLoja(String(r.loja||''))], qty: r.qty }))
+      .filter(r => r.nome);
+    renderGrafico(byLoja);
+    renderTabela(byLoja);
+    renderCat1(null, ag.por_cat);
+    renderFam1(null, ag.por_fam);
+  } catch(e) {
+    console.warn('Agregados backend indisponíveis, usando dados locais:', e.message);
+    const byLojaChart = agruparPorLoja(filtrar('loja'));
+    renderGrafico(byLojaChart);
+    renderTabela(byLojaChart);
+    renderCat1(filtrar('cat'));
+    renderFam1(filtrar('familia'));
+  }
 }
 
 function renderKPIs(byLoja) {
@@ -1914,8 +1941,10 @@ function agruparPorCategoria(data) {
   return Object.values(map).sort((a,b) => b.qty - a.qty);
 }
 
-function renderCat1(data) {
-  let byCat = agruparPorCategoria(data);
+function renderCat1(data, preAg) {
+  let byCat = preAg
+    ? preAg.map(r => ({ cat: r.cat || 'SEM CATEGORIA', qty: r.qty }))
+    : agruparPorCategoria(data || []);
   const total = byCat.reduce((s,r) => s + r.qty, 0);
 
   const ano = document.getElementById('f-ano').value;
@@ -2018,8 +2047,10 @@ function agruparPorFamilia(data) {
   return Object.values(map).sort((a,b) => b.qty - a.qty);
 }
 
-function renderFam1(data) {
-  let byFam = agruparPorFamilia(data);
+function renderFam1(data, preAg) {
+  let byFam = preAg
+    ? preAg.map(r => ({ fam: r.fam || 'SEM FAMÍLIA', qty: r.qty }))
+    : agruparPorFamilia(data || []);
   const total = byFam.reduce((s,r) => s + r.qty, 0);
 
   const ano = document.getElementById('f-ano').value;
@@ -2296,11 +2327,8 @@ function d2DiaSemana(valor) {
   return ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][dt.getDay()];
 }
 
-function d2Renderizar() {
+async function d2Renderizar() {
   mostrarBanner('d2-active-banner', d2_active, {cat:'CATEGORIA', data:'DATA'}, 'd2LimparAtivo');
-  const dados  = d2Filtrar();
-  const porDia = d2AgruparPorDia(dados);
-  const porDiaTabela = d2AgruparPorDia(d2Filtrar('data'));
 
   const ano  = document.getElementById('d2-ano').value;
   const mes  = document.getElementById('d2-mes').value;
@@ -2309,6 +2337,25 @@ function d2Renderizar() {
 
   document.getElementById('d2-chart-sub').textContent =
     ([ano, mes].filter(Boolean).join(' · ') || 'Todos os períodos') + ' · ' + nomeLoja;
+
+  let porDia, porDiaTabela;
+  try {
+    const ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('d2', d2_active)}`);
+    const toDia = r => {
+      const dt = parseDataBR(String(r.data || ''));
+      return { data: String(r.data||''), iso: dt ? dataParaISO(dt) : String(r.data||''), qty: r.qty };
+    };
+    const allDia = ag.por_dia.filter(r => r.data).map(toDia)
+      .sort((a,b) => String(a.iso||a.data).localeCompare(String(b.iso||b.data)));
+    porDiaTabela = allDia;
+    porDia = d2_active.dim === 'data'
+      ? allDia.filter(r => normalizeFilterValue(r.data) === normalizeFilterValue(d2_active.val))
+      : allDia;
+  } catch(e) {
+    console.warn('Backend indisponível, usando dados locais:', e.message);
+    porDia       = d2AgruparPorDia(d2Filtrar());
+    porDiaTabela = d2AgruparPorDia(d2Filtrar('data'));
+  }
 
   const total = porDia.reduce((s,r) => s + r.qty, 0);
   const dias  = porDia.filter(r => r.qty > 0).length;
@@ -3630,10 +3677,9 @@ function vFmtR(v) {
   return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function vRenderKPIs(byLoja, todosFiltrados) {
-  const total  = (todosFiltrados || []).reduce((s,r) =>
-    s + parseBR(col(r,'Venda (R$)','Venda(R$)','Venda R$','venda (r$)','Venda Valor','Venda NF Valor','Venda PDV Valor','venda_valor','Valor Venda')), 0);
-  const ativas = byLoja.filter(r => r.val > 0).length;
+function vRenderKPIs(byLoja, kpis) {
+  const total  = kpis ? Number(kpis.total_valor || 0) : byLoja.reduce((s,r) => s + r.val, 0);
+  const ativas = kpis ? Number(kpis.total_lojas || 0) : byLoja.filter(r => r.val > 0).length;
   const top    = byLoja[0];
   document.getElementById('v-kpi-total').textContent   = vFmtR(total);
   document.getElementById('v-kpi-lojas').textContent   = ativas;
@@ -3762,15 +3808,20 @@ function vt1OrdenarPor(coluna) {
   vRenderizar();
 }
 
-function vRenderCat1(data) {
-  const map = {};
-  data.forEach(r => {
-    const cat = getCat(r) || 'SEM CATEGORIA';
-    const val = parseBR(col(r,'Venda (R$)','Venda(R$)','Venda R$','venda (r$)','Venda Valor','Venda NF Valor','Venda PDV Valor','venda_valor','Valor Venda'));
-    if (!map[cat]) map[cat] = { cat, val: 0 };
-    map[cat].val += val;
-  });
-  let byCat = Object.values(map);
+function vRenderCat1(data, preAg) {
+  let byCat;
+  if (preAg) {
+    byCat = preAg.map(r => ({ cat: r.cat || 'SEM CATEGORIA', val: r.valor }));
+  } else {
+    const map = {};
+    (data || []).forEach(r => {
+      const cat = getCat(r) || 'SEM CATEGORIA';
+      const val = parseBR(col(r,'Venda (R$)','Venda(R$)','Venda R$','venda (r$)','Venda Valor','Venda NF Valor','Venda PDV Valor','venda_valor','Valor Venda'));
+      if (!map[cat]) map[cat] = { cat, val: 0 };
+      map[cat].val += val;
+    });
+    byCat = Object.values(map);
+  }
   const total = byCat.reduce((s,r) => s + r.val, 0);
 
   const ano = document.getElementById('v-ano').value;
@@ -3858,16 +3909,20 @@ function vCat1OrdenarPor(coluna) {
 }
 
 
-function vRenderFam1(data) {
-  const map = {};
-  data.forEach(r => {
-    const fam = getFamilia(r) || 'SEM FAMÍLIA';
-    const val = parseBR(col(r,'Venda (R$)','Venda(R$)','Venda R$','venda (r$)','Venda Valor','Venda NF Valor','Venda PDV Valor','venda_valor','Valor Venda'));
-    if (!map[fam]) map[fam] = { fam, val: 0 };
-    map[fam].val += val;
-  });
-
-  let byFam = Object.values(map);
+function vRenderFam1(data, preAg) {
+  let byFam;
+  if (preAg) {
+    byFam = preAg.map(r => ({ fam: r.fam || 'SEM FAMÍLIA', val: r.valor }));
+  } else {
+    const map = {};
+    (data || []).forEach(r => {
+      const fam = getFamilia(r) || 'SEM FAMÍLIA';
+      const val = parseBR(col(r,'Venda (R$)','Venda(R$)','Venda R$','venda (r$)','Venda Valor','Venda NF Valor','Venda PDV Valor','venda_valor','Valor Venda'));
+      if (!map[fam]) map[fam] = { fam, val: 0 };
+      map[fam].val += val;
+    });
+    byFam = Object.values(map);
+  }
   const total = byFam.reduce((s,r) => s + r.val, 0);
 
   const ano = document.getElementById('v-ano').value;
@@ -3987,7 +4042,7 @@ function vFam1OrdenarPor(coluna) {
   vRenderizar();
 }
 
-function vRenderizar() {
+async function vRenderizar() {
   mostrarBanner('v-active-banner', v_active, {loja:'FILIAL', cat:'CATEGORIA', familia:'FAMÍLIA'}, 'vLimparAtivo');
 
   const ano = document.getElementById('v-ano').value;
@@ -3995,14 +4050,31 @@ function vRenderizar() {
   document.getElementById('v-chart-sub').textContent = [ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos';
   document.getElementById('v-loja-ativa').style.display = 'none';
 
-  const vTodosFiltrados = vFiltrar();
-  const byLojaChart = vAgruparPorLoja(vFiltrar('loja'));
-  const byLojaFull  = vAgruparPorLoja(vTodosFiltrados);
-  vRenderKPIs(byLojaFull, vTodosFiltrados);
-  vRenderGrafico(byLojaChart);
-  vRenderTabela(byLojaChart);
-  vRenderCat1(vFiltrar('cat'));
-  vRenderFam1(vFiltrar('familia'));
+  try {
+    const ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('v', v_active)}`);
+    const byLoja = ag.por_loja
+      .map(r => ({ loja: normCodLoja(String(r.loja||'')), nome: deParaMap[normCodLoja(String(r.loja||''))], val: r.valor }))
+      .filter(r => r.nome);
+    const kpis = {
+      total_valor: byLoja.reduce((s,r) => s + r.val, 0),
+      total_lojas: byLoja.filter(r => r.val > 0).length
+    };
+    vRenderKPIs(byLoja, kpis);
+    vRenderGrafico(byLoja);
+    vRenderTabela(byLoja);
+    vRenderCat1(null, ag.por_cat);
+    vRenderFam1(null, ag.por_fam);
+  } catch(e) {
+    console.warn('Backend indisponível, usando dados locais:', e.message);
+    const vTodosFiltrados = vFiltrar();
+    const byLojaChart = vAgruparPorLoja(vFiltrar('loja'));
+    const byLojaFull  = vAgruparPorLoja(vTodosFiltrados);
+    vRenderKPIs(byLojaFull, null);
+    vRenderGrafico(byLojaChart);
+    vRenderTabela(byLojaChart);
+    vRenderCat1(vFiltrar('cat'));
+    vRenderFam1(vFiltrar('familia'));
+  }
 }
 
 // ── FILTRO DE MÊS/ANO ATUAL ───────────────────────────────────────────────────
