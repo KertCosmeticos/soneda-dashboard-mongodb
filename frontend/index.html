@@ -447,7 +447,6 @@
         <button class="btn-import" onclick="enviarCSV('csvLojas', '/api/importar/lojas-depara')">Importar</button>
       </div>
       <button class="btn-import secondary" onclick="recarregarDados()">Atualizar painel</button>
-      <button class="btn-import secondary" onclick="ressincronizarDePara()" title="Use após alterar o De/Para de Categorias diretamente no banco. Propaga as mudanças para todos os registros de vendas.">Ressincronizar De/Para</button>
       <div id="import-status" class="import-status"></div>
     </div>
 
@@ -482,7 +481,7 @@
           <li>Baixe o <strong style="color:var(--text)">Modelo</strong> ao lado do botão Importar</li>
           <li>Preencha: <code style="color:var(--accent2)">CODBARRAS · CATEGORIA · FAMILIA · NOME PRODUTO</code></li>
           <li>Salve como <strong style="color:var(--text)">.CSV</strong> e importe o arquivo completo</li>
-          <li>O sistema atualiza automaticamente todos os registros de venda</li>
+          <li>O painel aplica o mapeamento em tempo real — sem nenhuma etapa adicional</li>
         </ol>
         <div style="margin-top:12px;padding:10px 12px;background:var(--surface2);border-radius:8px;font-family:'DM Mono',monospace;font-size:0.7rem;color:#ff9f43;line-height:1.5">
           Sempre envie o arquivo completo. Importar parcial apaga os demais produtos do mapeamento.
@@ -1509,67 +1508,6 @@ async function enviarCSV(inputId, rota) {
 
 function recarregarDados() {
   window.location.reload();
-}
-
-async function ressincronizarDePara() {
-  const status = document.getElementById('import-status');
-  const token  = admGetToken();
-  if (!token) {
-    status.textContent = 'Faça login como administrador para ressincronizar.';
-    status.className   = 'import-status err';
-    return;
-  }
-  if (!confirm('Isso vai propagar as mudanças do De/Para de Categorias para todos os registros de vendas.\nPode demorar 2–3 minutos. Continuar?')) return;
-
-  // Limpa cache do frontend
-  Object.keys(sessionStorage).filter(k => k.startsWith('agre__')).forEach(k => sessionStorage.removeItem(k));
-
-  try {
-    const res  = await fetch(`${API_BASE}/api/admin/ressincronizar-depara`, {
-      method:  'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.erro || data.detalhe || 'Erro desconhecido');
-
-    // Animação de carregamento (o processo roda inteiro no MongoDB, sem progresso parcial)
-    const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
-    let fi = 0;
-    const anim = setInterval(() => {
-      fi = (fi + 1) % frames.length;
-      status.innerHTML = `<span style="font-family:'DM Mono',monospace">${frames[fi]} Processando no banco de dados... aguarde, pode levar alguns minutos.</span>`;
-      status.className = 'import-status';
-    }, 150);
-
-    // Monitora conclusão a cada 5 segundos
-    let tentativas = 0;
-    const intervalo = setInterval(async () => {
-      tentativas++;
-      try {
-        const r = await fetch(`${API_BASE}/api/admin/ressincronizar-status`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (!r.ok) return; // 504 temporário — ignora e tenta de novo
-        const s = await r.json();
-        if (!s.emAndamento) {
-          clearInterval(anim);
-          clearInterval(intervalo);
-          status.innerHTML = `✔ Ressincronização concluída — <strong>${(s.total||0).toLocaleString('pt-BR')}</strong> registros atualizados. Recarregando painel...`;
-          status.className = 'import-status ok';
-          setTimeout(() => recarregarDados(), 2000);
-        } else if (tentativas >= 72) {
-          clearInterval(anim);
-          clearInterval(intervalo);
-          status.innerHTML = '⚠ Processo ainda em andamento no banco. Clique em "Atualizar painel" em alguns minutos.';
-          status.className = 'import-status';
-        }
-      } catch(_) {}
-    }, 5000);
-
-  } catch(e) {
-    status.textContent = `Erro ao ressincronizar: ${e.message}`;
-    status.className = 'import-status err';
-  }
 }
 
 // ── INICIALIZAÇÃO ─────────────────────────────────────────────────────────────

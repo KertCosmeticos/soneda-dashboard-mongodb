@@ -36,12 +36,8 @@ function cacheSet(k, d) { _cache.set(k, { data: d, ts: Date.now() }); }
 function cacheClear() { _cache.clear(); }
 
 // ── FLAGS DE OTIMIZAÇÃO ──────────────────────────────────────────────────────
-let catDeParaInMem = null; // { [ean]: { cat, fam } } — recarregado ao importar categorias
-let _migNumericos  = false; // true quando dados têm _qtd_num/_valor_num pré-computados
-let _migCat        = false; // true quando dados têm _cat/_fam pré-computados
-
-// ── ESTADO DA RESSINCRONIZAÇÃO DE/PARA ───────────────────────────────────────
-const _ressincState = { emAndamento: false, atual: 0, total: 0 };
+let _migNumericos = false; // true quando dados têm _qtd_num/_valor_num pré-computados
+let _migGtin      = false; // true quando dados têm _gtin pré-computado (join indexado)
 
 // ─────────────────────────────────────────
 // UPLOAD
@@ -170,47 +166,6 @@ function brValorExpr() {
 }
 
 // ─────────────────────────────────────────
-// RECALCULO _cat/_fam EM BACKGROUND
-// ─────────────────────────────────────────
-async function recalcularCatFamBackground(db) {
-  _ressincState.total = await db.collection("dados_brutos").estimatedDocumentCount();
-  _ressincState.atual = 0;
-
-  // Roda inteiramente no MongoDB via $lookup + $merge — Node.js fica livre durante todo o processo
-  await db.collection("dados_brutos").aggregate([
-    {
-      $lookup: {
-        from: "categorias_depara",
-        let: { gtin: { $getField: "GTIN/PLU" } },
-        pipeline: [{ $match: { $expr: { $eq: ["$$gtin", "$CODBARRAS"] } } }],
-        as: "_c"
-      }
-    },
-    {
-      $set: {
-        _cat: { $ifNull: [{ $arrayElemAt: ["$_c.CATEGORIA", 0] }, null] },
-        _fam: { $ifNull: [{ $arrayElemAt: ["$_c.FAMILIA", 0] }, null] }
-      }
-    },
-    { $unset: "_c" },
-    {
-      $merge: {
-        into: "dados_brutos",
-        on: "_id",
-        whenMatched: "merge",
-        whenNotMatched: "discard"
-      }
-    }
-  ], { allowDiskUse: true }).toArray();
-
-  _ressincState.atual = _ressincState.total;
-  catDeParaInMem = null;
-  _migCat = true;
-  _cache.clear();
-  console.log('✅ _cat/_fam recalculados via $lookup+$merge server-side');
-}
-
-// ─────────────────────────────────────────
 // SERVIDOR
 // ─────────────────────────────────────────
 async function iniciarServidor() {
@@ -222,25 +177,14 @@ async function iniciarServidor() {
     console.log(`📦 Banco em uso: ${dbName}`);
 
     // ── FUNÇÕES DE OTIMIZAÇÃO ────────────────────────────────────────────────
-    async function carregarCatDePara() {
-      if (catDeParaInMem) return catDeParaInMem;
-      const rows = await db.collection("categorias_depara").find({}).toArray();
-      catDeParaInMem = {};
-      rows.forEach(r => {
-        const ean = String(r.CODBARRAS || '').trim();
-        if (ean) catDeParaInMem[ean] = { cat: r.CATEGORIA || null, fam: r.FAMILIA || null };
-      });
-      return catDeParaInMem;
-    }
-
     async function atualizarFlagsMigracao() {
       const [s1, s2] = await Promise.all([
         db.collection("dados_brutos").findOne({ _qtd_num: { $exists: true } }, { projection: { _id: 1 } }),
-        db.collection("dados_brutos").findOne({ _cat:     { $exists: true } }, { projection: { _id: 1 } })
+        db.collection("dados_brutos").findOne({ _gtin:    { $exists: true } }, { projection: { _id: 1 } })
       ]);
       _migNumericos = !!s1;
-      _migCat       = !!s2;
-      console.log(`📊 Otimizações ativas: numéricos=${_migNumericos}, categorias=${_migCat}`);
+      _migGtin      = !!s2;
+      console.log(`📊 Otimizações ativas: numéricos=${_migNumericos}, gtin=${_migGtin}`);
     }
 
     await atualizarFlagsMigracao();
@@ -311,9 +255,7 @@ async function iniciarServidor() {
       db.collection("dados_brutos").createIndex({ "Ano": 1, "Mês": 1 }),
       db.collection("dados_brutos").createIndex({ "Loja": 1 }),
       db.collection("dados_brutos").createIndex({ "GTIN/PLU": 1 }),
-      // Índices para campos pré-computados (ativados após migração)
-      db.collection("dados_brutos").createIndex({ "_cat": 1, "Ano": 1, "Mês": 1 }),
-      db.collection("dados_brutos").createIndex({ "_fam": 1, "Ano": 1, "Mês": 1 }),
+      db.collection("dados_brutos").createIndex({ "_gtin": 1 }),
       db.collection("categorias_depara").createIndex({ "CODBARRAS": 1 })
     ]);
     console.log("📊 Índices de dashboard criados/verificados");
@@ -895,21 +837,28 @@ async function iniciarServidor() {
         const aCat     = req.query.ativo_cat     || null;
         const aFamilia = req.query.ativo_familia || null;
 
-        // $lookup via pipeline (suporta "/" no nome GTIN/PLU) — usado apenas quando _migCat=false
-        const joinCat = [
-          { $lookup: {
-              from: "categorias_depara",
-              let: { gtin: { $getField: "GTIN/PLU" } },
-              pipeline: [{ $match: { $expr: { $eq: ["$$gtin", "$CODBARRAS"] } } }],
-              as: "_c"
-          }},
-          { $addFields: { _cat: { $arrayElemAt: ["$_c.CATEGORIA", 0] }, _fam: { $arrayElemAt: ["$_c.FAMILIA", 0] } } }
-        ];
+        // Join com categorias_depara em tempo de query:
+        // _migGtin=true → localField/_gtin usa índice de categorias_depara.CODBARRAS (rápido)
+        // _migGtin=false → $expr sem índice (compatibilidade com docs importados antes da migração)
+        const joinCat = _migGtin
+          ? [
+              { $lookup: { from: "categorias_depara", localField: "_gtin", foreignField: "CODBARRAS", as: "_c" } },
+              { $addFields: { _cat: { $arrayElemAt: ["$_c.CATEGORIA", 0] }, _fam: { $arrayElemAt: ["$_c.FAMILIA", 0] } } }
+            ]
+          : [
+              { $lookup: {
+                  from: "categorias_depara",
+                  let: { gtin: { $getField: "GTIN/PLU" } },
+                  pipeline: [{ $match: { $expr: { $eq: ["$$gtin", "$CODBARRAS"] } } }],
+                  as: "_c"
+              }},
+              { $addFields: { _cat: { $arrayElemAt: ["$_c.CATEGORIA", 0] }, _fam: { $arrayElemAt: ["$_c.FAMILIA", 0] } } }
+            ];
 
-        // Usa campos pré-computados quando disponíveis — elimina $convert em toda a coleção
+        // Usa campos numéricos pré-computados quando disponíveis
         const grp = {
-          qty:   { $sum: _migNumericos ? "$_qtd_num"   : brToDouble({ $getField: "Venda (Qtd)" }) },
-          valor: { $sum: _migNumericos ? "$_valor_num"  : brValorExpr() }
+          qty:   { $sum: _migNumericos ? "$_qtd_num"  : brToDouble({ $getField: "Venda (Qtd)" }) },
+          valor: { $sum: _migNumericos ? "$_valor_num" : brValorExpr() }
         };
 
         function baseStages(opt = {}) {
@@ -921,30 +870,17 @@ async function iniciarServidor() {
           if (aLoja && !opt.noActLoja) m["Loja"] = String(aLoja);
           if (Object.keys(m).length)   s.push({ $match: m });
 
-          if (_migCat) {
-            // Dados já têm _cat/_fam: filtra diretamente, sem $lookup
-            const mCat = {};
-            if (cat)                        mCat._cat = cat;
-            if (familia)                    mCat._fam = familia;
-            if (aCat    && !opt.noActCat)   mCat._cat = aCat;
-            if (aFamilia && !opt.noActFam)  mCat._fam = aFamilia;
-            if (Object.keys(mCat).length)   s.push({ $match: mCat });
-          } else {
-            // Caminho legado: $lookup + filtro
-            const cf = [];
-            if (cat)                        cf.push({ $match: { _cat: cat } });
-            if (familia)                    cf.push({ $match: { _fam: familia } });
-            if (aCat    && !opt.noActCat)   cf.push({ $match: { _cat: aCat } });
-            if (aFamilia && !opt.noActFam)  cf.push({ $match: { _fam: aFamilia } });
-            if (cf.length || opt.needsJoin) s.push(...joinCat, ...cf);
-          }
+          // Join sempre ocorre em tempo de query — sem campos pré-computados em dados_brutos
+          const cf = [];
+          if (cat)                       cf.push({ $match: { _cat: cat } });
+          if (familia)                   cf.push({ $match: { _fam: familia } });
+          if (aCat    && !opt.noActCat)  cf.push({ $match: { _cat: aCat } });
+          if (aFamilia && !opt.noActFam) cf.push({ $match: { _fam: aFamilia } });
+          if (cf.length || opt.needsJoin) s.push(...joinCat, ...cf);
           return s;
         }
 
-        const needsCatLookup = !!(cat || familia || aCat || aFamilia);
-        const catCount = _migCat ? 1 : (needsCatLookup ? 1 :
-          await db.collection("categorias_depara").estimatedDocumentCount());
-
+        const catCount = await db.collection("categorias_depara").estimatedDocumentCount();
         const AGG_OPTS = { allowDiskUse: true };
 
         const [por_loja, catFamResult, por_dia] = await Promise.all([
@@ -956,12 +892,12 @@ async function iniciarServidor() {
 
           catCount > 0 ? Promise.all([
             db.collection("dados_brutos").aggregate([
-              ...baseStages({ noActCat: true, needsJoin: !_migCat }),
+              ...baseStages({ noActCat: true, needsJoin: true }),
               { $group: { _id: "$_cat", ...grp } },
               { $sort: { qty: -1 } }
             ], AGG_OPTS).toArray(),
             db.collection("dados_brutos").aggregate([
-              ...baseStages({ noActFam: true, needsJoin: !_migCat }),
+              ...baseStages({ noActFam: true, needsJoin: true }),
               { $group: { _id: "$_fam", ...grp } },
               { $sort: { qty: -1 } }
             ], AGG_OPTS).toArray()
@@ -1066,12 +1002,6 @@ async function iniciarServidor() {
 
     // Helper: processa um arquivo CSV temporário e insere na coleção
     async function processarChunkCSV(req, colecao, limparColunas, opcoes = {}) {
-      // Pré-carrega mapa de categorias para importações de dados_brutos
-      let catCache = null;
-      if (colecao.collectionName === 'dados_brutos') {
-        try { catCache = await carregarCatDePara(); } catch(e) { /* sem categorias ainda */ }
-      }
-
       return new Promise((resolve, reject) => {
         const resultados = [];
         const stream = fs.createReadStream(req.file.path).pipe(csv({ separator: ";" }));
@@ -1088,7 +1018,7 @@ async function iniciarServidor() {
           });
           if (opcoes.extraCampos) Object.assign(registro, opcoes.extraCampos);
 
-          // Pré-computa campos numéricos e categoria (elimina $convert e $lookup nas queries)
+          // Pré-computa campos numéricos e _gtin para join indexado em tempo de query
           if (colecao.collectionName === 'dados_brutos') {
             const qtdRaw = registro['Venda (Qtd)'] ?? registro['Venda Nf Quantidade'] ?? registro['Venda Pdv Quantidade'] ?? 0;
             const valRaw = registro['Venda (R$)']  ?? registro['Venda Pdv Valor']      ?? registro['Venda Nf Valor']      ?? 0;
@@ -1096,12 +1026,7 @@ async function iniciarServidor() {
             const val = parseBRNumber(valRaw);
             registro._qtd_num   = typeof qtd === 'number' ? qtd : (parseFloat(String(qtd)) || 0);
             registro._valor_num = typeof val === 'number' ? val : (parseFloat(String(val)) || 0);
-            if (catCache) {
-              const gtin  = String(registro['GTIN/PLU'] || '').trim();
-              const entry = catCache[gtin];
-              registro._cat = entry ? (entry.cat || null) : null;
-              registro._fam = entry ? (entry.fam || null) : null;
-            }
+            registro._gtin      = String(registro['GTIN/PLU'] || '').trim() || null;
           }
 
           resultados.push(registro);
@@ -1181,14 +1106,7 @@ async function iniciarServidor() {
             importId, tipo: "categorias_depara", arquivo: nomeArquivo,
             usuario: req.usuarioLogado, total: totalRecords || inserido, data: new Date()
           });
-          catDeParaInMem = null; // força recarregamento do mapa de categorias
-          cacheClear();
-          _migCat = false; // força $lookup enquanto _cat/_fam são recomputados
-
-          // Recalcula _cat/_fam em dados_brutos em background (sem bloquear a resposta)
-          recalcularCatFamBackground(db).catch(e =>
-            console.warn('⚠️ Erro ao recalcular _cat/_fam em background:', e.message)
-          );
+          cacheClear(); // join ocorre em tempo de query — sem recálculo necessário
         }
 
         res.json({ ok: true, inserido, ultimo: isUltimo, mensagem: isUltimo ? "Categorias importadas" : "Lote salvo" });
@@ -1268,7 +1186,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.post("/api/admin/migrar-campos", verificarTokenAdmin, async (req, res) => {
       try {
-        let totalNum = 0, totalCat = 0;
+        let totalNum = 0, totalGtin = 0;
 
         // 1. Pré-computa _qtd_num e _valor_num via pipeline MongoDB (server-side, sem transferência)
         const numResult = await db.collection("dados_brutos").updateMany(
@@ -1280,80 +1198,23 @@ async function iniciarServidor() {
         );
         totalNum = numResult.modifiedCount;
 
-        // 2. Pré-une _cat e _fam a partir de categorias_depara via JS em lotes
-        const cats = await db.collection("categorias_depara").find({}).toArray();
-        const catLookup = {};
-        cats.forEach(c => {
-          const ean = String(c.CODBARRAS || '').trim();
-          if (ean) catLookup[ean] = { cat: c.CATEGORIA || null, fam: c.FAMILIA || null };
-        });
+        // 2. Pré-computa _gtin a partir de GTIN/PLU (habilita join indexado em tempo de query)
+        const gtinResult = await db.collection("dados_brutos").updateMany(
+          { _gtin: { $exists: false } },
+          [{ $set: { _gtin: { $toString: { $ifNull: [{ $getField: "GTIN/PLU" }, ""] } } } }]
+        );
+        totalGtin = gtinResult.modifiedCount;
 
-        const cursor = db.collection("dados_brutos")
-          .find({ _cat: { $exists: false } }, { projection: { _id: 1, "GTIN/PLU": 1 } });
-        const ops = [];
-        for await (const doc of cursor) {
-          const gtin  = String(doc['GTIN/PLU'] || '').trim();
-          const entry = catLookup[gtin] || null;
-          ops.push({ updateOne: {
-            filter: { _id: doc._id },
-            update: { $set: { _cat: entry ? (entry.cat || null) : null,
-                              _fam: entry ? (entry.fam || null) : null } }
-          }});
-          if (ops.length >= 1000) {
-            await db.collection("dados_brutos").bulkWrite(ops, { ordered: false });
-            totalCat += ops.length; ops.length = 0;
-          }
-        }
-        if (ops.length > 0) {
-          await db.collection("dados_brutos").bulkWrite(ops, { ordered: false });
-          totalCat += ops.length;
-        }
-
-        // Atualiza estado e cache
-        catDeParaInMem = null;
-        await carregarCatDePara();
         _migNumericos = true;
-        _migCat       = true;
+        _migGtin      = true;
         cacheClear();
 
-        console.log(`✅ Migração concluída: ${totalNum} numéricos, ${totalCat} categorias`);
-        res.json({ ok: true, numericosAtualizados: totalNum, categoriasAtualizados: totalCat });
+        console.log(`✅ Migração concluída: ${totalNum} numéricos, ${totalGtin} gtin`);
+        res.json({ ok: true, numericosAtualizados: totalNum, gtinAtualizados: totalGtin });
       } catch(e) {
         console.error("❌ Erro na migração:", e.message);
         res.status(500).json({ erro: "Erro na migração", detalhe: e.message });
       }
-    });
-
-    // ─────────────────────────────────────
-    // RESSINCRONIZAR DE/PARA (quando categorias_depara é alterado fora do import)
-    // ─────────────────────────────────────
-    app.get("/api/admin/ressincronizar-status", verificarToken, (req, res) => {
-      res.json({
-        emAndamento: _ressincState.emAndamento,
-        atual: _ressincState.atual,
-        total: _ressincState.total
-      });
-    });
-
-    app.post("/api/admin/ressincronizar-depara", verificarToken, (req, res) => {
-      if (_ressincState.emAndamento) {
-        return res.json({ ok: true, emAndamento: true, atual: _ressincState.atual, total: _ressincState.total });
-      }
-      // Responde imediatamente — não bloqueia o gateway
-      res.json({ ok: true, emAndamento: false });
-
-      // Roda em background sem bloquear a resposta
-      _ressincState.emAndamento = true;
-      _ressincState.atual = 0;
-      _ressincState.total = 0;
-      catDeParaInMem = null;
-      cacheClear();
-      _migCat = false;
-      console.log('🔄 Ressincronização De/Para iniciada em background...');
-      recalcularCatFamBackground(db)
-        .then(() => { console.log('✅ Ressincronização De/Para concluída.'); })
-        .catch(e => { console.error('❌ Erro na ressincronização De/Para:', e.message); })
-        .finally(() => { _ressincState.emAndamento = false; });
     });
 
     // ─────────────────────────────────────
