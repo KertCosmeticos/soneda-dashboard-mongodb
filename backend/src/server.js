@@ -914,13 +914,11 @@ async function iniciarServidor() {
             db.collection("dados_brutos").aggregate([
               ...baseStages({ noActCat: true, needsJoin: !_migCat }),
               { $group: { _id: "$_cat", ...grp } },
-              { $match: { _id: { $ne: null } } },
               { $sort: { qty: -1 } }
             ], AGG_OPTS).toArray(),
             db.collection("dados_brutos").aggregate([
               ...baseStages({ noActFam: true, needsJoin: !_migCat }),
               { $group: { _id: "$_fam", ...grp } },
-              { $match: { _id: { $ne: null } } },
               { $sort: { qty: -1 } }
             ], AGG_OPTS).toArray()
           ]) : Promise.resolve([[], []]),
@@ -936,8 +934,8 @@ async function iniciarServidor() {
 
         const result = {
           por_loja: por_loja.map(r => ({ loja: r._id, qty: r.qty, valor: r.valor })),
-          por_cat:  por_cat.map(r  => ({ cat:  r._id || "SEM CATEGORIA", qty: r.qty, valor: r.valor })),
-          por_fam:  por_fam.map(r  => ({ fam:  r._id || "SEM FAMÍLIA",   qty: r.qty, valor: r.valor })),
+          por_cat:  por_cat.map(r  => ({ cat:  r._id || "Sem mapeamento", qty: r.qty, valor: r.valor })),
+          por_fam:  por_fam.map(r  => ({ fam:  r._id || "Sem mapeamento", qty: r.qty, valor: r.valor })),
           por_dia:  por_dia.map(r  => ({ data: r._id, qty: r.qty, valor: r.valor }))
         };
         cacheSet(cacheKey, result);
