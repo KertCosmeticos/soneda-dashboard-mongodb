@@ -311,10 +311,10 @@
 
   <div class="table-card"><div class="table-head"><div class="table-head-title">Detalhamento de Quantidade Vendida por Filial</div></div><div id="table-body"><div class="no-data">Carregando...</div></div></div>
 
-  <div class="chart-card" style="margin-top:20px"><div class="chart-header"><div><div class="chart-title">Categorias com Maior Venda</div><div class="chart-subtitle" id="cat1-sub">Todos os períodos</div></div></div><div class="chart-wrap" id="cat1-wrap" style="height:360px"><div class="state-msg" id="cat1-state"><div class="spinner"></div>Carregando...</div></div></div>
+  <div class="chart-card" style="margin-top:20px"><div class="chart-header"><div><div class="chart-title">Categorias com Maior Venda</div><div class="chart-subtitle" id="cat1-sub">Todos os períodos</div></div><div style="text-align:right;flex-shrink:0"><div class="kpi-label">Total do período</div><div class="kpi-value" id="cat1-total-val" style="font-size:2.2rem">—</div><div class="kpi-sub">unidades vendidas</div></div></div><div class="chart-wrap" id="cat1-wrap" style="height:360px"><div class="state-msg" id="cat1-state"><div class="spinner"></div>Carregando...</div></div></div>
   <div class="table-card" style="margin-top:20px"><div class="table-head"><div class="table-head-title">Detalhamento por Categoria</div></div><div id="cat1-table-body"><div class="no-data">Carregando...</div></div></div>
 
-  <div class="chart-card" style="margin-top:20px"><div class="chart-header"><div><div class="chart-title">Famílias com Maior Venda</div><div class="chart-subtitle" id="fam1-sub">Todos os períodos</div></div></div><div class="chart-wrap" id="fam1-wrap" style="height:360px"><div class="state-msg" id="fam1-state"><div class="spinner"></div>Carregando...</div></div></div>
+  <div class="chart-card" style="margin-top:20px"><div class="chart-header"><div><div class="chart-title">Famílias com Maior Venda</div><div class="chart-subtitle" id="fam1-sub">Todos os períodos</div></div><div style="text-align:right;flex-shrink:0"><div class="kpi-label">Total do período</div><div class="kpi-value" id="fam1-total-val" style="font-size:2.2rem">—</div><div class="kpi-sub">unidades vendidas</div></div></div><div class="chart-wrap" id="fam1-wrap" style="height:360px"><div class="state-msg" id="fam1-state"><div class="spinner"></div>Carregando...</div></div></div>
   <div class="table-card" style="margin-top:20px"><div class="table-head"><div class="table-head-title">Detalhamento por Família</div></div><div id="fam1-table-body"><div class="no-data">Carregando...</div></div></div>
 </main>
 </div>
@@ -1751,9 +1751,9 @@ function agruparPorLoja(data) {
     if (!loja) return;
     const qty = parseBR(col(r,'Venda (Qtd)','Venda Nf Quantidade','Venda Pdv Quantidade'));
     const key = loja.trim();
-    if (!deParaMap[key]) return;
+    const nome = deParaMap[key] || `Filial ${key}`;
     if (!map[key]) {
-      map[key] = { loja: key, nome: deParaMap[key], qty: 0 };
+      map[key] = { loja: key, nome, qty: 0 };
     }
     map[key].qty += qty;
   });
@@ -1804,8 +1804,12 @@ async function renderizar() {
   const cacheKey = buildAgreParams('f', f_active).toString();
   const cached   = agreCache(cacheKey);
   const toByLoja = ag => ag.por_loja
-    .map(r => ({ loja: normCodLoja(String(r.loja||'')), nome: deParaMap[normCodLoja(String(r.loja||''))], qty: r.qty }))
-    .filter(r => r.nome);
+    .map(r => {
+      const loja = normCodLoja(String(r.loja||''));
+      const nome = deParaMap[loja] || `Filial ${loja}`;
+      return { loja, nome, qty: r.qty };
+    })
+    .filter(r => r.loja);
 
   fetchKPIs();
 
@@ -1976,6 +1980,8 @@ function renderCat1(data, preAg) {
     ? preAg.map(r => ({ cat: r.cat || 'SEM CATEGORIA', qty: r.qty })).filter(r => r.cat !== 'SEM CATEGORIA' && r.cat !== null)
     : agruparPorCategoria(data || []).filter(r => r.cat !== 'SEM CATEGORIA');
   const total = byCat.reduce((s,r) => s + r.qty, 0);
+  const cat1TotalEl = document.getElementById('cat1-total-val');
+  if (cat1TotalEl) cat1TotalEl.textContent = total > 0 ? total.toLocaleString('pt-BR') : '—';
 
   const ano = document.getElementById('f-ano').value;
   const mes = document.getElementById('f-mes').value;
@@ -2063,9 +2069,14 @@ function renderCat1(data, preAg) {
       </div></td>
     </tr>`;
   }).join('');
+  const cat1TotalLinha = `<tr style="background:var(--surface2)">
+    <td class="td-nome" style="font-weight:600;color:var(--accent)">TOTAL GERAL</td>
+    <td class="td-qty" style="color:var(--accent)">${total.toLocaleString('pt-BR')}</td>
+    <td><span style="font-size:.78rem;color:var(--accent);font-family:'DM Mono',monospace">100%</span></td>
+  </tr>`;
   document.getElementById('cat1-table-body').innerHTML = `<table>
     <thead><tr>${th('Categoria','cat')}${th('Qtd Vendida','qty')}${th('Participação','pct')}</tr></thead>
-    <tbody>${linhas}</tbody>
+    <tbody>${linhas}${cat1TotalLinha}</tbody>
   </table>`;
 }
 
@@ -2091,6 +2102,8 @@ function renderFam1(data, preAg) {
     ? preAg.map(r => ({ fam: r.fam || 'SEM FAMÍLIA', qty: r.qty })).filter(r => r.fam !== 'SEM FAMÍLIA' && r.fam !== null)
     : agruparPorFamilia(data || []).filter(r => r.fam !== 'SEM FAMÍLIA');
   const total = byFam.reduce((s,r) => s + r.qty, 0);
+  const fam1TotalEl = document.getElementById('fam1-total-val');
+  if (fam1TotalEl) fam1TotalEl.textContent = total > 0 ? total.toLocaleString('pt-BR') : '—';
 
   const ano = document.getElementById('f-ano').value;
   const mes = document.getElementById('f-mes').value;
@@ -2178,9 +2191,14 @@ function renderFam1(data, preAg) {
       </div></td>
     </tr>`;
   }).join('');
+  const fam1TotalLinha = `<tr style="background:var(--surface2)">
+    <td class="td-nome" style="font-weight:600;color:var(--accent)">TOTAL GERAL</td>
+    <td class="td-qty" style="color:var(--accent)">${total.toLocaleString('pt-BR')}</td>
+    <td><span style="font-size:.78rem;color:var(--accent);font-family:'DM Mono',monospace">100%</span></td>
+  </tr>`;
   document.getElementById('fam1-table-body').innerHTML = `<table>
     <thead><tr>${th('Família','fam')}${th('Qtd Vendida','qty')}${th('Participação','pct')}</tr></thead>
-    <tbody>${linhas}</tbody>
+    <tbody>${linhas}${fam1TotalLinha}</tbody>
   </table>`;
 }
 
