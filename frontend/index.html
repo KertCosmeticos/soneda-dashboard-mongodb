@@ -450,6 +450,63 @@
       <button class="btn-import secondary" onclick="ressincronizarDePara()" title="Use após alterar o De/Para de Categorias diretamente no banco. Propaga as mudanças para todos os registros de vendas.">Ressincronizar De/Para</button>
       <div id="import-status" class="import-status"></div>
     </div>
+
+    <!-- LEGENDA DE IMPORTAÇÃO -->
+    <div style="margin-top:28px;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
+
+      <!-- DADOS BRUTOS -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 22px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <span style="background:rgba(200,241,53,0.12);border:1px solid var(--accent);border-radius:6px;padding:3px 10px;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent);letter-spacing:.5px;text-transform:uppercase">Dados Brutos</span>
+          <span style="font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent2)">COMPLEMENTA</span>
+        </div>
+        <p style="font-size:0.8rem;color:var(--text-dim);line-height:1.6;margin:0 0 12px">Planilha bruta exportada pelo sistema da Soneda, com todas as colunas originais. Cada importação <strong style="color:var(--text)">adiciona</strong> os novos registros sem apagar o histórico anterior.</p>
+        <ol style="font-size:0.78rem;color:var(--text-dim);line-height:1.8;margin:0;padding-left:18px">
+          <li>Exporte a planilha de vendas do sistema da Soneda</li>
+          <li>Salve como <strong style="color:var(--text)">.CSV</strong> sem alterar as colunas</li>
+          <li>Selecione o arquivo e clique em <strong style="color:var(--text)">Importar</strong></li>
+        </ol>
+        <div style="margin-top:12px;padding:10px 12px;background:var(--surface2);border-radius:8px;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--text-dim);line-height:1.5">
+          Pode importar apenas o mês novo — o histórico já está salvo no banco.
+        </div>
+      </div>
+
+      <!-- DE/PARA CATEGORIAS -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 22px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <span style="background:rgba(200,241,53,0.12);border:1px solid var(--accent);border-radius:6px;padding:3px 10px;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent);letter-spacing:.5px;text-transform:uppercase">De/Para Categorias</span>
+          <span style="font-family:'DM Mono',monospace;font-size:0.7rem;color:#ff9f43">SUBSTITUI</span>
+        </div>
+        <p style="font-size:0.8rem;color:var(--text-dim);line-height:1.6;margin:0 0 12px">Tabela que vincula cada produto (EAN/GTIN) à sua Categoria e Família. Cada importação <strong style="color:var(--text)">apaga e reescreve</strong> todo o De/Para — envie sempre o arquivo completo e atualizado.</p>
+        <ol style="font-size:0.78rem;color:var(--text-dim);line-height:1.8;margin:0;padding-left:18px">
+          <li>Baixe o <strong style="color:var(--text)">Modelo</strong> ao lado do botão Importar</li>
+          <li>Preencha: <code style="color:var(--accent2)">CODBARRAS · CATEGORIA · FAMILIA · NOME PRODUTO</code></li>
+          <li>Salve como <strong style="color:var(--text)">.CSV</strong> e importe o arquivo completo</li>
+          <li>O sistema atualiza automaticamente todos os registros de venda</li>
+        </ol>
+        <div style="margin-top:12px;padding:10px 12px;background:var(--surface2);border-radius:8px;font-family:'DM Mono',monospace;font-size:0.7rem;color:#ff9f43;line-height:1.5">
+          Sempre envie o arquivo completo. Importar parcial apaga os demais produtos do mapeamento.
+        </div>
+      </div>
+
+      <!-- DE/PARA LOJAS -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 22px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <span style="background:rgba(200,241,53,0.12);border:1px solid var(--accent);border-radius:6px;padding:3px 10px;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent);letter-spacing:.5px;text-transform:uppercase">De/Para Lojas</span>
+          <span style="font-family:'DM Mono',monospace;font-size:0.7rem;color:#ff9f43">SUBSTITUI</span>
+        </div>
+        <p style="font-size:0.8rem;color:var(--text-dim);line-height:1.6;margin:0 0 12px">Tabela que vincula cada código de filial ao seu nome fantasia. Cada importação <strong style="color:var(--text)">apaga e reescreve</strong> todo o De/Para — envie sempre o arquivo completo.</p>
+        <ol style="font-size:0.78rem;color:var(--text-dim);line-height:1.8;margin:0;padding-left:18px">
+          <li>Baixe o <strong style="color:var(--text)">Modelo</strong> ao lado do botão Importar</li>
+          <li>Preencha: <code style="color:var(--accent2)">Cod_Loja · Nome_Fantasia</code></li>
+          <li>Salve como <strong style="color:var(--text)">.CSV</strong> e importe o arquivo completo</li>
+        </ol>
+        <div style="margin-top:12px;padding:10px 12px;background:var(--surface2);border-radius:8px;font-family:'DM Mono',monospace;font-size:0.7rem;color:#ff9f43;line-height:1.5">
+          Sempre envie o arquivo completo. Importar parcial apaga as demais lojas do mapeamento.
+        </div>
+      </div>
+
+    </div>
   </div>
 
 </main>
