@@ -173,44 +173,41 @@ function brValorExpr() {
 // RECALCULO _cat/_fam EM BACKGROUND
 // ─────────────────────────────────────────
 async function recalcularCatFamBackground(db) {
-  const cats = await db.collection("categorias_depara").find({}).toArray();
-  const catLookup = {};
-  cats.forEach(c => {
-    const ean = String(c.CODBARRAS || '').trim();
-    if (ean) catLookup[ean] = { cat: c.CATEGORIA || null, fam: c.FAMILIA || null };
-  });
-
   _ressincState.total = await db.collection("dados_brutos").estimatedDocumentCount();
   _ressincState.atual = 0;
 
-  const cursor = db.collection("dados_brutos")
-    .find({}, { projection: { _id: 1, "GTIN/PLU": 1 } });
-  const ops = [];
-  for await (const doc of cursor) {
-    const gtin  = String(doc['GTIN/PLU'] || '').trim();
-    const entry = catLookup[gtin] || null;
-    ops.push({ updateOne: {
-      filter: { _id: doc._id },
-      update: { $set: { _cat: entry ? (entry.cat || null) : null,
-                        _fam: entry ? (entry.fam || null) : null } }
-    }});
-    if (ops.length >= 1000) {
-      await db.collection("dados_brutos").bulkWrite(ops, { ordered: false });
-      _ressincState.atual += ops.length;
-      ops.length = 0;
-      // Cede o event loop para que o servidor responda a outras requisições entre lotes
-      await new Promise(resolve => setImmediate(resolve));
+  // Roda inteiramente no MongoDB via $lookup + $merge — Node.js fica livre durante todo o processo
+  await db.collection("dados_brutos").aggregate([
+    {
+      $lookup: {
+        from: "categorias_depara",
+        let: { gtin: { $getField: "GTIN/PLU" } },
+        pipeline: [{ $match: { $expr: { $eq: ["$$gtin", "$CODBARRAS"] } } }],
+        as: "_c"
+      }
+    },
+    {
+      $set: {
+        _cat: { $ifNull: [{ $arrayElemAt: ["$_c.CATEGORIA", 0] }, null] },
+        _fam: { $ifNull: [{ $arrayElemAt: ["$_c.FAMILIA", 0] }, null] }
+      }
+    },
+    { $unset: "_c" },
+    {
+      $merge: {
+        into: "dados_brutos",
+        on: "_id",
+        whenMatched: "merge",
+        whenNotMatched: "discard"
+      }
     }
-  }
-  if (ops.length > 0) {
-    await db.collection("dados_brutos").bulkWrite(ops, { ordered: false });
-    _ressincState.atual += ops.length;
-  }
+  ], { allowDiskUse: true }).toArray();
 
+  _ressincState.atual = _ressincState.total;
   catDeParaInMem = null;
   _migCat = true;
   _cache.clear();
-  console.log('✅ _cat/_fam recalculados após importação de categorias');
+  console.log('✅ _cat/_fam recalculados via $lookup+$merge server-side');
 }
 
 // ─────────────────────────────────────────
