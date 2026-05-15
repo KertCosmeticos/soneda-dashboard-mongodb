@@ -188,7 +188,33 @@ async function iniciarServidor() {
       console.log(`📊 Otimizações ativas: numéricos=${_migNumericos}, gtin=${_migGtin}`);
     }
 
+    // Migração automática de campos de performance (roda inteiramente no MongoDB, não bloqueia Node.js)
+    async function migrarCamposBackground() {
+      try {
+        const [rNum, rGtin] = await Promise.all([
+          db.collection("dados_brutos").updateMany(
+            { _qtd_num: { $exists: false } },
+            [{ $set: { _qtd_num: brToDouble({ $getField: "Venda (Qtd)" }), _valor_num: brValorExpr() } }]
+          ),
+          db.collection("dados_brutos").updateMany(
+            { _gtin: { $exists: false } },
+            [{ $set: { _gtin: { $toString: { $ifNull: [{ $getField: "GTIN/PLU" }, ""] } } } }]
+          )
+        ]);
+        if (rNum.modifiedCount > 0 || rGtin.modifiedCount > 0) {
+          _migNumericos = true;
+          _migGtin      = true;
+          cacheClear();
+          console.log(`✅ Auto-migração: ${rNum.modifiedCount} numéricos, ${rGtin.modifiedCount} gtin`);
+        }
+      } catch(e) {
+        console.warn('⚠️ Auto-migração em background falhou:', e.message);
+      }
+    }
+
     await atualizarFlagsMigracao();
+    // Migra campos de performance em background sem bloquear o startup
+    migrarCamposBackground();
 
     // Seed usuário inicial de importação a partir das variáveis de ambiente
     const totalUsuarios = await db.collection("usuarios_importacao").countDocuments();
@@ -881,19 +907,24 @@ async function iniciarServidor() {
         const aFamilia = req.query.ativo_familia || null;
 
         // Join com categorias_depara em tempo de query.
-        // Usa _gtin quando disponível (docs novos), cai para GTIN/PLU para docs antigos.
-        // Um único caminho garante consistência independente do estado da migração.
-        // $toString em ambos os lados garante comparação correta quando GTIN/PLU está
-        // salvo como número no MongoDB (importado fora do servidor) e CODBARRAS como string.
-        const joinCat = [
-          { $lookup: {
-              from: "categorias_depara",
-              let: { gtin: { $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } } },
-              pipeline: [{ $match: { $expr: { $eq: ["$$gtin", { $toString: "$CODBARRAS" }] } } }],
-              as: "_c"
-          }},
-          { $addFields: { _cat: { $arrayElemAt: ["$_c.CATEGORIA", 0] }, _fam: { $arrayElemAt: ["$_c.FAMILIA", 0] } } }
-        ];
+        // Quando _migGtin=true (todos os docs têm _gtin), usa localField/foreignField
+        // que aproveita o índice em categorias_depara.CODBARRAS — O(N×log M).
+        // Caso contrário, usa let/pipeline/$expr com $toString em ambos os lados para
+        // garantir comparação correta independente do tipo (número vs string).
+        const joinCat = _migGtin
+          ? [
+              { $lookup: { from: "categorias_depara", localField: "_gtin", foreignField: "CODBARRAS", as: "_c" } },
+              { $addFields: { _cat: { $arrayElemAt: ["$_c.CATEGORIA", 0] }, _fam: { $arrayElemAt: ["$_c.FAMILIA", 0] } } }
+            ]
+          : [
+              { $lookup: {
+                  from: "categorias_depara",
+                  let: { gtin: { $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } } },
+                  pipeline: [{ $match: { $expr: { $eq: ["$$gtin", { $toString: "$CODBARRAS" }] } } }],
+                  as: "_c"
+              }},
+              { $addFields: { _cat: { $arrayElemAt: ["$_c.CATEGORIA", 0] }, _fam: { $arrayElemAt: ["$_c.FAMILIA", 0] } } }
+            ];
 
         // Usa campos numéricos pré-computados quando disponíveis
         const grp = {
