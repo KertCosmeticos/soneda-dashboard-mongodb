@@ -23,6 +23,23 @@ const dbName = process.env.DB_NAME || "soneda_dashboard";
 
 const client = new MongoClient(uri);
 
+// ── CACHE DE RESULTADOS (TTL 5 min) ─────────────────────────────────────────
+const _cache = new Map();
+const CACHE_TTL_MS = 5 * 60 * 1000;
+function cacheGet(k) {
+  const e = _cache.get(k);
+  if (!e) return null;
+  if (Date.now() - e.ts > CACHE_TTL_MS) { _cache.delete(k); return null; }
+  return e.data;
+}
+function cacheSet(k, d) { _cache.set(k, { data: d, ts: Date.now() }); }
+function cacheClear() { _cache.clear(); }
+
+// ── FLAGS DE OTIMIZAÇÃO ──────────────────────────────────────────────────────
+let catDeParaInMem = null; // { [ean]: { cat, fam } } — recarregado ao importar categorias
+let _migNumericos  = false; // true quando dados têm _qtd_num/_valor_num pré-computados
+let _migCat        = false; // true quando dados têm _cat/_fam pré-computados
+
 // ─────────────────────────────────────────
 // UPLOAD
 // ─────────────────────────────────────────
@@ -160,6 +177,30 @@ async function iniciarServidor() {
     console.log("✅ Conectado ao MongoDB");
     console.log(`📦 Banco em uso: ${dbName}`);
 
+    // ── FUNÇÕES DE OTIMIZAÇÃO ────────────────────────────────────────────────
+    async function carregarCatDePara() {
+      if (catDeParaInMem) return catDeParaInMem;
+      const rows = await db.collection("categorias_depara").find({}).toArray();
+      catDeParaInMem = {};
+      rows.forEach(r => {
+        const ean = String(r.CODBARRAS || '').trim();
+        if (ean) catDeParaInMem[ean] = { cat: r.CATEGORIA || null, fam: r.FAMILIA || null };
+      });
+      return catDeParaInMem;
+    }
+
+    async function atualizarFlagsMigracao() {
+      const [s1, s2] = await Promise.all([
+        db.collection("dados_brutos").findOne({ _qtd_num: { $exists: true } }, { projection: { _id: 1 } }),
+        db.collection("dados_brutos").findOne({ _cat:     { $exists: true } }, { projection: { _id: 1 } })
+      ]);
+      _migNumericos = !!s1;
+      _migCat       = !!s2;
+      console.log(`📊 Otimizações ativas: numéricos=${_migNumericos}, categorias=${_migCat}`);
+    }
+
+    await atualizarFlagsMigracao();
+
     // Seed usuário inicial de importação a partir das variáveis de ambiente
     const totalUsuarios = await db.collection("usuarios_importacao").countDocuments();
     if (totalUsuarios === 0 && process.env.ADMIN_USER && process.env.ADMIN_PASSWORD) {
@@ -221,12 +262,14 @@ async function iniciarServidor() {
 
     // Índices de performance para dados_brutos (queries de dashboard)
     await Promise.all([
-      // Compostos cobrem $match de período + $group por dimensão
       db.collection("dados_brutos").createIndex({ "Ano": 1, "Mês": 1, "Loja": 1 }),
       db.collection("dados_brutos").createIndex({ "Ano": 1, "Mês": 1, "Data": 1 }),
       db.collection("dados_brutos").createIndex({ "Ano": 1, "Mês": 1 }),
       db.collection("dados_brutos").createIndex({ "Loja": 1 }),
       db.collection("dados_brutos").createIndex({ "GTIN/PLU": 1 }),
+      // Índices para campos pré-computados (ativados após migração)
+      db.collection("dados_brutos").createIndex({ "_cat": 1, "Ano": 1, "Mês": 1 }),
+      db.collection("dados_brutos").createIndex({ "_fam": 1, "Ano": 1, "Mês": 1 }),
       db.collection("categorias_depara").createIndex({ "CODBARRAS": 1 })
     ]);
     console.log("📊 Índices de dashboard criados/verificados");
@@ -751,6 +794,10 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/kpis", async (req, res) => {
       try {
+        const cacheKey = 'kpis:' + JSON.stringify(req.query);
+        const cached = cacheGet(cacheKey);
+        if (cached) return res.json(cached);
+
         const { ano, mes, loja } = req.query;
         const match = {};
         if (ano)  match["Ano"]   = String(ano);
@@ -783,6 +830,7 @@ async function iniciarServidor() {
         const resumo = resumoArr[0] || { total_vendido: 0, total_valor: 0, total_lojas: 0 };
         if (topLojaArr[0]) resumo.maior_loja = topLojaArr[0];
 
+        cacheSet(cacheKey, resumo);
         res.json(resumo);
       } catch (error) {
         res.status(500).json({ erro: "Erro ao gerar KPIs", detalhe: error.message });
@@ -794,12 +842,16 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/agregados", async (req, res) => {
       try {
+        const cacheKey = 'agre:' + JSON.stringify(req.query);
+        const cached = cacheGet(cacheKey);
+        if (cached) return res.json(cached);
+
         const { ano, mes, loja, cat, familia } = req.query;
         const aLoja    = req.query.ativo_loja    || null;
         const aCat     = req.query.ativo_cat     || null;
         const aFamilia = req.query.ativo_familia || null;
 
-        // Usa pipeline $lookup + $getField para suportar "/" no nome do campo GTIN/PLU
+        // $lookup via pipeline (suporta "/" no nome GTIN/PLU) — usado apenas quando _migCat=false
         const joinCat = [
           { $lookup: {
               from: "categorias_depara",
@@ -810,9 +862,10 @@ async function iniciarServidor() {
           { $addFields: { _cat: { $arrayElemAt: ["$_c.CATEGORIA", 0] }, _fam: { $arrayElemAt: ["$_c.FAMILIA", 0] } } }
         ];
 
+        // Usa campos pré-computados quando disponíveis — elimina $convert em toda a coleção
         const grp = {
-          qty:   { $sum: brToDouble({ $getField: "Venda (Qtd)" }) },
-          valor: { $sum: brValorExpr() }
+          qty:   { $sum: _migNumericos ? "$_qtd_num"   : brToDouble({ $getField: "Venda (Qtd)" }) },
+          valor: { $sum: _migNumericos ? "$_valor_num"  : brValorExpr() }
         };
 
         function baseStages(opt = {}) {
@@ -824,20 +877,29 @@ async function iniciarServidor() {
           if (aLoja && !opt.noActLoja) m["Loja"] = String(aLoja);
           if (Object.keys(m).length)   s.push({ $match: m });
 
-          const cf = [];
-          if (cat)                       cf.push({ $match: { _cat: cat } });
-          if (familia)                   cf.push({ $match: { _fam: familia } });
-          if (aCat    && !opt.noActCat)  cf.push({ $match: { _cat: aCat } });
-          if (aFamilia && !opt.noActFam) cf.push({ $match: { _fam: aFamilia } });
-
-          if (cf.length || opt.needsJoin) s.push(...joinCat, ...cf);
+          if (_migCat) {
+            // Dados já têm _cat/_fam: filtra diretamente, sem $lookup
+            const mCat = {};
+            if (cat)                        mCat._cat = cat;
+            if (familia)                    mCat._fam = familia;
+            if (aCat    && !opt.noActCat)   mCat._cat = aCat;
+            if (aFamilia && !opt.noActFam)  mCat._fam = aFamilia;
+            if (Object.keys(mCat).length)   s.push({ $match: mCat });
+          } else {
+            // Caminho legado: $lookup + filtro
+            const cf = [];
+            if (cat)                        cf.push({ $match: { _cat: cat } });
+            if (familia)                    cf.push({ $match: { _fam: familia } });
+            if (aCat    && !opt.noActCat)   cf.push({ $match: { _cat: aCat } });
+            if (aFamilia && !opt.noActFam)  cf.push({ $match: { _fam: aFamilia } });
+            if (cf.length || opt.needsJoin) s.push(...joinCat, ...cf);
+          }
           return s;
         }
 
-        // Skip category/family lookup when no filters active and categorias_depara is empty
         const needsCatLookup = !!(cat || familia || aCat || aFamilia);
-        const catCount = needsCatLookup ? 1 :
-          await db.collection("categorias_depara").estimatedDocumentCount();
+        const catCount = _migCat ? 1 : (needsCatLookup ? 1 :
+          await db.collection("categorias_depara").estimatedDocumentCount());
 
         const AGG_OPTS = { allowDiskUse: true };
 
@@ -850,13 +912,13 @@ async function iniciarServidor() {
 
           catCount > 0 ? Promise.all([
             db.collection("dados_brutos").aggregate([
-              ...baseStages({ noActCat: true, needsJoin: true }),
+              ...baseStages({ noActCat: true, needsJoin: !_migCat }),
               { $group: { _id: "$_cat", ...grp } },
               { $match: { _id: { $ne: null } } },
               { $sort: { qty: -1 } }
             ], AGG_OPTS).toArray(),
             db.collection("dados_brutos").aggregate([
-              ...baseStages({ noActFam: true, needsJoin: true }),
+              ...baseStages({ noActFam: true, needsJoin: !_migCat }),
               { $group: { _id: "$_fam", ...grp } },
               { $match: { _id: { $ne: null } } },
               { $sort: { qty: -1 } }
@@ -872,12 +934,14 @@ async function iniciarServidor() {
 
         const [por_cat, por_fam] = catFamResult;
 
-        res.json({
+        const result = {
           por_loja: por_loja.map(r => ({ loja: r._id, qty: r.qty, valor: r.valor })),
           por_cat:  por_cat.map(r  => ({ cat:  r._id || "SEM CATEGORIA", qty: r.qty, valor: r.valor })),
           por_fam:  por_fam.map(r  => ({ fam:  r._id || "SEM FAMÍLIA",   qty: r.qty, valor: r.valor })),
           por_dia:  por_dia.map(r  => ({ data: r._id, qty: r.qty, valor: r.valor }))
-        });
+        };
+        cacheSet(cacheKey, result);
+        res.json(result);
       } catch(e) {
         res.status(500).json({ erro: "Erro ao agregar dados", detalhe: e.message });
       }
@@ -960,6 +1024,12 @@ async function iniciarServidor() {
 
     // Helper: processa um arquivo CSV temporário e insere na coleção
     async function processarChunkCSV(req, colecao, limparColunas, opcoes = {}) {
+      // Pré-carrega mapa de categorias para importações de dados_brutos
+      let catCache = null;
+      if (colecao.collectionName === 'dados_brutos') {
+        try { catCache = await carregarCatDePara(); } catch(e) { /* sem categorias ainda */ }
+      }
+
       return new Promise((resolve, reject) => {
         const resultados = [];
         const stream = fs.createReadStream(req.file.path).pipe(csv({ separator: ";" }));
@@ -975,6 +1045,23 @@ async function iniciarServidor() {
             registro[k] = v;
           });
           if (opcoes.extraCampos) Object.assign(registro, opcoes.extraCampos);
+
+          // Pré-computa campos numéricos e categoria (elimina $convert e $lookup nas queries)
+          if (colecao.collectionName === 'dados_brutos') {
+            const qtdRaw = registro['Venda (Qtd)'] ?? registro['Venda Nf Quantidade'] ?? registro['Venda Pdv Quantidade'] ?? 0;
+            const valRaw = registro['Venda (R$)']  ?? registro['Venda Pdv Valor']      ?? registro['Venda Nf Valor']      ?? 0;
+            const qtd = parseBRNumber(qtdRaw);
+            const val = parseBRNumber(valRaw);
+            registro._qtd_num   = typeof qtd === 'number' ? qtd : (parseFloat(String(qtd)) || 0);
+            registro._valor_num = typeof val === 'number' ? val : (parseFloat(String(val)) || 0);
+            if (catCache) {
+              const gtin  = String(registro['GTIN/PLU'] || '').trim();
+              const entry = catCache[gtin];
+              registro._cat = entry ? (entry.cat || null) : null;
+              registro._fam = entry ? (entry.fam || null) : null;
+            }
+          }
+
           resultados.push(registro);
         });
 
@@ -1016,6 +1103,8 @@ async function iniciarServidor() {
             importId, tipo: "dados_brutos", arquivo: nomeArquivo,
             usuario: req.usuarioLogado, total: totalRecords || inserido, data: new Date()
           });
+          cacheClear();
+          await atualizarFlagsMigracao();
         }
 
         res.json({
@@ -1050,6 +1139,8 @@ async function iniciarServidor() {
             importId, tipo: "categorias_depara", arquivo: nomeArquivo,
             usuario: req.usuarioLogado, total: totalRecords || inserido, data: new Date()
           });
+          catDeParaInMem = null; // força recarregamento do mapa de categorias
+          cacheClear();
         }
 
         res.json({ ok: true, inserido, ultimo: isUltimo, mensagem: isUltimo ? "Categorias importadas" : "Lote salvo" });
@@ -1079,6 +1170,7 @@ async function iniciarServidor() {
             importId, tipo: "lojas_depara", arquivo: nomeArquivo,
             usuario: req.usuarioLogado, total: totalRecords || inserido, data: new Date()
           });
+          cacheClear();
         }
 
         res.json({ ok: true, inserido, ultimo: isUltimo, mensagem: isUltimo ? "Lojas importadas" : "Lote salvo" });
@@ -1120,6 +1212,67 @@ async function iniciarServidor() {
         res.json({ ok: true });
       } catch (error) {
         res.status(500).json({ erro: "Erro ao desfazer importação.", detalhe: error.message });
+      }
+    });
+
+    // ─────────────────────────────────────
+    // MIGRAÇÃO DE PERFORMANCE (dados existentes)
+    // ─────────────────────────────────────
+    app.post("/api/admin/migrar-campos", verificarTokenAdmin, async (req, res) => {
+      try {
+        let totalNum = 0, totalCat = 0;
+
+        // 1. Pré-computa _qtd_num e _valor_num via pipeline MongoDB (server-side, sem transferência)
+        const numResult = await db.collection("dados_brutos").updateMany(
+          { _qtd_num: { $exists: false } },
+          [{ $set: {
+            _qtd_num:   brToDouble({ $getField: "Venda (Qtd)" }),
+            _valor_num: brValorExpr()
+          }}]
+        );
+        totalNum = numResult.modifiedCount;
+
+        // 2. Pré-une _cat e _fam a partir de categorias_depara via JS em lotes
+        const cats = await db.collection("categorias_depara").find({}).toArray();
+        const catLookup = {};
+        cats.forEach(c => {
+          const ean = String(c.CODBARRAS || '').trim();
+          if (ean) catLookup[ean] = { cat: c.CATEGORIA || null, fam: c.FAMILIA || null };
+        });
+
+        const cursor = db.collection("dados_brutos")
+          .find({ _cat: { $exists: false } }, { projection: { _id: 1, "GTIN/PLU": 1 } });
+        const ops = [];
+        for await (const doc of cursor) {
+          const gtin  = String(doc['GTIN/PLU'] || '').trim();
+          const entry = catLookup[gtin] || null;
+          ops.push({ updateOne: {
+            filter: { _id: doc._id },
+            update: { $set: { _cat: entry ? (entry.cat || null) : null,
+                              _fam: entry ? (entry.fam || null) : null } }
+          }});
+          if (ops.length >= 1000) {
+            await db.collection("dados_brutos").bulkWrite(ops, { ordered: false });
+            totalCat += ops.length; ops.length = 0;
+          }
+        }
+        if (ops.length > 0) {
+          await db.collection("dados_brutos").bulkWrite(ops, { ordered: false });
+          totalCat += ops.length;
+        }
+
+        // Atualiza estado e cache
+        catDeParaInMem = null;
+        await carregarCatDePara();
+        _migNumericos = true;
+        _migCat       = true;
+        cacheClear();
+
+        console.log(`✅ Migração concluída: ${totalNum} numéricos, ${totalCat} categorias`);
+        res.json({ ok: true, numericosAtualizados: totalNum, categoriasAtualizados: totalCat });
+      } catch(e) {
+        console.error("❌ Erro na migração:", e.message);
+        res.status(500).json({ erro: "Erro na migração", detalhe: e.message });
       }
     });
 
