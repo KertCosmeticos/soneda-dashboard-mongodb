@@ -1096,7 +1096,35 @@ async function iniciarServidor() {
             ],
             por_dia: [
               ...mLoja, ...mCat, ...mFamilia,
-              { $group: { _id: _migData ? "$_data_iso" : "$Data", ...grp } },
+              { $group: {
+                  _id: {
+                    $ifNull: [
+                      _migData ? "$_data_iso" : "$Data",
+                      { $concat: [
+                        { $ifNull: ["$Ano", "0000"] }, "-",
+                        { $switch: {
+                          branches: [
+                            { case: { $eq: ["$Mês", "Jan"] }, then: "01" },
+                            { case: { $eq: ["$Mês", "Fev"] }, then: "02" },
+                            { case: { $eq: ["$Mês", "Mar"] }, then: "03" },
+                            { case: { $eq: ["$Mês", "Abr"] }, then: "04" },
+                            { case: { $eq: ["$Mês", "Mai"] }, then: "05" },
+                            { case: { $eq: ["$Mês", "Jun"] }, then: "06" },
+                            { case: { $eq: ["$Mês", "Jul"] }, then: "07" },
+                            { case: { $eq: ["$Mês", "Ago"] }, then: "08" },
+                            { case: { $eq: ["$Mês", "Set"] }, then: "09" },
+                            { case: { $eq: ["$Mês", "Out"] }, then: "10" },
+                            { case: { $eq: ["$Mês", "Nov"] }, then: "11" },
+                            { case: { $eq: ["$Mês", "Dez"] }, then: "12" }
+                          ],
+                          default: "00"
+                        }},
+                        "-01"
+                      ]}
+                    ]
+                  },
+                  ...grp
+              }},
               { $sort: { _id: 1 } }
             ]
           }}
