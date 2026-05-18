@@ -3342,6 +3342,10 @@ function d3Renderizar() {
   document.getElementById('d3-chart-sub').textContent = periodo;
   document.getElementById('d3-line-sub').textContent  = periodo;
 
+  d3SetEstoqueLoading();
+  d3FetchTotalEstoque();
+  return;
+
   const mapLoja = {};
   dados.forEach(r => {
     const l   = col(r,'Loja','loja'); if (!l) return;
@@ -3587,6 +3591,8 @@ async function d3FetchTotalEstoque() {
     const totalCorreto  = ag.total       || 0;
     const ativasCorreto = ag.total_lojas || 0;
 
+    d3RenderResumoEstoqueAgregado(ag);
+
     document.getElementById('d3-kpi-total').textContent = totalCorreto.toLocaleString('pt-BR');
     document.getElementById('d3-kpi-lojas').textContent = ativasCorreto;
 
@@ -3603,6 +3609,99 @@ async function d3FetchTotalEstoque() {
   } catch(e) {
     // falha silenciosa: mantém os valores do rawData já exibidos
   }
+}
+
+function d3SetEstoqueLoading() {
+  document.getElementById('d3-status-msg').textContent = 'Carregando estoque...';
+  document.getElementById('d3-kpi-total').textContent = '...';
+  document.getElementById('d3-kpi-lojas').textContent = '...';
+  document.getElementById('d3-kpi-top').textContent = '...';
+  document.getElementById('d3-kpi-top-sub').textContent = '...';
+  document.getElementById('d3-kpi-bot').textContent = '...';
+  document.getElementById('d3-kpi-bot-sub').textContent = '...';
+  const totalEl = document.getElementById('d3-chart-total-val');
+  if (totalEl) totalEl.textContent = '...';
+  const barState = document.getElementById('d3-chart-state');
+  if (barState) { barState.style.display = 'flex'; barState.innerHTML = '<div class="spinner"></div>Carregando dados...'; }
+  const lineState = document.getElementById('d3-line-state');
+  if (lineState) { lineState.style.display = 'flex'; lineState.innerHTML = '<div class="spinner"></div>Carregando dados...'; }
+  if (d3BarChart) { d3BarChart.destroy(); d3BarChart = null; }
+  if (d3LineChart) { d3LineChart.destroy(); d3LineChart = null; }
+  document.getElementById('d3-table-body').innerHTML = '<div class="no-data">Carregando...</div>';
+  document.getElementById('d3-rot-produtos-body').innerHTML = '<div class="no-data">Carregando...</div>';
+  document.getElementById('d3-rot-categorias-body').innerHTML = '<div class="no-data">Carregando...</div>';
+}
+
+function d3RenderResumoEstoqueAgregado(ag) {
+  const total = Number(ag?.total || 0);
+  const rows = (ag?.por_loja || [])
+    .map(r => {
+      const loja = String(r.loja || '').trim();
+      return { loja, nome: deParaMap[loja] || `Filial ${loja}`, qty: Number(r.qty || 0) };
+    })
+    .filter(r => r.loja && deParaMap[r.loja])
+    .sort((a,b) => b.qty - a.qty);
+  const ativas = Number(ag?.total_lojas || rows.filter(r => r.qty > 0).length);
+  const top = rows[0];
+  const bot = rows.filter(r => r.qty > 0).slice(-1)[0];
+
+  document.getElementById('d3-kpi-total').textContent = total.toLocaleString('pt-BR');
+  document.getElementById('d3-kpi-lojas').textContent = ativas;
+  document.getElementById('d3-kpi-top').textContent = top ? top.nome : 'â€”';
+  document.getElementById('d3-kpi-top-sub').textContent = top ? `${top.qty.toLocaleString('pt-BR')} un.` : 'â€”';
+  document.getElementById('d3-kpi-bot').textContent = bot ? bot.nome : 'â€”';
+  document.getElementById('d3-kpi-bot-sub').textContent = bot ? `${bot.qty.toLocaleString('pt-BR')} un.` : 'â€”';
+  const totalEl = document.getElementById('d3-chart-total-val');
+  if (totalEl) totalEl.textContent = total > 0 ? total.toLocaleString('pt-BR') : 'â€”';
+  const statusEl = document.getElementById('d3-status-msg');
+  if (statusEl) statusEl.textContent = `${total.toLocaleString('pt-BR')} unidades em estoque Â· ${ativas} loja${ativas !== 1 ? 's' : ''}`;
+
+  const barState = document.getElementById('d3-chart-state');
+  if (rows.length === 0) {
+    if(barState) { barState.style.display='flex'; barState.innerHTML='Nenhum dado.'; }
+    if (d3BarChart) { d3BarChart.destroy(); d3BarChart = null; }
+    return;
+  }
+
+  if(barState) barState.style.display = 'none';
+  let c1 = document.getElementById('d3-bar-canvas');
+  if (!c1) {
+    c1 = document.createElement('canvas');
+    c1.id = 'd3-bar-canvas';
+    document.getElementById('d3-chart-wrap').appendChild(c1);
+  }
+  if (d3BarChart) { d3BarChart.destroy(); d3BarChart = null; }
+  const n = rows.length;
+  const d3Sel = d3_active.dim === 'loja' ? d3_active.val : null;
+  d3BarChart = new Chart(c1, {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.nome),
+      datasets: [{
+        data: rows.map(r => r.qty),
+        backgroundColor: rows.map((r,i) => { if(d3Sel) return r.loja===d3Sel?'rgba(79,255,176,0.95)':'rgba(37,42,58,0.45)'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},0.85)`; }),
+        borderColor:     rows.map((r,i) => { if(d3Sel) return r.loja===d3Sel?'rgba(79,255,176,1)':'rgba(37,42,58,0.2)'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},1)`; }),
+        borderWidth: 1.5, borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      onClick: (evt, elements) => {
+        if (elements.length > 0) setTimeout(() => d3SetFilter('loja', rows[elements[0].index].loja), 0);
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1, titleColor:'#4fffb0', bodyColor:'#e8ecf5', titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+          callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades em estoque` }
+        }
+      },
+      scales: {
+        x: { ticks:{ color: ctx => d3Sel?(rows[ctx.index]?.loja===d3Sel?'#4fffb0':'#3a4060'):'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false }, grid:{color:'#1c2030'} },
+        y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+      }
+    }
+  });
+  c1.style.cursor = 'pointer';
 }
 
 function d3RenderLineAgregado(ag) {
