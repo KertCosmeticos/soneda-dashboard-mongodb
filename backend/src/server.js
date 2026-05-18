@@ -1573,6 +1573,11 @@ async function iniciarServidor() {
 
     app.delete("/api/admin/logs-importacao", verificarTokenAdmin, async (req, res) => {
       try {
+        const { senha } = req.body || {};
+        if (!senha) return res.status(401).json({ erro: "Senha obrigatória." });
+        const admins = await db.collection("usuarios_admin").find({}).toArray();
+        const senhaValida = admins.some(a => verificarSenha(senha, a.senha));
+        if (!senhaValida) return res.status(401).json({ erro: "Senha incorreta." });
         await db.collection("logs_importacao").deleteMany({});
         res.json({ ok: true });
       } catch (error) {

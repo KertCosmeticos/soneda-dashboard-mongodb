@@ -5730,18 +5730,65 @@ const TIPO_LABEL = {
   lojas_depara:      'De/Para Lojas'
 };
 
-async function guLimparHistorico() {
-  if (!confirm('Apagar todo o histórico de importações? Os dados do painel não serão removidos.')) return;
-  const token = guGetToken();
+function guLimparHistorico() {
+  // Remove modal anterior se existir
+  const old = document.getElementById('modal-limpar-historico');
+  if (old) old.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'modal-limpar-historico';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999';
+  modal.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px;width:360px;font-family:'DM Mono',monospace">
+      <div style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px">Limpar histórico</div>
+      <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:20px;line-height:1.6">
+        Digite sua senha de administrador para confirmar. Os dados do painel <strong style="color:var(--text)">não</strong> serão removidos.
+      </div>
+      <input id="modal-limpar-senha" type="password" placeholder="Senha" autocomplete="current-password"
+        style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px 12px;color:var(--text);font-family:'DM Mono',monospace;font-size:0.8rem;outline:none;margin-bottom:8px">
+      <div id="modal-limpar-erro" style="color:#e87070;font-size:0.72rem;min-height:18px;margin-bottom:14px"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button onclick="document.getElementById('modal-limpar-historico').remove()"
+          style="padding:8px 18px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-dim);cursor:pointer;font-family:'DM Mono',monospace;font-size:0.75rem">
+          Cancelar
+        </button>
+        <button id="modal-limpar-btn" onclick="guConfirmarLimpeza()"
+          style="padding:8px 18px;border-radius:6px;border:none;background:#e87070;color:#fff;cursor:pointer;font-family:'DM Mono',monospace;font-size:0.75rem;font-weight:600">
+          Limpar
+        </button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  document.getElementById('modal-limpar-senha').focus();
+  document.getElementById('modal-limpar-senha').addEventListener('keydown', e => {
+    if (e.key === 'Enter') guConfirmarLimpeza();
+    if (e.key === 'Escape') modal.remove();
+  });
+}
+
+async function guConfirmarLimpeza() {
+  const senha   = document.getElementById('modal-limpar-senha').value;
+  const erroEl  = document.getElementById('modal-limpar-erro');
+  const btn     = document.getElementById('modal-limpar-btn');
+  const token   = guGetToken();
+  erroEl.textContent = '';
+  if (!senha) { erroEl.textContent = 'Digite a senha.'; return; }
+  btn.textContent = 'Aguarde...';
+  btn.disabled = true;
   try {
     const res = await fetch(`${API_BASE}/api/admin/logs-importacao`, {
       method: 'DELETE',
-      headers: { 'Authorization': 'Bearer ' + token }
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ senha })
     });
-    if (!res.ok) throw new Error((await res.json()).erro || 'Erro');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.erro || 'Erro');
+    document.getElementById('modal-limpar-historico').remove();
     guCarregarLogs();
   } catch(e) {
-    alert('Erro ao limpar histórico: ' + e.message);
+    erroEl.textContent = e.message;
+    btn.textContent = 'Limpar';
+    btn.disabled = false;
   }
 }
 
