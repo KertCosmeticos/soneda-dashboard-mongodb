@@ -1259,6 +1259,8 @@ let d3_active      = { dim: null, val: null };
 let se_active      = { dim: null, val: null };
 let d2_table_active = { dim: null, val: null };
 let f_renderAbort  = null;   // cancela fetch anterior ao aplicar novo filtro
+let v_renderAbort  = null;
+let d2_renderAbort = null;
 const _agreMemCache = new Map(); // cache em memória (mais rápido que JSON.parse do sessionStorage)
 let t1Sort         = { col: 'qty', dir: 'desc' };
 let cat1Sort       = { col: 'qty', dir: 'desc' };
@@ -2700,17 +2702,23 @@ async function d2Renderizar() {
     if (d2Chart) { d2Chart.destroy(); d2Chart = null; }
   }
 
-  if (rawDataPreviewOk) setChartLoading(['d2-kpi-row','d2-chart-wrap','cat2-wrap','fam2-wrap','d2-table-body','cat2-table-body','fam2-table-body'], true);
+  const D2_IDS = ['d2-kpi-row','d2-chart-wrap','cat2-wrap','fam2-wrap','d2-table-body','cat2-table-body','fam2-table-body'];
+  if (rawDataPreviewOk) setChartLoading(D2_IDS, true);
 
-  fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('d2', d2_active)}`).then(ag => {
+  if (d2_renderAbort) d2_renderAbort.abort();
+  d2_renderAbort = new AbortController();
+
+  try {
+    const ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('d2', d2_active)}`, d2_renderAbort.signal);
     agreCache(cacheKey, ag);
-    setChartLoading(['d2-kpi-row','d2-chart-wrap','cat2-wrap','fam2-wrap','d2-table-body','cat2-table-body','fam2-table-body'], false);
+    setChartLoading(D2_IDS, false);
     const [pd, all] = agToDia(ag);
     if (all.length > 0) d2AtualizarGrafico(pd, all);
-  }).catch(e => {
-    setChartLoading(['d2-kpi-row','d2-chart-wrap','cat2-wrap','fam2-wrap','d2-table-body','cat2-table-body','fam2-table-body'], false);
+  } catch(e) {
+    setChartLoading(D2_IDS, false);
+    if (e.name === 'AbortError') return;
     console.warn('Agregados backend indisponíveis:', e.message);
-  });
+  }
 }
 
 function d2AtualizarGrafico(porDia, porDiaTabela) {
@@ -4046,18 +4054,25 @@ function vFmtR(v) {
   return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function vRenderKPIs(byLoja, kpis) {
-  const total  = kpis ? Number(kpis.total_valor || 0) : byLoja.reduce((s,r) => s + r.val, 0);
-  const ativas = kpis ? Number(kpis.total_lojas || 0) : byLoja.filter(r => r.val > 0).length;
-  const top    = byLoja[0];
+function vRenderKPIs(byLoja, ag) {
+  const total = ag && ag.por_dia
+    ? ag.por_dia.reduce((s, r) => s + r.valor, 0)
+    : byLoja.reduce((s, r) => s + r.val, 0);
+  const filtrandoLoja = v_active.dim === 'loja';
+  const ativas = filtrandoLoja ? 1 : byLoja.filter(r => r.val > 0).length;
+  const top    = filtrandoLoja
+    ? (byLoja.find(r => r.loja === v_active.val) || byLoja[0])
+    : byLoja[0];
   document.getElementById('v-kpi-total').textContent   = vFmtR(total);
-  document.getElementById('v-kpi-lojas').textContent   = ativas;
+  document.getElementById('v-kpi-lojas').textContent   = ativas.toLocaleString('pt-BR');
   document.getElementById('v-kpi-top').textContent     = top ? top.nome : '—';
   document.getElementById('v-kpi-top-sub').textContent = top ? vFmtR(top.val) : '—';
 }
 
-function vRenderGrafico(byLoja) {
-  const total = byLoja.reduce((s,r) => s + r.val, 0);
+function vRenderGrafico(byLoja, ag) {
+  const total = ag && ag.por_dia
+    ? ag.por_dia.reduce((s, r) => s + r.valor, 0)
+    : byLoja.reduce((s, r) => s + r.val, 0);
   document.getElementById('v-chart-total-val').textContent = vFmtR(total);
 
   const stateEl = document.getElementById('v-chart-state');
@@ -4073,7 +4088,6 @@ function vRenderGrafico(byLoja) {
     canvas.id = 'v-myChart';
     document.getElementById('v-chart-wrap').appendChild(canvas);
   }
-  if (vChartInst) { vChartInst.destroy(); vChartInst = null; }
 
   const n = byLoja.length;
   const vSel = v_active.dim === 'loja' ? v_active.val : null;
@@ -4087,6 +4101,22 @@ function vRenderGrafico(byLoja) {
     const t = n > 1 ? i/(n-1) : 0;
     return `rgba(${Math.round(79+t*121)},${Math.round(255-t*100)},${Math.round(176-t*50)},1)`;
   });
+  const onClickLoja = (evt, elements) => {
+    if (elements.length > 0) setTimeout(() => vSetFilter('loja', byLoja[elements[0].index].loja), 0);
+  };
+  const tickColor = ctx => { if (!vSel) return '#8891aa'; return byLoja[ctx.index]?.loja === vSel ? '#4fffb0' : '#3a4060'; };
+
+  if (vChartInst) {
+    vChartInst.data.labels = byLoja.map(r => r.nome);
+    vChartInst.data.datasets[0].data = byLoja.map(r => r.val);
+    vChartInst.data.datasets[0].backgroundColor = bgColors;
+    vChartInst.data.datasets[0].borderColor = borderColors;
+    vChartInst.options.scales.x.ticks.color = tickColor;
+    vChartInst.options.onClick = onClickLoja;
+    vChartInst.update('none');
+    canvas.style.cursor = 'pointer';
+    return;
+  }
 
   vChartInst = new Chart(canvas, {
     type: 'bar',
@@ -4096,9 +4126,7 @@ function vRenderGrafico(byLoja) {
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      onClick: (evt, elements) => {
-        if (elements.length > 0) setTimeout(() => vSetFilter('loja', byLoja[elements[0].index].loja), 0);
-      },
+      onClick: onClickLoja,
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
@@ -4111,10 +4139,7 @@ function vRenderGrafico(byLoja) {
       },
       scales: {
         x: {
-          ticks: {
-            color: ctx => { if (!vSel) return '#8891aa'; return byLoja[ctx.index]?.loja === vSel ? '#4fffb0' : '#3a4060'; },
-            font: { family: 'DM Mono', size: 9 }, maxRotation: 45, minRotation: 45, autoSkip: false
-          },
+          ticks: { color: tickColor, font: { family: 'DM Mono', size: 9 }, maxRotation: 45, minRotation: 45, autoSkip: false },
           grid: { color: '#1c2030' }
         },
         y: {
@@ -4457,8 +4482,9 @@ async function vRenderizar() {
     .map(r => ({ loja: normCodLoja(String(r.loja||'')), nome: deParaMap[normCodLoja(String(r.loja||''))], val: r.valor }))
     .filter(r => r.nome);
   const renderFromAg = (ag, byLoja) => {
-    const kpis = { total_valor: byLoja.reduce((s,r) => s + r.val, 0), total_lojas: byLoja.filter(r => r.val > 0).length };
-    vRenderKPIs(byLoja, kpis); vRenderGrafico(byLoja); vRenderTabela(byLoja);
+    vRenderKPIs(byLoja, ag);
+    vRenderGrafico(byLoja, ag);
+    vRenderTabela(byLoja);
     if (ag.por_cat.length > 0) vRenderCat1(null, ag.por_cat); else vRenderCat1(vFiltrar('cat'));
     if (ag.por_fam.length > 0) vRenderFam1(null, ag.por_fam); else vRenderFam1(vFiltrar('familia'));
   };
@@ -4468,23 +4494,29 @@ async function vRenderizar() {
     return;
   }
 
-  if (rawDataPreviewOk) setChartLoading(['v-kpi-row','v-chart-wrap','v-cat1-wrap','v-fam1-wrap','v-table-body','v-cat1-table-body','v-fam1-table-body'], true);
+  const V_IDS = ['v-kpi-row','v-chart-wrap','v-cat1-wrap','v-fam1-wrap','v-table-body','v-cat1-table-body','v-fam1-table-body'];
+  if (rawDataPreviewOk) setChartLoading(V_IDS, true);
 
-  fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('v', v_active)}`).then(ag => {
+  if (v_renderAbort) v_renderAbort.abort();
+  v_renderAbort = new AbortController();
+
+  try {
+    const ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('v', v_active)}`, v_renderAbort.signal);
     agreCache(cacheKey, ag);
     rawDataPreviewOk = true;
-    setChartLoading(['v-kpi-row','v-chart-wrap','v-cat1-wrap','v-fam1-wrap','v-table-body','v-cat1-table-body','v-fam1-table-body'], false);
+    setChartLoading(V_IDS, false);
     renderFromAg(ag, toByLoja(ag));
-  }).catch(e => {
-    setChartLoading(['v-kpi-row','v-chart-wrap','v-cat1-wrap','v-fam1-wrap','v-table-body','v-cat1-table-body','v-fam1-table-body'], false);
+  } catch(e) {
+    setChartLoading(V_IDS, false);
+    if (e.name === 'AbortError') return;
     console.warn('Agregados backend indisponíveis:', e.message);
     if (!rawDataPreviewOk) {
       const byLojaChart = vAgruparPorLoja(vFiltrar('loja'));
-      vRenderKPIs(vAgruparPorLoja(vFiltrar()), null);
-      vRenderGrafico(byLojaChart); vRenderTabela(byLojaChart);
+      vRenderKPIs(byLojaChart, null);
+      vRenderGrafico(byLojaChart, null); vRenderTabela(byLojaChart);
       vRenderCat1(vFiltrar('cat')); vRenderFam1(vFiltrar('familia'));
     }
-  });
+  }
 }
 
 // ── FILTRO DE MÊS/ANO ATUAL ───────────────────────────────────────────────────
