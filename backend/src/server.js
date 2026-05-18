@@ -937,7 +937,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/kpis", async (req, res) => {
       try {
-        const cacheKey = 'kpis:' + JSON.stringify(req.query);
+        const cacheKey = 'kpis:v2:' + JSON.stringify(req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
@@ -1004,7 +1004,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/agregados", async (req, res) => {
       try {
-        const cacheKey = 'agre:' + JSON.stringify(req.query);
+        const cacheKey = 'agre:v2:' + JSON.stringify(req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 

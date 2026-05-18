@@ -1510,7 +1510,7 @@ async function enviarCSV(inputId, rota) {
     status.innerHTML = `✔ Importação concluída — <strong>${totalInserido.toLocaleString('pt-BR')}</strong> registros inseridos em ${totalLotes} lote${totalLotes > 1 ? 's' : ''}.`;
     status.className = 'import-status ok';
     // Limpa cache de agregados para que o painel recarregue com dados novos
-    _agreMemCache.clear(); Object.keys(sessionStorage).filter(k => k.startsWith('agre__')).forEach(k => sessionStorage.removeItem(k));
+    _agreMemCache.clear(); Object.keys(sessionStorage).filter(k => k.startsWith('agre__') || k.startsWith(AGRE_CACHE_PREFIX)).forEach(k => sessionStorage.removeItem(k));
 
   } catch (error) {
     console.error(error);
@@ -1565,7 +1565,7 @@ async function enviarXLSX(inputId, rota) {
 
     status.innerHTML = `✔ Importação concluída — <strong>${(data.inserido || 0).toLocaleString('pt-BR')}</strong> registros inseridos.`;
     status.className = 'import-status ok';
-    _agreMemCache.clear(); Object.keys(sessionStorage).filter(k => k.startsWith('agre__')).forEach(k => sessionStorage.removeItem(k));
+    _agreMemCache.clear(); Object.keys(sessionStorage).filter(k => k.startsWith('agre__') || k.startsWith(AGRE_CACHE_PREFIX)).forEach(k => sessionStorage.removeItem(k));
     fileInput.value = '';
   } catch (error) {
     console.error(error);
