@@ -141,12 +141,9 @@
   .state-msg { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 340px; gap: 14px; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.82rem; text-align: center; line-height: 1.8; }
   .spinner { width: 32px; height: 32px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  /* Overlay de carregamento sobre gráficos e tabelas durante filtro */
+  /* Overlay de carregamento sobre gráficos durante filtro */
   .chart-loading-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 10; pointer-events: none; }
   .chart-loading-overlay .spinner { width: 22px; height: 22px; border-width: 2px; }
-  /* Tabelas e kpi-rows precisam de position:relative para o overlay funcionar */
-  [id="table-body"], [id$="-table-body"] { position: relative; min-height: 80px; }
-  [id$="-kpi-row"] { position: relative; }
   .no-data { display: flex; align-items: center; justify-content: center; height: 180px; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.8rem; }
   .err { color: #ff6b6b; }
   .active-banner { display:flex; align-items:center; gap:12px; padding:10px 20px; background:var(--surface2); border:1px solid var(--accent); border-radius:8px; margin-bottom:16px; font-family:'DM Mono',monospace; font-size:0.75rem; color:var(--accent); letter-spacing:0.5px; }
@@ -293,7 +290,7 @@
   </div>
   <div id="f-active-banner" class="active-banner" style="display:none"></div>
 
-  <div class="kpi-row" id="f-kpi-row">
+  <div class="kpi-row">
     <div class="kpi-card"><div class="kpi-label">Total Vendido</div><div class="kpi-value" id="kpi-total">—</div><div class="kpi-sub">unidades vendidas</div></div>
     <div class="kpi-card"><div class="kpi-label">Lojas com Venda</div><div class="kpi-value" id="kpi-lojas">—</div><div class="kpi-sub">filiais ativas no período</div></div>
     <div class="kpi-card"><div class="kpi-label">Maior Filial</div><div class="kpi-value" id="kpi-top" style="font-size:1.1rem;padding-top:6px">—</div><div class="kpi-sub" id="kpi-top-sub">—</div></div>
@@ -892,7 +889,7 @@
   <div id="v-active-banner" class="active-banner" style="display:none"></div>
 
   <!-- KPIs -->
-  <div class="kpi-row" id="v-kpi-row">
+  <div class="kpi-row">
     <div class="kpi-card">
       <div class="kpi-label">Total Geral (R$)</div>
       <div class="kpi-value" id="v-kpi-total">—</div>
@@ -1020,7 +1017,7 @@
   <div id="d2-active-banner" class="active-banner" style="display:none"></div>
 
   <!-- KPIs -->
-  <div class="kpi-row" id="d2-kpi-row">
+  <div class="kpi-row">
     <div class="kpi-card">
       <div class="kpi-label">Total do Período (Qtd)</div>
       <div class="kpi-value" id="d2-kpi-total">—</div>
@@ -1259,8 +1256,6 @@ let d3_active      = { dim: null, val: null };
 let se_active      = { dim: null, val: null };
 let d2_table_active = { dim: null, val: null };
 let f_renderAbort  = null;   // cancela fetch anterior ao aplicar novo filtro
-let v_renderAbort  = null;
-let d2_renderAbort = null;
 const _agreMemCache = new Map(); // cache em memória (mais rápido que JSON.parse do sessionStorage)
 let t1Sort         = { col: 'qty', dir: 'desc' };
 let cat1Sort       = { col: 'qty', dir: 'desc' };
@@ -1510,7 +1505,7 @@ async function enviarCSV(inputId, rota) {
     status.innerHTML = `✔ Importação concluída — <strong>${totalInserido.toLocaleString('pt-BR')}</strong> registros inseridos em ${totalLotes} lote${totalLotes > 1 ? 's' : ''}.`;
     status.className = 'import-status ok';
     // Limpa cache de agregados para que o painel recarregue com dados novos
-    _agreMemCache.clear(); Object.keys(sessionStorage).filter(k => k.startsWith('agre__') || k.startsWith(AGRE_CACHE_PREFIX)).forEach(k => sessionStorage.removeItem(k));
+    _agreMemCache.clear(); Object.keys(sessionStorage).filter(k => k.startsWith('agre__')).forEach(k => sessionStorage.removeItem(k));
 
   } catch (error) {
     console.error(error);
@@ -1565,7 +1560,7 @@ async function enviarXLSX(inputId, rota) {
 
     status.innerHTML = `✔ Importação concluída — <strong>${(data.inserido || 0).toLocaleString('pt-BR')}</strong> registros inseridos.`;
     status.className = 'import-status ok';
-    _agreMemCache.clear(); Object.keys(sessionStorage).filter(k => k.startsWith('agre__') || k.startsWith(AGRE_CACHE_PREFIX)).forEach(k => sessionStorage.removeItem(k));
+    _agreMemCache.clear(); Object.keys(sessionStorage).filter(k => k.startsWith('agre__')).forEach(k => sessionStorage.removeItem(k));
     fileInput.value = '';
   } catch (error) {
     console.error(error);
@@ -1713,9 +1708,7 @@ function col(row, ...nomes) {
 
 function parseBR(raw) {
   if (typeof raw === 'number') return isNaN(raw) ? 0 : raw;
-  let s = (String(raw) || '').trim().replace(/^R\$/i, '').replace(/[\s\u00a0]/g, '');
-  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
-  return parseFloat(s) || 0;
+  return parseFloat((String(raw) || '').replace(/R\$\s*/i, '').replace(/\./g, '').replace(',', '.')) || 0;
 }
 
 function normCodLoja(v) {
@@ -1970,9 +1963,8 @@ function prefetchFiltros(ag) {
 
 // ── CACHE DE AGREGADOS (memória + sessionStorage, TTL 60 min) ────────────────
 const AGRE_CACHE_TTL = 60 * 60 * 1000;
-const AGRE_CACHE_PREFIX = 'agre_v3__';
 function agreCache(key, data) {
-  const k = AGRE_CACHE_PREFIX + key;
+  const k = 'agre__' + key;
   if (data !== undefined) {
     _agreMemCache.set(k, { t: Date.now(), d: data });
     try { sessionStorage.setItem(k, JSON.stringify({ t: Date.now(), d: data })); } catch(e) {}
@@ -2027,7 +2019,7 @@ async function renderizar() {
   if (!rawDataPreviewOk) setEstado('Carregando dados...');
 
   // Indicador visual enquanto filtra: opacidade + spinner centralizado
-  if (rawDataPreviewOk) setChartLoading(['f-kpi-row','chart-wrap','cat1-wrap','fam1-wrap','table-body','cat1-table-body','fam1-table-body'], true);
+  if (rawDataPreviewOk) setChartLoading(['chart-wrap','cat1-wrap','fam1-wrap'], true);
 
   // Cancela requisição anterior se um novo filtro for aplicado antes da resposta chegar
   if (f_renderAbort) f_renderAbort.abort();
@@ -2037,7 +2029,7 @@ async function renderizar() {
     const ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('f', f_active)}`, f_renderAbort.signal);
     agreCache(cacheKey, ag);
     rawDataPreviewOk = true;
-    setChartLoading(['f-kpi-row','chart-wrap','cat1-wrap','fam1-wrap','table-body','cat1-table-body','fam1-table-body'], false);
+    setChartLoading(['chart-wrap','cat1-wrap','fam1-wrap'], false);
     const byLoja = toByLoja(ag);
     renderKPIs(byLoja, ag);
     renderGrafico(byLoja, ag);
@@ -2047,7 +2039,7 @@ async function renderizar() {
     // Pré-aquece cache para os filtros dos itens que já estão na tela (sem bloquear UI)
     prefetchFiltros(ag);
   } catch(e) {
-    setChartLoading(['f-kpi-row','chart-wrap','cat1-wrap','fam1-wrap','table-body','cat1-table-body','fam1-table-body'], false);
+    setChartLoading(['chart-wrap','cat1-wrap','fam1-wrap'], false);
     if (e.name === 'AbortError') return; // filtro mais recente já está carregando, ignorar
     console.warn('Agregados backend indisponíveis:', e.message);
     if (!rawDataPreviewOk) {
@@ -2694,7 +2686,7 @@ async function d2Renderizar() {
 
   if (cached) {
     const [pd, all] = agToDia(cached);
-    d2AtualizarGrafico(pd, all, cached);
+    d2AtualizarGrafico(pd, all);
     return;
   }
 
@@ -2705,26 +2697,20 @@ async function d2Renderizar() {
     if (d2Chart) { d2Chart.destroy(); d2Chart = null; }
   }
 
-  const D2_IDS = ['d2-kpi-row','d2-chart-wrap','cat2-wrap','fam2-wrap','d2-table-body','cat2-table-body','fam2-table-body'];
-  if (rawDataPreviewOk) setChartLoading(D2_IDS, true);
+  if (rawDataPreviewOk) setChartLoading(['d2-chart-wrap','cat2-wrap','fam2-wrap'], true);
 
-  if (d2_renderAbort) d2_renderAbort.abort();
-  d2_renderAbort = new AbortController();
-
-  try {
-    const ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('d2', d2_active)}`, d2_renderAbort.signal);
+  fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('d2', d2_active)}`).then(ag => {
     agreCache(cacheKey, ag);
-    setChartLoading(D2_IDS, false);
+    setChartLoading(['d2-chart-wrap','cat2-wrap','fam2-wrap'], false);
     const [pd, all] = agToDia(ag);
-    if (all.length > 0) d2AtualizarGrafico(pd, all, ag);
-  } catch(e) {
-    setChartLoading(D2_IDS, false);
-    if (e.name === 'AbortError') return;
+    if (all.length > 0) d2AtualizarGrafico(pd, all);
+  }).catch(e => {
+    setChartLoading(['d2-chart-wrap','cat2-wrap','fam2-wrap'], false);
     console.warn('Agregados backend indisponíveis:', e.message);
-  }
+  });
 }
 
-function d2AtualizarGrafico(porDia, porDiaTabela, ag) {
+function d2AtualizarGrafico(porDia, porDiaTabela) {
   const total = porDia.reduce((s,r) => s + r.qty, 0);
   const dias  = porDia.filter(r => r.qty > 0).length;
   const media = dias > 0 ? (total / dias) : 0;
@@ -2853,29 +2839,22 @@ function d2AtualizarGrafico(porDia, porDiaTabela, ag) {
     <tbody>${linhas2}${totalLinha2}</tbody>
   </table>`;
 
-  renderCat2(ag?.por_cat_dia ? null : d2Filtrar('cat'), ag?.por_cat_dia);
-  renderFam2(ag?.por_fam_dia ? null : d2Filtrar('familia'), ag?.por_fam_dia);
+  renderCat2(d2Filtrar('cat'));
+  renderFam2(d2Filtrar('familia'));
 }
 
-function renderCat2(data, preAg) {
+function renderCat2(data) {
   const loja = document.getElementById('d2-loja').value;
   const ano  = document.getElementById('d2-ano').value;
   const mes  = document.getElementById('d2-mes').value;
   const nomeLoja = loja ? (document.getElementById('d2-loja').selectedOptions[0]?.text || '') : 'Todas as lojas';
   document.getElementById('cat2-sub').textContent = ([ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos') + ' · ' + nomeLoja;
 
-  const agRows = preAg
-    ? preAg.filter(r => r.data && (!d2_active.val || d2_active.dim !== 'data' || normalizeFilterValue(r.data) === normalizeFilterValue(d2_active.val)))
-    : null;
-  const cats = agRows
-    ? [...new Set(agRows.map(r => r.cat).filter(Boolean))].sort()
-    : [...new Set(data.map(r => getCat(r)).filter(Boolean))].sort();
-  const dias = agRows
-    ? [...new Set(agRows.map(r => r.data).filter(Boolean))].sort()
-    : [...new Set(data.map(r => {
-        const dt = d2ParseData(col(r,'Data','data'));
-        return dt ? dataParaISO(dt) : null;
-      }).filter(Boolean))].sort();
+  const cats = [...new Set(data.map(r => getCat(r)).filter(Boolean))].sort();
+  const dias  = [...new Set(data.map(r => {
+    const dt = d2ParseData(col(r,'Data','data'));
+    return dt ? dataParaISO(dt) : null;
+  }).filter(Boolean))].sort();
 
   const state2 = document.getElementById('cat2-state');
   if (cats.length === 0 || dias.length === 0) {
@@ -2887,14 +2866,11 @@ function renderCat2(data, preAg) {
   if(state2) state2.style.display = 'none';
 
   const mapCatDia = {};
-  (agRows || data).forEach(r => {
-    const c = agRows ? r.cat : getCat(r); if (!c) return;
-    const dk = agRows ? r.data : (() => {
-      const dt = d2ParseData(col(r,'Data','data'));
-      return dt ? dataParaISO(dt) : null;
-    })();
-    if (!dk) return;
-    const qty = agRows ? Number(r.qty || 0) : parseBR(col(r,'Venda (Qtd)','Venda Nf Quantidade','Venda Pdv Quantidade'));
+  data.forEach(r => {
+    const c  = getCat(r); if (!c) return;
+    const dt = d2ParseData(col(r,'Data','data')); if (!dt) return;
+    const dk = dataParaISO(dt);
+    const qty = parseBR(col(r,'Venda (Qtd)','Venda Nf Quantidade','Venda Pdv Quantidade'));
     if (!mapCatDia[c]) mapCatDia[c] = {};
     mapCatDia[c][dk] = (mapCatDia[c][dk] || 0) + qty;
   });
@@ -3030,25 +3006,18 @@ function cat2OrdenarPor(coluna) {
   d2Renderizar();
 }
 
-function renderFam2(data, preAg) {
+function renderFam2(data) {
   const loja = document.getElementById('d2-loja').value;
   const ano  = document.getElementById('d2-ano').value;
   const mes  = document.getElementById('d2-mes').value;
   const nomeLoja = loja ? (document.getElementById('d2-loja').selectedOptions[0]?.text || '') : 'Todas as lojas';
   document.getElementById('fam2-sub').textContent = ([ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos') + ' · ' + nomeLoja;
 
-  const agRows = preAg
-    ? preAg.filter(r => r.data && (!d2_active.val || d2_active.dim !== 'data' || normalizeFilterValue(r.data) === normalizeFilterValue(d2_active.val)))
-    : null;
-  const fams = agRows
-    ? [...new Set(agRows.map(r => r.fam || 'Sem mapeamento').filter(Boolean))].sort()
-    : [...new Set(data.map(r => getFamilia(r) || 'Sem mapeamento').filter(Boolean))].sort();
-  const dias = agRows
-    ? [...new Set(agRows.map(r => r.data).filter(Boolean))].sort()
-    : [...new Set(data.map(r => {
-        const dt = d2ParseData(col(r,'Data','data'));
-        return dt ? dataParaISO(dt) : null;
-      }).filter(Boolean))].sort();
+  const fams = [...new Set(data.map(r => getFamilia(r) || 'Sem mapeamento').filter(Boolean))].sort();
+  const dias  = [...new Set(data.map(r => {
+    const dt = d2ParseData(col(r,'Data','data'));
+    return dt ? dataParaISO(dt) : null;
+  }).filter(Boolean))].sort();
 
   const state2 = document.getElementById('fam2-state');
   if (fams.length === 0 || dias.length === 0) {
@@ -3059,14 +3028,11 @@ function renderFam2(data, preAg) {
   if(state2) state2.style.display = 'none';
 
   const mapFamDia = {};
-  (agRows || data).forEach(r => {
-    const f = agRows ? (r.fam || 'Sem mapeamento') : (getFamilia(r) || 'Sem mapeamento');
-    const dk = agRows ? r.data : (() => {
-      const dt = d2ParseData(col(r,'Data','data'));
-      return dt ? dataParaISO(dt) : null;
-    })();
-    if (!dk) return;
-    const qty = agRows ? Number(r.qty || 0) : parseBR(col(r,'Venda (Qtd)','Venda Nf Quantidade','Venda Pdv Quantidade'));
+  data.forEach(r => {
+    const f  = getFamilia(r) || 'Sem mapeamento';
+    const dt = d2ParseData(col(r,'Data','data')); if (!dt) return;
+    const dk = dataParaISO(dt);
+    const qty = parseBR(col(r,'Venda (Qtd)','Venda Nf Quantidade','Venda Pdv Quantidade'));
     if (!mapFamDia[f]) mapFamDia[f] = {};
     mapFamDia[f][dk] = (mapFamDia[f][dk] || 0) + qty;
   });
@@ -4077,25 +4043,18 @@ function vFmtR(v) {
   return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function vRenderKPIs(byLoja, ag) {
-  const total = ag && ag.por_dia
-    ? ag.por_dia.reduce((s, r) => s + r.valor, 0)
-    : byLoja.reduce((s, r) => s + r.val, 0);
-  const filtrandoLoja = v_active.dim === 'loja';
-  const ativas = filtrandoLoja ? 1 : byLoja.filter(r => r.val > 0).length;
-  const top    = filtrandoLoja
-    ? (byLoja.find(r => r.loja === v_active.val) || byLoja[0])
-    : byLoja[0];
+function vRenderKPIs(byLoja, kpis) {
+  const total  = kpis ? Number(kpis.total_valor || 0) : byLoja.reduce((s,r) => s + r.val, 0);
+  const ativas = kpis ? Number(kpis.total_lojas || 0) : byLoja.filter(r => r.val > 0).length;
+  const top    = byLoja[0];
   document.getElementById('v-kpi-total').textContent   = vFmtR(total);
-  document.getElementById('v-kpi-lojas').textContent   = ativas.toLocaleString('pt-BR');
+  document.getElementById('v-kpi-lojas').textContent   = ativas;
   document.getElementById('v-kpi-top').textContent     = top ? top.nome : '—';
   document.getElementById('v-kpi-top-sub').textContent = top ? vFmtR(top.val) : '—';
 }
 
-function vRenderGrafico(byLoja, ag) {
-  const total = ag && ag.por_dia
-    ? ag.por_dia.reduce((s, r) => s + r.valor, 0)
-    : byLoja.reduce((s, r) => s + r.val, 0);
+function vRenderGrafico(byLoja) {
+  const total = byLoja.reduce((s,r) => s + r.val, 0);
   document.getElementById('v-chart-total-val').textContent = vFmtR(total);
 
   const stateEl = document.getElementById('v-chart-state');
@@ -4111,6 +4070,7 @@ function vRenderGrafico(byLoja, ag) {
     canvas.id = 'v-myChart';
     document.getElementById('v-chart-wrap').appendChild(canvas);
   }
+  if (vChartInst) { vChartInst.destroy(); vChartInst = null; }
 
   const n = byLoja.length;
   const vSel = v_active.dim === 'loja' ? v_active.val : null;
@@ -4124,22 +4084,6 @@ function vRenderGrafico(byLoja, ag) {
     const t = n > 1 ? i/(n-1) : 0;
     return `rgba(${Math.round(79+t*121)},${Math.round(255-t*100)},${Math.round(176-t*50)},1)`;
   });
-  const onClickLoja = (evt, elements) => {
-    if (elements.length > 0) setTimeout(() => vSetFilter('loja', byLoja[elements[0].index].loja), 0);
-  };
-  const tickColor = ctx => { if (!vSel) return '#8891aa'; return byLoja[ctx.index]?.loja === vSel ? '#4fffb0' : '#3a4060'; };
-
-  if (vChartInst) {
-    vChartInst.data.labels = byLoja.map(r => r.nome);
-    vChartInst.data.datasets[0].data = byLoja.map(r => r.val);
-    vChartInst.data.datasets[0].backgroundColor = bgColors;
-    vChartInst.data.datasets[0].borderColor = borderColors;
-    vChartInst.options.scales.x.ticks.color = tickColor;
-    vChartInst.options.onClick = onClickLoja;
-    vChartInst.update('none');
-    canvas.style.cursor = 'pointer';
-    return;
-  }
 
   vChartInst = new Chart(canvas, {
     type: 'bar',
@@ -4149,7 +4093,9 @@ function vRenderGrafico(byLoja, ag) {
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      onClick: onClickLoja,
+      onClick: (evt, elements) => {
+        if (elements.length > 0) setTimeout(() => vSetFilter('loja', byLoja[elements[0].index].loja), 0);
+      },
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
@@ -4162,7 +4108,10 @@ function vRenderGrafico(byLoja, ag) {
       },
       scales: {
         x: {
-          ticks: { color: tickColor, font: { family: 'DM Mono', size: 9 }, maxRotation: 45, minRotation: 45, autoSkip: false },
+          ticks: {
+            color: ctx => { if (!vSel) return '#8891aa'; return byLoja[ctx.index]?.loja === vSel ? '#4fffb0' : '#3a4060'; },
+            font: { family: 'DM Mono', size: 9 }, maxRotation: 45, minRotation: 45, autoSkip: false
+          },
           grid: { color: '#1c2030' }
         },
         y: {
@@ -4505,9 +4454,8 @@ async function vRenderizar() {
     .map(r => ({ loja: normCodLoja(String(r.loja||'')), nome: deParaMap[normCodLoja(String(r.loja||''))], val: r.valor }))
     .filter(r => r.nome);
   const renderFromAg = (ag, byLoja) => {
-    vRenderKPIs(byLoja, ag);
-    vRenderGrafico(byLoja, ag);
-    vRenderTabela(byLoja);
+    const kpis = { total_valor: byLoja.reduce((s,r) => s + r.val, 0), total_lojas: byLoja.filter(r => r.val > 0).length };
+    vRenderKPIs(byLoja, kpis); vRenderGrafico(byLoja); vRenderTabela(byLoja);
     if (ag.por_cat.length > 0) vRenderCat1(null, ag.por_cat); else vRenderCat1(vFiltrar('cat'));
     if (ag.por_fam.length > 0) vRenderFam1(null, ag.por_fam); else vRenderFam1(vFiltrar('familia'));
   };
@@ -4517,29 +4465,23 @@ async function vRenderizar() {
     return;
   }
 
-  const V_IDS = ['v-kpi-row','v-chart-wrap','v-cat1-wrap','v-fam1-wrap','v-table-body','v-cat1-table-body','v-fam1-table-body'];
-  if (rawDataPreviewOk) setChartLoading(V_IDS, true);
+  if (rawDataPreviewOk) setChartLoading(['v-chart-wrap','v-cat1-wrap','v-fam1-wrap'], true);
 
-  if (v_renderAbort) v_renderAbort.abort();
-  v_renderAbort = new AbortController();
-
-  try {
-    const ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('v', v_active)}`, v_renderAbort.signal);
+  fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('v', v_active)}`).then(ag => {
     agreCache(cacheKey, ag);
     rawDataPreviewOk = true;
-    setChartLoading(V_IDS, false);
+    setChartLoading(['v-chart-wrap','v-cat1-wrap','v-fam1-wrap'], false);
     renderFromAg(ag, toByLoja(ag));
-  } catch(e) {
-    setChartLoading(V_IDS, false);
-    if (e.name === 'AbortError') return;
+  }).catch(e => {
+    setChartLoading(['v-chart-wrap','v-cat1-wrap','v-fam1-wrap'], false);
     console.warn('Agregados backend indisponíveis:', e.message);
     if (!rawDataPreviewOk) {
       const byLojaChart = vAgruparPorLoja(vFiltrar('loja'));
-      vRenderKPIs(byLojaChart, null);
-      vRenderGrafico(byLojaChart, null); vRenderTabela(byLojaChart);
+      vRenderKPIs(vAgruparPorLoja(vFiltrar()), null);
+      vRenderGrafico(byLojaChart); vRenderTabela(byLojaChart);
       vRenderCat1(vFiltrar('cat')); vRenderFam1(vFiltrar('familia'));
     }
-  }
+  });
 }
 
 // ── FILTRO DE MÊS/ANO ATUAL ───────────────────────────────────────────────────
