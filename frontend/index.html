@@ -2773,7 +2773,7 @@ async function d2Renderizar() {
     agreCache(cacheKey, ag);
     setChartLoading(D2_IDS, false);
     const [pd, all] = agToDia(ag);
-    if (all.length > 0) d2AtualizarGrafico(pd, all, ag);
+    d2AtualizarGrafico(pd, all, ag);
   } catch(e) {
     setChartLoading(D2_IDS, false);
     if (e.name === 'AbortError') return;
@@ -5242,7 +5242,7 @@ function trocarAba(aba, evt) {
   if (aba === 'gerir')    { guAtualizarUI(); return; }
 
   // Constrói filtros e renderiza apenas na primeira vez que a aba for aberta
-  if (!tabsRenderizadas.has(aba) && rawData.length > 0) {
+  if (!tabsRenderizadas.has(aba)) {
     if (aba === 'valor')   { vConstruirFiltros();  aplicarFiltroAtual('v');  vRenderizar();  }
     if (aba === 'dia')     { d2ConstruirFiltros(); aplicarFiltroAtual('d2'); d2Renderizar(); }
     if (aba === 'estoque') { d3ConstruirFiltros(); aplicarFiltroAtual('d3'); d3Renderizar(); }
