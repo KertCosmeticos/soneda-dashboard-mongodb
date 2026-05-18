@@ -24,9 +24,9 @@ const dbName = process.env.DB_NAME || "soneda_dashboard";
 
 const client = new MongoClient(uri);
 
-// ── CACHE DE RESULTADOS (TTL 15 min) ─────────────────────────────────────────
+// ── CACHE DE RESULTADOS (TTL 60 min) ─────────────────────────────────────────
 const _cache = new Map();
-const CACHE_TTL_MS = 15 * 60 * 1000;
+const CACHE_TTL_MS = 60 * 60 * 1000;
 function cacheGet(k) {
   const e = _cache.get(k);
   if (!e) return null;
@@ -40,6 +40,8 @@ function cacheClear() { _cache.clear(); }
 let _migNumericos = false; // true quando dados têm _qtd_num/_valor_num pré-computados
 let _migGtin      = false; // true quando dados têm _gtin pré-computado (join indexado)
 let _migData      = false; // true quando dados têm _data_iso pré-computado (filtro de data indexado)
+let _migCat       = false; // true quando dados têm _cat/_fam pré-computados (elimina $lookup em queries)
+let _catCountCache = -1;   // cache em memória do estimatedDocumentCount de categorias_depara
 
 // ─────────────────────────────────────────
 // UPLOAD
@@ -180,15 +182,18 @@ async function iniciarServidor() {
 
     // ── FUNÇÕES DE OTIMIZAÇÃO ────────────────────────────────────────────────
     async function atualizarFlagsMigracao() {
-      const [s1, s2, s3] = await Promise.all([
+      const [s1, s2, s3, s4] = await Promise.all([
         db.collection("dados_brutos").findOne({ _qtd_num:  { $exists: true } }, { projection: { _id: 1 } }),
         db.collection("dados_brutos").findOne({ _gtin:     { $exists: true } }, { projection: { _id: 1 } }),
-        db.collection("dados_brutos").findOne({ _data_iso: { $exists: true } }, { projection: { _id: 1 } })
+        db.collection("dados_brutos").findOne({ _data_iso: { $exists: true } }, { projection: { _id: 1 } }),
+        db.collection("dados_brutos").findOne({ _cat:      { $exists: true } }, { projection: { _id: 1 } })
       ]);
       _migNumericos = !!s1;
       _migGtin      = !!s2;
       _migData      = !!s3;
-      console.log(`📊 Otimizações ativas: numéricos=${_migNumericos}, gtin=${_migGtin}, data=${_migData}`);
+      _migCat       = !!s4;
+      _catCountCache = -1; // força re-leitura do catCount
+      console.log(`📊 Otimizações ativas: numéricos=${_migNumericos}, gtin=${_migGtin}, data=${_migData}, cat=${_migCat}`);
     }
 
     // Migração automática de campos de performance (roda inteiramente no MongoDB, não bloqueia Node.js)
@@ -231,6 +236,41 @@ async function iniciarServidor() {
         if (rNum.modifiedCount > 0 || rGtin.modifiedCount > 0 || rData.modifiedCount > 0) {
           cacheClear();
           console.log(`✅ Auto-migração: ${rNum.modifiedCount} numéricos, ${rGtin.modifiedCount} gtin, ${rData.modifiedCount} data_iso`);
+        }
+
+        // Pré-computa _cat/_fam via $merge — elimina o $lookup caro em cada query
+        if (!_migCat) {
+          const catCnt = await db.collection("categorias_depara").estimatedDocumentCount();
+          _catCountCache = catCnt;
+          if (catCnt > 0) {
+            const semCat = await db.collection("dados_brutos").countDocuments({ _cat: { $exists: false } });
+            if (semCat > 0) {
+              await db.collection("dados_brutos").aggregate([
+                { $match: { _cat: { $exists: false } } },
+                { $lookup: {
+                    from: "categorias_depara",
+                    let: { gtin: { $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } } },
+                    pipeline: [{ $match: { $expr: { $eq: ["$$gtin", { $toString: "$CODBARRAS" }] } } }],
+                    as: "_cjoin"
+                }},
+                { $set: {
+                    _cat: { $arrayElemAt: ["$_cjoin.CATEGORIA", 0] },
+                    _fam: { $arrayElemAt: ["$_cjoin.FAMILIA", 0] }
+                }},
+                { $unset: "_cjoin" },
+                { $merge: { into: "dados_brutos", whenMatched: "merge", whenNotMatched: "discard" } }
+              ], { allowDiskUse: true }).toArray();
+              _migCat = true;
+              cacheClear();
+              console.log(`✅ Auto-migração: _cat/_fam pré-computados em ${semCat} documentos`);
+              await Promise.all([
+                db.collection("dados_brutos").createIndex({ _cat: 1 }),
+                db.collection("dados_brutos").createIndex({ _fam: 1 })
+              ]);
+            } else {
+              _migCat = true; // todos já têm _cat
+            }
+          }
         }
       } catch(e) {
         console.warn('⚠️ Auto-migração em background falhou:', e.message);
@@ -1020,9 +1060,11 @@ async function iniciarServidor() {
           preStages.push({ $match: { $expr: conds.length === 1 ? conds[0] : { $and: conds } } });
         }
 
-        // Join único (uma vez para todos os facets de cat/fam)
-        const catCount = await db.collection("categorias_depara").estimatedDocumentCount();
-        if (catCount > 0) preStages.push(...joinCat);
+        // Join único (uma vez para todos os facets de cat/fam) — pulado quando _cat já está pré-computado
+        if (!_migCat) {
+          if (_catCountCache < 0) _catCountCache = await db.collection("categorias_depara").estimatedDocumentCount();
+          if (_catCountCache > 0) preStages.push(...joinCat);
+        }
 
         // Filtros dropdown de cat/fam — comuns a todos os branches do facet
         if (cat)     preStages.push({ $match: { _cat: cat } });
@@ -1260,6 +1302,8 @@ async function iniciarServidor() {
           });
           cacheClear();
           await atualizarFlagsMigracao();
+          // Re-migra _cat/_fam para novos registros (em background)
+          migrarCamposBackground();
         }
 
         res.json({
@@ -1287,6 +1331,9 @@ async function iniciarServidor() {
           usuario: req.usuarioLogado, total: inserido, data: new Date()
         });
         cacheClear();
+        // Re-migra _cat/_fam com o novo de/para (em background, sem bloquear a resposta)
+        _migCat = false; _catCountCache = -1;
+        migrarCamposBackground();
         res.json({ ok: true, inserido, ultimo: true, mensagem: "Categorias importadas" });
       } catch (error) {
         res.status(500).json({ erro: "Erro ao salvar no banco de dados", detalhe: error.message });
