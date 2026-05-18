@@ -3,3 +3,10 @@ node_modules/
 uploads/
 backend/uploads/
 *.csv
+*.xlsx
+*.jpg
+*.JPG
+*.png
+*.PNG
+CLAUDE.md
+COMITAR NO GITHUB.txt
