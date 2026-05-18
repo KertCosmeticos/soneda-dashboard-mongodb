@@ -1943,7 +1943,7 @@ async function renderizar() {
 
   if (cached) {
     const byLoja = toByLoja(cached);
-    renderKPIs(byLoja);
+    renderKPIs(byLoja, cached);
     renderGrafico(byLoja);
     renderTabela(byLoja);
     if (cached.por_cat.length > 0) renderCat1(null, cached.por_cat); else renderCat1(filtrar('cat'));
@@ -1959,7 +1959,7 @@ async function renderizar() {
     agreCache(cacheKey, ag);
     rawDataPreviewOk = true;
     const byLoja = toByLoja(ag);
-    renderKPIs(byLoja);
+    renderKPIs(byLoja, ag);
     renderGrafico(byLoja);
     renderTabela(byLoja);
     if (ag.por_cat.length > 0) renderCat1(null, ag.por_cat); else renderCat1(filtrar('cat'));
@@ -1974,11 +1974,20 @@ async function renderizar() {
   }
 }
 
-function renderKPIs(byLoja) {
-  const total = byLoja.reduce((s, r) => s + r.qty, 0);
-  const top   = byLoja[0];
+function renderKPIs(byLoja, ag) {
+  // usa por_dia (todos os filtros aplicados) para o total correto no cross-filter
+  const total = ag && ag.por_dia
+    ? ag.por_dia.reduce((s, r) => s + r.qty, 0)
+    : byLoja.reduce((s, r) => s + r.qty, 0);
+  // quando filtra por loja específica, por_loja retorna todas (cross-filter) → forçar 1
+  const lojas = f_active.loja
+    ? 1
+    : byLoja.filter(r => r.qty > 0).length;
+  const top = f_active.loja
+    ? (byLoja.find(r => r.loja === f_active.loja) || byLoja[0])
+    : byLoja[0];
   document.getElementById('kpi-total').textContent    = total.toLocaleString('pt-BR');
-  document.getElementById('kpi-lojas').textContent    = byLoja.filter(r => r.qty > 0).length.toLocaleString('pt-BR');
+  document.getElementById('kpi-lojas').textContent    = lojas.toLocaleString('pt-BR');
   document.getElementById('kpi-top').textContent      = top ? top.nome : '—';
   document.getElementById('kpi-top-sub').textContent  = top ? `${top.qty.toLocaleString('pt-BR')} un.` : '—';
 }
