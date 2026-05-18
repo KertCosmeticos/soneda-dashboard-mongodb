@@ -1252,6 +1252,8 @@ let d2_active      = { dim: null, val: null };
 let d3_active      = { dim: null, val: null };
 let se_active      = { dim: null, val: null };
 let d2_table_active = { dim: null, val: null };
+let f_renderAbort  = null;   // cancela fetch anterior ao aplicar novo filtro
+const _agreMemCache = new Map(); // cache em memória (mais rápido que JSON.parse do sessionStorage)
 let t1Sort         = { col: 'qty', dir: 'desc' };
 let cat1Sort       = { col: 'qty', dir: 'desc' };
 let fam1Sort       = { col: 'qty', dir: 'desc' };
@@ -1336,8 +1338,10 @@ function d2SetCatDropdown(val) {
 
 
 // ── API / MONGODB ─────────────────────────────────────────────────────────────
-async function fetchJSON(endpoint) {
-  const res = await fetch(`${API_BASE}${endpoint}`, { cache: 'no-store' });
+async function fetchJSON(endpoint, signal) {
+  const opts = { cache: 'no-store' };
+  if (signal) opts.signal = signal;
+  const res = await fetch(`${API_BASE}${endpoint}`, opts);
   if (!res.ok) throw new Error(`HTTP ${res.status} em ${endpoint}`);
   return res.json();
 }
@@ -1498,7 +1502,7 @@ async function enviarCSV(inputId, rota) {
     status.innerHTML = `✔ Importação concluída — <strong>${totalInserido.toLocaleString('pt-BR')}</strong> registros inseridos em ${totalLotes} lote${totalLotes > 1 ? 's' : ''}.`;
     status.className = 'import-status ok';
     // Limpa cache de agregados para que o painel recarregue com dados novos
-    Object.keys(sessionStorage).filter(k => k.startsWith('agre__')).forEach(k => sessionStorage.removeItem(k));
+    _agreMemCache.clear(); Object.keys(sessionStorage).filter(k => k.startsWith('agre__')).forEach(k => sessionStorage.removeItem(k));
 
   } catch (error) {
     console.error(error);
@@ -1553,7 +1557,7 @@ async function enviarXLSX(inputId, rota) {
 
     status.innerHTML = `✔ Importação concluída — <strong>${(data.inserido || 0).toLocaleString('pt-BR')}</strong> registros inseridos.`;
     status.className = 'import-status ok';
-    Object.keys(sessionStorage).filter(k => k.startsWith('agre__')).forEach(k => sessionStorage.removeItem(k));
+    _agreMemCache.clear(); Object.keys(sessionStorage).filter(k => k.startsWith('agre__')).forEach(k => sessionStorage.removeItem(k));
     fileInput.value = '';
   } catch (error) {
     console.error(error);
@@ -1905,17 +1909,25 @@ function buildAgreParams(prefix, activeObj) {
   return params;
 }
 
-// ── CACHE DE AGREGADOS (sessionStorage, TTL 15 min) ──────────────────────────
+// ── CACHE DE AGREGADOS (memória + sessionStorage, TTL 15 min) ────────────────
 const AGRE_CACHE_TTL = 15 * 60 * 1000;
 function agreCache(key, data) {
   const k = 'agre__' + key;
   if (data !== undefined) {
+    _agreMemCache.set(k, { t: Date.now(), d: data });
     try { sessionStorage.setItem(k, JSON.stringify({ t: Date.now(), d: data })); } catch(e) {}
     return data;
   }
+  // Memória primeiro (sem JSON.parse)
+  const mem = _agreMemCache.get(k);
+  if (mem && (Date.now() - mem.t) < AGRE_CACHE_TTL) return mem.d;
+  // Fallback sessionStorage (sobrevive ao F5)
   try {
     const item = JSON.parse(sessionStorage.getItem(k) || 'null');
-    if (item && (Date.now() - item.t) < AGRE_CACHE_TTL) return item.d;
+    if (item && (Date.now() - item.t) < AGRE_CACHE_TTL) {
+      _agreMemCache.set(k, item);
+      return item.d;
+    }
   } catch(e) {}
   return null;
 }
@@ -1944,7 +1956,7 @@ async function renderizar() {
   if (cached) {
     const byLoja = toByLoja(cached);
     renderKPIs(byLoja, cached);
-    renderGrafico(byLoja);
+    renderGrafico(byLoja, cached);
     renderTabela(byLoja);
     if (cached.por_cat.length > 0) renderCat1(null, cached.por_cat); else renderCat1(filtrar('cat'));
     if (cached.por_fam.length > 0) renderFam1(null, cached.por_fam); else renderFam1(filtrar('familia'));
@@ -1954,17 +1966,22 @@ async function renderizar() {
   // Mostra loading apenas no primeiro carregamento (filtros interativos mantêm o chart atual visível)
   if (!rawDataPreviewOk) setEstado('Carregando dados...');
 
+  // Cancela requisição anterior se um novo filtro for aplicado antes da resposta chegar
+  if (f_renderAbort) f_renderAbort.abort();
+  f_renderAbort = new AbortController();
+
   try {
-    const ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('f', f_active)}`);
+    const ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('f', f_active)}`, f_renderAbort.signal);
     agreCache(cacheKey, ag);
     rawDataPreviewOk = true;
     const byLoja = toByLoja(ag);
     renderKPIs(byLoja, ag);
-    renderGrafico(byLoja);
+    renderGrafico(byLoja, ag);
     renderTabela(byLoja);
     if (ag.por_cat.length > 0) renderCat1(null, ag.por_cat); else renderCat1(filtrar('cat'));
     if (ag.por_fam.length > 0) renderFam1(null, ag.por_fam); else renderFam1(filtrar('familia'));
   } catch(e) {
+    if (e.name === 'AbortError') return; // filtro mais recente já está carregando, ignorar
     console.warn('Agregados backend indisponíveis:', e.message);
     if (!rawDataPreviewOk) {
       const byLojaChart = agruparPorLoja(filtrar('loja'));
@@ -1979,12 +1996,11 @@ function renderKPIs(byLoja, ag) {
   const total = ag && ag.por_dia
     ? ag.por_dia.reduce((s, r) => s + r.qty, 0)
     : byLoja.reduce((s, r) => s + r.qty, 0);
-  // quando filtra por loja específica, por_loja retorna todas (cross-filter) → forçar 1
-  const lojas = f_active.loja
-    ? 1
-    : byLoja.filter(r => r.qty > 0).length;
-  const top = f_active.loja
-    ? (byLoja.find(r => r.loja === f_active.loja) || byLoja[0])
+  // quando filtra por loja específica, por_loja retorna todas as lojas (design cross-filter) → forçar 1
+  const filtrandoLoja = f_active.dim === 'loja';
+  const lojas = filtrandoLoja ? 1 : byLoja.filter(r => r.qty > 0).length;
+  const top   = filtrandoLoja
+    ? (byLoja.find(r => r.loja === f_active.val) || byLoja[0])
     : byLoja[0];
   document.getElementById('kpi-total').textContent    = total.toLocaleString('pt-BR');
   document.getElementById('kpi-lojas').textContent    = lojas.toLocaleString('pt-BR');
@@ -1992,8 +2008,11 @@ function renderKPIs(byLoja, ag) {
   document.getElementById('kpi-top-sub').textContent  = top ? `${top.qty.toLocaleString('pt-BR')} un.` : '—';
 }
 
-function renderGrafico(byLoja) {
-  const total = byLoja.reduce((s,r) => s + r.qty, 0);
+function renderGrafico(byLoja, ag) {
+  // por_dia aplica todos os filtros (incluindo loja); por_loja exclui filtro de loja (cross-filter)
+  const total = ag && ag.por_dia
+    ? ag.por_dia.reduce((s, r) => s + r.qty, 0)
+    : byLoja.reduce((s, r) => s + r.qty, 0);
   document.getElementById('chart-total-val').textContent = total.toLocaleString('pt-BR');
 
   if (byLoja.length === 0) {
@@ -2008,14 +2027,12 @@ function renderGrafico(byLoja) {
     canvas.id = 'myChart';
     document.getElementById('chart-wrap').appendChild(canvas);
   }
-  if (chartInst) { chartInst.destroy(); chartInst = null; }
 
   const labels = byLoja.map(r => r.nome);
   const values = byLoja.map(r => r.qty);
   const n      = byLoja.length;
-
-  const sel = f_active.dim === 'loja' ? f_active.val : null;
-  const bgColors = byLoja.map((r, i) => {
+  const sel    = f_active.dim === 'loja' ? f_active.val : null;
+  const bgColors     = byLoja.map((r, i) => {
     if (sel) return r.loja === sel ? 'rgba(200,241,53,0.95)' : 'rgba(37,42,58,0.45)';
     const t = n > 1 ? i/(n-1) : 0;
     return `rgba(${Math.round(200-t*80)},${Math.round(241-t*100)},${Math.round(53+t*100)},0.85)`;
@@ -2025,6 +2042,21 @@ function renderGrafico(byLoja) {
     const t = n > 1 ? i/(n-1) : 0;
     return `rgba(${Math.round(200-t*80)},${Math.round(241-t*100)},${Math.round(53+t*100)},1)`;
   });
+  const tickColor = ctx => !sel ? '#8891aa' : byLoja[ctx.index]?.loja === sel ? '#c8f135' : '#3a4060';
+  const onClickLoja = (evt, elements) => { if (elements.length > 0) fSetFilter('loja', byLoja[elements[0].index].loja); };
+
+  // Atualiza gráfico existente no lugar (sem destruir/recriar → sem animação de entrada)
+  if (chartInst) {
+    chartInst.data.labels = labels;
+    chartInst.data.datasets[0].data = values;
+    chartInst.data.datasets[0].backgroundColor = bgColors;
+    chartInst.data.datasets[0].borderColor = borderColors;
+    chartInst.options.scales.x.ticks.color = tickColor;
+    chartInst.options.onClick = onClickLoja;
+    chartInst.update('none');
+    canvas.style.cursor = 'pointer';
+    return;
+  }
 
   chartInst = new Chart(canvas, {
     type: 'bar',
@@ -2042,9 +2074,7 @@ function renderGrafico(byLoja) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      onClick: (evt, elements) => {
-        if (elements.length > 0) setTimeout(() => fSetFilter('loja', byLoja[elements[0].index].loja), 0);
-      },
+      onClick: onClickLoja,
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
@@ -2062,16 +2092,7 @@ function renderGrafico(byLoja) {
       },
       scales: {
         x: {
-          ticks: {
-            color: ctx => {
-              if (!sel) return '#8891aa';
-              return byLoja[ctx.index]?.loja === sel ? '#c8f135' : '#3a4060';
-            },
-            font: { family: 'DM Mono', size: 9 },
-            maxRotation: 45,
-            minRotation: 45,
-            autoSkip: false,
-          },
+          ticks: { color: tickColor, font: { family: 'DM Mono', size: 9 }, maxRotation: 45, minRotation: 45, autoSkip: false },
           grid: { color: '#1c2030' }
         },
         y: {
@@ -2140,40 +2161,52 @@ function renderCat1(data, preAg) {
     canvas.id = 'cat1-canvas';
     document.getElementById('cat1-wrap').appendChild(canvas);
   }
-  if (cat1Chart) { cat1Chart.destroy(); cat1Chart = null; }
 
-  const selCat = f_active.dim === 'cat' ? f_active.val : null;
-  cat1Chart = new Chart(canvas, {
-    type: 'bar',
-    data: {
-      labels: byCatSorted.map(r => r.cat),
-      datasets: [{
-        data: byCatSorted.map(r => r.qty),
-        backgroundColor: byCatSorted.map((r,i) => selCat ? (r.cat===selCat ? PALETTE[i%PALETTE.length]+'ee' : 'rgba(37,42,58,0.45)') : PALETTE[i%PALETTE.length]+'cc'),
-        borderColor:     byCatSorted.map((r,i) => selCat ? (r.cat===selCat ? PALETTE[i%PALETTE.length] : 'rgba(37,42,58,0.2)') : PALETTE[i%PALETTE.length]),
-        borderWidth: 1.5, borderRadius: 6,
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      onClick: (evt, elements) => {
-        if (elements.length > 0) setTimeout(() => fSetFilter('cat', byCatSorted[elements[0].index].cat), 0);
+  const selCat    = f_active.dim === 'cat' ? f_active.val : null;
+  const bgCat     = byCatSorted.map((r,i) => selCat ? (r.cat===selCat ? PALETTE[i%PALETTE.length]+'ee' : 'rgba(37,42,58,0.45)') : PALETTE[i%PALETTE.length]+'cc');
+  const brdCat    = byCatSorted.map((r,i) => selCat ? (r.cat===selCat ? PALETTE[i%PALETTE.length] : 'rgba(37,42,58,0.2)') : PALETTE[i%PALETTE.length]);
+  const tickCat   = ctx => selCat ? (byCatSorted[ctx.index]?.cat===selCat ? '#c8f135':'#3a4060') : '#8891aa';
+  const clickCat  = (evt, elements) => { if (elements.length > 0) fSetFilter('cat', byCatSorted[elements[0].index].cat); };
+
+  if (cat1Chart) {
+    cat1Chart.data.labels = byCatSorted.map(r => r.cat);
+    cat1Chart.data.datasets[0].data = byCatSorted.map(r => r.qty);
+    cat1Chart.data.datasets[0].backgroundColor = bgCat;
+    cat1Chart.data.datasets[0].borderColor = brdCat;
+    cat1Chart.options.scales.x.ticks.color = tickCat;
+    cat1Chart.options.onClick = clickCat;
+    cat1Chart.update('none');
+  } else {
+    cat1Chart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: byCatSorted.map(r => r.cat),
+        datasets: [{
+          data: byCatSorted.map(r => r.qty),
+          backgroundColor: bgCat,
+          borderColor: brdCat,
+          borderWidth: 1.5, borderRadius: 6,
+        }]
       },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1,
-          titleColor:'#c8f135', bodyColor:'#e8ecf5',
-          titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
-          callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades` }
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        onClick: clickCat,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1,
+            titleColor:'#c8f135', bodyColor:'#e8ecf5',
+            titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+            callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades` }
+          }
+        },
+        scales: {
+          x: { ticks:{ color: tickCat, font:{family:'DM Mono',size:9}, maxRotation:35, autoSkip:false }, grid:{color:'#1c2030'} },
+          y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
         }
-      },
-      scales: {
-        x: { ticks:{ color: ctx => selCat ? (byCatSorted[ctx.index]?.cat===selCat ? '#c8f135':'#3a4060') : '#8891aa', font:{family:'DM Mono',size:9}, maxRotation:35, autoSkip:false }, grid:{color:'#1c2030'} },
-        y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
       }
-    }
-  });
+    });
+  }
   canvas.style.cursor = 'pointer';
 
   // Tabela: mapeados ordenados + "Sem mapeamento" ao final (se houver)
@@ -2278,40 +2311,52 @@ function renderFam1(data, preAg) {
     canvas.id = 'fam1-canvas';
     document.getElementById('fam1-wrap').appendChild(canvas);
   }
-  if (fam1Chart) { fam1Chart.destroy(); fam1Chart = null; }
 
-  const selFam = f_active.dim === 'familia' ? f_active.val : null;
-  fam1Chart = new Chart(canvas, {
-    type: 'bar',
-    data: {
-      labels: byFamSorted.map(r => r.fam),
-      datasets: [{
-        data: byFamSorted.map(r => r.qty),
-        backgroundColor: byFamSorted.map((r,i) => selFam ? (r.fam===selFam ? PALETTE[i%PALETTE.length]+'ee' : 'rgba(37,42,58,0.45)') : PALETTE[i%PALETTE.length]+'cc'),
-        borderColor:     byFamSorted.map((r,i) => selFam ? (r.fam===selFam ? PALETTE[i%PALETTE.length] : 'rgba(37,42,58,0.2)') : PALETTE[i%PALETTE.length]),
-        borderWidth: 1.5, borderRadius: 6,
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      onClick: (evt, elements) => {
-        if (elements.length > 0) setTimeout(() => fSetFilter('familia', byFamSorted[elements[0].index].fam), 0);
+  const selFam   = f_active.dim === 'familia' ? f_active.val : null;
+  const bgFam    = byFamSorted.map((r,i) => selFam ? (r.fam===selFam ? PALETTE[i%PALETTE.length]+'ee' : 'rgba(37,42,58,0.45)') : PALETTE[i%PALETTE.length]+'cc');
+  const brdFam   = byFamSorted.map((r,i) => selFam ? (r.fam===selFam ? PALETTE[i%PALETTE.length] : 'rgba(37,42,58,0.2)') : PALETTE[i%PALETTE.length]);
+  const tickFam  = ctx => selFam ? (byFamSorted[ctx.index]?.fam===selFam ? '#c8f135':'#3a4060') : '#8891aa';
+  const clickFam = (evt, elements) => { if (elements.length > 0) fSetFilter('familia', byFamSorted[elements[0].index].fam); };
+
+  if (fam1Chart) {
+    fam1Chart.data.labels = byFamSorted.map(r => r.fam);
+    fam1Chart.data.datasets[0].data = byFamSorted.map(r => r.qty);
+    fam1Chart.data.datasets[0].backgroundColor = bgFam;
+    fam1Chart.data.datasets[0].borderColor = brdFam;
+    fam1Chart.options.scales.x.ticks.color = tickFam;
+    fam1Chart.options.onClick = clickFam;
+    fam1Chart.update('none');
+  } else {
+    fam1Chart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: byFamSorted.map(r => r.fam),
+        datasets: [{
+          data: byFamSorted.map(r => r.qty),
+          backgroundColor: bgFam,
+          borderColor: brdFam,
+          borderWidth: 1.5, borderRadius: 6,
+        }]
       },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1,
-          titleColor:'#c8f135', bodyColor:'#e8ecf5',
-          titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
-          callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades` }
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        onClick: clickFam,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1,
+            titleColor:'#c8f135', bodyColor:'#e8ecf5',
+            titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+            callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades` }
+          }
+        },
+        scales: {
+          x: { ticks:{ color: tickFam, font:{family:'DM Mono',size:9}, maxRotation:35, autoSkip:false }, grid:{color:'#1c2030'} },
+          y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
         }
-      },
-      scales: {
-        x: { ticks:{ color: ctx => selFam ? (byFamSorted[ctx.index]?.fam===selFam ? '#c8f135':'#3a4060') : '#8891aa', font:{family:'DM Mono',size:9}, maxRotation:35, autoSkip:false }, grid:{color:'#1c2030'} },
-        y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
       }
-    }
-  });
+    });
+  }
   canvas.style.cursor = 'pointer';
 
   // Tabela: mapeados ordenados + "Sem mapeamento" ao final (se houver)
