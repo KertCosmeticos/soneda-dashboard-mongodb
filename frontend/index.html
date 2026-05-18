@@ -4298,7 +4298,7 @@ function vt1OrdenarPor(coluna) {
   vRenderizar();
 }
 
-function vRenderCat1(data, preAg) {
+function vRenderCat1(data, preAg, ag) {
   let byCat;
   if (preAg) {
     byCat = preAg.map(r => ({ cat: r.cat || 'SEM CATEGORIA', val: r.valor })).filter(r => r.cat !== 'SEM CATEGORIA' && r.cat !== null);
@@ -4314,8 +4314,11 @@ function vRenderCat1(data, preAg) {
     byCat = Object.values(map);
   }
   const total = byCat.reduce((s,r) => s + r.val, 0);
+  const displayTotal = ag && ag.por_dia
+    ? ag.por_dia.reduce((s, r) => s + (r.valor || 0), 0)
+    : total;
   const vCat1TotalEl = document.getElementById('v-cat1-total-val');
-  if (vCat1TotalEl) vCat1TotalEl.textContent = total > 0 ? vFmtR(total) : '—';
+  if (vCat1TotalEl) vCat1TotalEl.textContent = displayTotal > 0 ? vFmtR(displayTotal) : '—';
 
   const ano = document.getElementById('v-ano').value;
   const mes = document.getElementById('v-mes').value;
@@ -4417,7 +4420,7 @@ function vCat1OrdenarPor(coluna) {
 }
 
 
-function vRenderFam1(data, preAg) {
+function vRenderFam1(data, preAg, ag) {
   const SEM_MAP_V = 'Sem mapeamento';
   let byFam;
   if (preAg) {
@@ -4435,8 +4438,11 @@ function vRenderFam1(data, preAg) {
   // Separa famílias reais das sem mapeamento (para o gráfico mostra só as reais)
   let byFamChart = byFam.filter(r => r.fam !== SEM_MAP_V);
   const total = byFam.reduce((s,r) => s + r.val, 0);
+  const displayTotalFam = ag && ag.por_dia
+    ? ag.por_dia.reduce((s, r) => s + (r.valor || 0), 0)
+    : total;
   const vFam1TotalEl = document.getElementById('v-fam1-total-val');
-  if (vFam1TotalEl) vFam1TotalEl.textContent = total > 0 ? vFmtR(total) : '—';
+  if (vFam1TotalEl) vFam1TotalEl.textContent = displayTotalFam > 0 ? vFmtR(displayTotalFam) : '—';
 
   const ano = document.getElementById('v-ano').value;
   const mes = document.getElementById('v-mes').value;
@@ -4594,8 +4600,8 @@ async function vRenderizar() {
     vRenderKPIs(byLoja, ag);
     vRenderGrafico(byLoja, ag);
     vRenderTabela(byLoja);
-    if (ag.por_cat.length > 0) vRenderCat1(null, ag.por_cat); else vRenderCat1(vFiltrar('cat'));
-    if (ag.por_fam.length > 0) vRenderFam1(null, ag.por_fam); else vRenderFam1(vFiltrar('familia'));
+    if (ag.por_cat.length > 0) vRenderCat1(null, ag.por_cat, ag); else vRenderCat1(vFiltrar('cat'));
+    if (ag.por_fam.length > 0) vRenderFam1(null, ag.por_fam, ag); else vRenderFam1(vFiltrar('familia'));
   };
 
   if (cached) {
