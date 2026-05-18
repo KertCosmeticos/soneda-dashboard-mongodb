@@ -2689,17 +2689,20 @@ function d2AgruparPorDia(data) {
 function d2FormatarData(valor) {
   if (!valor) return valor;
   const s = String(valor).trim();
-  // ISO YYYY-MM-DD → DD/MM/AAAA (sem ambiguidade)
+  const MESES_BR = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  // ISO YYYY-MM-DD: dia 01 → "Mar/2026" (dado mensal); senão → "15/03/2026"
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
     const [y, m, d] = s.split('-');
+    if (d === '01') return `${MESES_BR[parseInt(m,10)-1]}/${y}`;
     return `${d}/${m}/${y}`;
   }
   // Qualquer outro formato (M/D/AAAA do Google Sheets, etc.): parseia e formata
   const dt = parseDataBR(s);
   if (dt && !isNaN(dt)) {
-    const d = String(dt.getDate()).padStart(2, '0');
-    const m = String(dt.getMonth() + 1).padStart(2, '0');
-    return `${d}/${m}/${dt.getFullYear()}`;
+    const day = dt.getDate();
+    const m   = dt.getMonth() + 1;
+    if (day === 1) return `${MESES_BR[m-1]}/${dt.getFullYear()}`;
+    return `${String(day).padStart(2,'0')}/${String(m).padStart(2,'0')}/${dt.getFullYear()}`;
   }
   return s;
 }
@@ -2776,6 +2779,10 @@ function d2AtualizarGrafico(porDia, porDiaTabela) {
 
   const d2ChartTotalEl = document.getElementById('d2-chart-total-val');
   if (d2ChartTotalEl) d2ChartTotalEl.textContent = total > 0 ? total.toLocaleString('pt-BR') : '—';
+
+  const d2StatusEl = document.getElementById('d2-status-msg');
+  if (d2StatusEl) d2StatusEl.textContent =
+    `${total.toLocaleString('pt-BR')} unidades vendidas · ${dias} período${dias !== 1 ? 's' : ''} com venda`;
 
   document.getElementById('d2-kpi-total').textContent   = total.toLocaleString('pt-BR');
   document.getElementById('d2-kpi-dias').textContent    = dias;
@@ -3328,6 +3335,10 @@ function d3Renderizar() {
   const d3ChartTotalEl = document.getElementById('d3-chart-total-val');
   if (d3ChartTotalEl) d3ChartTotalEl.textContent = total > 0 ? total.toLocaleString('pt-BR') : '—';
 
+  const d3StatusEl = document.getElementById('d3-status-msg');
+  if (d3StatusEl) d3StatusEl.textContent =
+    `${total.toLocaleString('pt-BR')} unidades em estoque · ${ativas} loja${ativas !== 1 ? 's' : ''}`;
+
   const barState = document.getElementById('d3-chart-state');
   if (byLoja.length === 0) {
     if(barState) { barState.style.display='flex'; barState.innerHTML='Nenhum dado.'; }
@@ -3811,6 +3822,10 @@ function seRenderizar() {
   const seChartEstEl = document.getElementById('se-chart-estoque-val');
   if (seChartSOEl)  seChartSOEl.textContent  = totalSellout > 0 ? totalSellout.toLocaleString('pt-BR') : '—';
   if (seChartEstEl) seChartEstEl.textContent = totalEstoque > 0 ? totalEstoque.toLocaleString('pt-BR') : '—';
+
+  const seStatusEl = document.getElementById('se-status-msg');
+  if (seStatusEl) seStatusEl.textContent =
+    `${totalSellout.toLocaleString('pt-BR')} unidades vendidas · ${totalEstoque.toLocaleString('pt-BR')} em estoque`;
 
   seRenderGrafico(byLoja);
   if (seViewMode === 'data') {
