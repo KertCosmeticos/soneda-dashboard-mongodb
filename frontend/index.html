@@ -4589,12 +4589,23 @@ function seRenderTabelaDataAgregada(porData) {
     return `<th${cls} onclick="seDataOrdenarPor('${key}')">${label}</th>`;
   };
 
+  // Formata sempre como DD/MM/AAAA (sem abreviar dia 01 para "Mês/Ano")
+  const seFormatData = d => {
+    if (!d) return d || '';
+    const s = String(d).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      const [y, m, dd] = s.split('-');
+      return `${dd}/${m}/${y}`;
+    }
+    return s;
+  };
+
   const linhas = sorted.map(r => {
     const dia = d2DiaSemana(r.data);
     const fds = dia === 'Sáb' || dia === 'Dom';
     const barW = ((r.sellout / maxSO) * 100).toFixed(1);
     return `<tr>
-      <td class="td-loja">${d2FormatarData(r.data)}</td>
+      <td class="td-loja">${seFormatData(r.data)}</td>
       <td class="td-loja" style="color:${fds ? '#ff9f6b' : 'var(--muted)'}">${dia}</td>
       <td class="td-qty">${r.sellout.toLocaleString('pt-BR')}</td>
       <td class="td-qty" style="color:var(--accent2)">${r.estoque.toLocaleString('pt-BR')}</td>
