@@ -1207,7 +1207,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/estoque", async (req, res) => {
       try {
-        const cacheKey = 'est:' + JSON.stringify(req.query);
+        const cacheKey = 'est:v2:' + JSON.stringify(req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
@@ -1230,6 +1230,40 @@ async function iniciarServidor() {
 
         const preStages = Object.keys(baseMatch).length ? [{ $match: baseMatch }] : [];
         const estoqueExpr = brToDouble({ $getField: "Estoque Diario" });
+        const dateGroupExpr = {
+          $ifNull: [
+            _migData ? "$_data_iso" : null,
+            { $dateToString: {
+              format: "%Y-%m-%d",
+              date: { $ifNull: [
+                { $dateFromString: { dateString: { $toString: { $ifNull: [{ $getField: "Data" }, ""] } }, format: "%d/%m/%Y", onError: null, onNull: null } },
+                { $dateFromString: { dateString: { $toString: { $ifNull: [{ $getField: "Data" }, ""] } }, format: "%Y-%m-%d", onError: null, onNull: null } }
+              ]},
+              onNull: null
+            }},
+            { $concat: [
+              { $ifNull: ["$Ano", "0000"] }, "-",
+              { $switch: {
+                branches: [
+                  { case: { $eq: ["$MÃªs", "Jan"] }, then: "01" },
+                  { case: { $eq: ["$MÃªs", "Fev"] }, then: "02" },
+                  { case: { $eq: ["$MÃªs", "Mar"] }, then: "03" },
+                  { case: { $eq: ["$MÃªs", "Abr"] }, then: "04" },
+                  { case: { $eq: ["$MÃªs", "Mai"] }, then: "05" },
+                  { case: { $eq: ["$MÃªs", "Jun"] }, then: "06" },
+                  { case: { $eq: ["$MÃªs", "Jul"] }, then: "07" },
+                  { case: { $eq: ["$MÃªs", "Ago"] }, then: "08" },
+                  { case: { $eq: ["$MÃªs", "Set"] }, then: "09" },
+                  { case: { $eq: ["$MÃªs", "Out"] }, then: "10" },
+                  { case: { $eq: ["$MÃªs", "Nov"] }, then: "11" },
+                  { case: { $eq: ["$MÃªs", "Dez"] }, then: "12" }
+                ],
+                default: "00"
+              }},
+              "-01"
+            ]}
+          ]
+        };
 
         const [facet] = await db.collection("dados_brutos").aggregate([
           ...preStages,
@@ -1241,6 +1275,10 @@ async function iniciarServidor() {
             por_loja: [
               { $group: { _id: "$Loja", qty: { $sum: estoqueExpr } } },
               { $sort: { qty: -1 } }
+            ],
+            por_loja_dia: [
+              { $group: { _id: { loja: "$Loja", data: dateGroupExpr }, qty: { $sum: estoqueExpr } } },
+              { $sort: { "_id.data": 1, qty: -1 } }
             ]
           }}
         ], { allowDiskUse: true }).toArray();
@@ -1248,7 +1286,8 @@ async function iniciarServidor() {
         const result = {
           total:       facet?.total?.[0]?.total       || 0,
           total_lojas: facet?.total?.[0]?.total_lojas || 0,
-          por_loja:    (facet?.por_loja || []).map(r => ({ loja: r._id, qty: r.qty }))
+          por_loja:    (facet?.por_loja || []).map(r => ({ loja: r._id, qty: r.qty })),
+          por_loja_dia: (facet?.por_loja_dia || []).map(r => ({ loja: r._id.loja, data: r._id.data, qty: r.qty }))
         };
 
         cacheSet(cacheKey, result);

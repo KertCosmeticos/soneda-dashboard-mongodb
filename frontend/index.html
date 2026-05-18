@@ -3594,9 +3594,111 @@ async function d3FetchTotalEstoque() {
     const d3StatusEl = document.getElementById('d3-status-msg');
     if (d3StatusEl) d3StatusEl.textContent =
       `${totalCorreto.toLocaleString('pt-BR')} unidades em estoque · ${ativasCorreto} loja${ativasCorreto !== 1 ? 's' : ''}`;
+    d3RenderLineAgregado(ag);
   } catch(e) {
     // falha silenciosa: mantém os valores do rawData já exibidos
   }
+}
+
+function d3RenderLineAgregado(ag) {
+  const rows = (ag?.por_loja_dia || [])
+    .map(r => ({ loja: String(r.loja || '').trim(), data: r.data, qty: Number(r.qty || 0) }))
+    .filter(r => r.loja && r.data && deParaMap[r.loja]);
+  const lineState = document.getElementById('d3-line-state');
+  const d3LineLegendEl = document.getElementById('d3-line-legend');
+
+  if (rows.length === 0) {
+    if(lineState) { lineState.style.display='flex'; lineState.innerHTML='Nenhum dado.'; }
+    if (d3LineChart) { d3LineChart.destroy(); d3LineChart = null; }
+    if (d3LineLegendEl) d3LineLegendEl.innerHTML = '<div class="horizontal-legend-title">Legenda</div>';
+    return;
+  }
+
+  const lojaSelecionada = document.getElementById('d3-loja').value;
+  const dias = [...new Set(rows.map(r => r.data))].sort();
+  const lojas = lojaSelecionada ? [lojaSelecionada] : (() => {
+    const totPorLoja = {};
+    rows.forEach(r => { totPorLoja[r.loja] = (totPorLoja[r.loja] || 0) + r.qty; });
+    return Object.entries(totPorLoja).sort((a,b) => b[1]-a[1]).slice(0,10).map(([l]) => l);
+  })();
+
+  const mapLD = {};
+  rows.forEach(r => {
+    if (!lojas.includes(r.loja)) return;
+    if (!mapLD[r.loja]) mapLD[r.loja] = {};
+    mapLD[r.loja][r.data] = (mapLD[r.loja][r.data] || 0) + r.qty;
+  });
+
+  if(lineState) lineState.style.display = 'none';
+
+  function renderD3LineLegend(dataIndex) {
+    const legend = document.getElementById('d3-line-legend');
+    if (!legend) return;
+    const dataLabel = dataIndex != null && dias[dataIndex] ? d2FormatarData(dias[dataIndex]) : null;
+    let entries;
+    if (dataIndex != null && dias[dataIndex]) {
+      entries = lojas.map((l,i) => ({
+        nome: deParaMap[l] || `Filial ${l}`,
+        val:  mapLD[l]?.[dias[dataIndex]] || 0,
+        cor:  PALETTE[i % PALETTE.length]
+      })).filter(e => e.val > 0).sort((a,b) => b.val - a.val);
+    } else {
+      entries = lojas.map((l,i) => ({
+        nome: deParaMap[l] || `Filial ${l}`,
+        val:  Object.values(mapLD[l] || {}).reduce((s,v) => s+v, 0),
+        cor:  PALETTE[i % PALETTE.length]
+      })).sort((a,b) => b.val - a.val);
+    }
+    legend.innerHTML = `<div class="horizontal-legend-title">${dataLabel || 'Legenda'}</div>`
+      + entries.map(e => `<div class="horizontal-legend-item" style="cursor:default">
+          <span class="horizontal-legend-dot" style="background:${e.cor}"></span>
+          <span class="horizontal-legend-name">${e.nome}</span>
+          <span class="horizontal-legend-value">${e.val.toLocaleString('pt-BR')}</span>
+        </div>`).join('');
+  }
+
+  renderD3LineLegend();
+
+  let c2 = document.getElementById('d3-line-canvas');
+  if (!c2) {
+    c2 = document.createElement('canvas');
+    c2.id = 'd3-line-canvas';
+    document.getElementById('d3-line-wrap').appendChild(c2);
+  }
+  if (d3LineChart) { d3LineChart.destroy(); d3LineChart = null; }
+
+  d3LineChart = new Chart(c2, {
+    type: 'line',
+    data: {
+      labels: dias.map(d2FormatarData),
+      datasets: lojas.map((l,i) => ({
+        label: deParaMap[l] || `Filial ${l}`,
+        data: dias.map(d => mapLD[l]?.[d] ?? null),
+        borderColor:     PALETTE[i%PALETTE.length],
+        backgroundColor: PALETTE[i%PALETTE.length]+'22',
+        borderWidth: 2,
+        pointRadius: dias.length <= 60 ? 2 : 0,
+        pointHoverRadius: 4, tension: 0.3, fill: false, spanGaps: true,
+      }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      onHover: (evt, elements) => {
+        if (elements && elements.length > 0) renderD3LineLegend(elements[0].index);
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: false }
+      },
+      scales: {
+        x: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:true, maxTicksLimit:30 }, grid:{color:'#1c2030'} },
+        y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+      }
+    }
+  });
+  c2.style.cursor = 'default';
+  c2.addEventListener('mouseleave', () => renderD3LineLegend());
 }
 
 function t3OrdenarPor(coluna) {
