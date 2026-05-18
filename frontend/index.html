@@ -1308,6 +1308,7 @@ let d2_table_active = { dim: null, val: null };
 let f_renderAbort  = null;   // cancela fetch anterior ao aplicar novo filtro
 let v_renderAbort  = null;
 let d2_renderAbort = null;
+let d3_estoqueAg   = null;
 const _agreMemCache = new Map(); // cache em memória (mais rápido que JSON.parse do sessionStorage)
 let t1Sort         = { col: 'qty', dir: 'desc' };
 let cat1Sort       = { col: 'qty', dir: 'desc' };
@@ -3329,6 +3330,7 @@ function d3Filtrar(excl) {
 }
 
 function d3Renderizar() {
+  d3_estoqueAg = null;
   mostrarBanner('d3-active-banner', d3_active, {loja:'FILIAL'}, 'd3LimparAtivo');
   const dados = d3Filtrar();
   const dadosTabela = d3Filtrar('loja');
@@ -3594,6 +3596,9 @@ async function d3FetchTotalEstoque() {
     const d3StatusEl = document.getElementById('d3-status-msg');
     if (d3StatusEl) d3StatusEl.textContent =
       `${totalCorreto.toLocaleString('pt-BR')} unidades em estoque · ${ativasCorreto} loja${ativasCorreto !== 1 ? 's' : ''}`;
+    d3_estoqueAg = ag;
+    d3RenderTabelaFilialAgregada(ag);
+    d3RenderRotatividadeAgregada(ag);
     d3RenderLineAgregado(ag);
   } catch(e) {
     // falha silenciosa: mantém os valores do rawData já exibidos
@@ -3701,6 +3706,63 @@ function d3RenderLineAgregado(ag) {
   c2.addEventListener('mouseleave', () => renderD3LineLegend());
 }
 
+function d3RenderTabelaFilialAgregada(ag) {
+  const rows = (ag?.por_loja || [])
+    .map(r => {
+      const loja = String(r.loja || '').trim();
+      return { loja, nome: deParaMap[loja] || `Filial ${loja}`, qty: Number(r.qty || 0) };
+    })
+    .filter(r => r.loja);
+
+  const sorted = [...rows].sort((a,b) => {
+    let va, vb;
+    if (t3Sort.col === 'loja') { va=+a.loja; vb=+b.loja; }
+    else if (t3Sort.col === 'nome') { va=a.nome.toLowerCase(); vb=b.nome.toLowerCase(); }
+    else if (t3Sort.col === 'volume') { va=a.qty; vb=b.qty; }
+    else { va=a.qty; vb=b.qty; }
+    if (va<vb) return t3Sort.dir==='asc'?-1:1;
+    if (va>vb) return t3Sort.dir==='asc'?1:-1;
+    return 0;
+  });
+
+  const maxQ = Math.max(...rows.map(r => r.qty), 1);
+  const th3 = (label, key) => {
+    const cls = t3Sort.col === key ? ` class="sort-${t3Sort.dir}"` : '';
+    return `<th${cls} onclick="t3OrdenarPor('${key}')">${label}</th>`;
+  };
+  const d3SelTab = d3_active.dim === 'loja' ? d3_active.val : null;
+  const linhas = sorted.map(r => {
+    const barW = ((r.qty/maxQ)*100).toFixed(1);
+    const ativo = d3SelTab === r.loja ? ' row-active' : '';
+    return `<tr class="clickable-row${ativo}" onclick="d3SetFilter('loja','${r.loja}')">
+      <td class="td-loja">#${r.loja}</td>
+      <td class="td-nome">${r.nome}</td>
+      <td class="td-qty" style="color:var(--accent2)">${r.qty.toLocaleString('pt-BR')}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="background:linear-gradient(90deg,var(--accent2),#38bdf8);width:${barW}%;max-width:150px"></div>
+      </div></td>
+    </tr>`;
+  }).join('');
+
+  const total = rows.reduce((s,r) => s + r.qty, 0);
+  const totalLinha = `<tr style="background:var(--surface2)">
+    <td class="td-loja">â€”</td>
+    <td class="td-nome" style="font-weight:600;color:var(--accent2)">TOTAL GERAL</td>
+    <td class="td-qty" style="color:var(--accent2)">${total.toLocaleString('pt-BR')}</td>
+    <td></td>
+  </tr>`;
+  document.getElementById('d3-table-body').innerHTML = rows.length === 0
+    ? '<div class="no-data">Nenhum dado para os filtros selecionados</div>'
+    : `<table><thead><tr>${th3('Filial','loja')}${th3('Nome Fantasia','nome')}${th3('Estoque Atual','qty')}${th3('Volume','volume')}</tr></thead><tbody>${linhas}${totalLinha}</tbody></table>`;
+}
+
+function d3RenderRotatividadeAgregada(ag) {
+  d3RenderRotatividadeTabela(
+    (ag?.por_produto || []).map(r => ({ nome: r.nome || 'SEM PRODUTO', qty: Number(r.qty || 0) })),
+    (ag?.por_cat || []).map(r => ({ cat: r.cat || 'SEM CATEGORIA', qty: Number(r.qty || 0) }))
+  );
+}
+
 function t3OrdenarPor(coluna) {
   t3Sort.dir = t3Sort.col === coluna && t3Sort.dir === 'desc' ? 'asc' : 'desc';
   t3Sort.col = coluna;
@@ -3717,13 +3779,15 @@ function d3MudarAbaRot(aba, btn) {
 function rotProdOrdenarPor(coluna) {
   rotProdSort.dir = rotProdSort.col === coluna && rotProdSort.dir === 'desc' ? 'asc' : 'desc';
   rotProdSort.col = coluna;
-  d3RenderRotatividade(d3Filtrar());
+  if (d3_estoqueAg) d3RenderRotatividadeAgregada(d3_estoqueAg);
+  else d3RenderRotatividade(d3Filtrar());
 }
 
 function rotCatOrdenarPor(coluna) {
   rotCatSort.dir = rotCatSort.col === coluna && rotCatSort.dir === 'desc' ? 'asc' : 'desc';
   rotCatSort.col = coluna;
-  d3RenderRotatividade(d3Filtrar());
+  if (d3_estoqueAg) d3RenderRotatividadeAgregada(d3_estoqueAg);
+  else d3RenderRotatividade(d3Filtrar());
 }
 
 function d3RenderRotatividade(dados) {
@@ -3831,6 +3895,84 @@ function d3RenderRotatividade(dados) {
 
 
 // ── ABA SELL OUT X ESTOQUE ───────────────────────────────────────────────────
+function d3RenderRotatividadeTabela(byProdInput, byCatInput) {
+  const byProd = [...byProdInput];
+  const totalProd = byProd.reduce((s, r) => s + r.qty, 0);
+  byProd.sort((a, b) => {
+    let va, vb;
+    if (rotProdSort.col === 'nome') { va = a.nome.toLowerCase(); vb = b.nome.toLowerCase(); }
+    else if (rotProdSort.col === 'pct') { va = totalProd > 0 ? a.qty / totalProd : 0; vb = totalProd > 0 ? b.qty / totalProd : 0; }
+    else { va = a.qty; vb = b.qty; }
+    if (va < vb) return rotProdSort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return rotProdSort.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const thP = (label, key) => {
+    const cls = rotProdSort.col === key ? ` class="sort-${rotProdSort.dir}"` : '';
+    return `<th${cls} onclick="rotProdOrdenarPor('${key}')">${label}</th>`;
+  };
+  const maxProd = Math.max(...byProd.map(r => r.qty), 1);
+  const linhasProd = byProd.map(r => {
+    const pct  = totalProd > 0 ? ((r.qty / totalProd) * 100).toFixed(1) : '0.0';
+    const barW = ((r.qty / maxProd) * 100).toFixed(1);
+    return `<tr>
+      <td class="td-nome">${r.nome}</td>
+      <td class="td-qty">${r.qty.toLocaleString('pt-BR')}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="width:${barW}%;max-width:150px"></div>
+        <span style="font-size:.78rem;color:var(--text-dim);font-family:'DM Mono',monospace">${pct}%</span>
+      </div></td>
+    </tr>`;
+  }).join('');
+  const rotProdTotalLinha = `<tr style="background:var(--surface2)">
+    <td class="td-nome" style="font-weight:600;color:var(--accent2)">TOTAL GERAL</td>
+    <td class="td-qty" style="color:var(--accent2)">${totalProd.toLocaleString('pt-BR')}</td>
+    <td><span style="font-size:.78rem;color:var(--accent2);font-family:'DM Mono',monospace">100%</span></td>
+  </tr>`;
+  document.getElementById('d3-rot-produtos-body').innerHTML = byProd.length === 0
+    ? '<div class="no-data">Nenhum produto encontrado. Verifique se a tabela de de-para possui a coluna de nome do produto.</div>'
+    : `<table><thead><tr>${thP('Produto','nome')}${thP('Qtd em Estoque','qty')}${thP('Participação','pct')}</tr></thead><tbody>${linhasProd}${rotProdTotalLinha}</tbody></table>`;
+
+  const byCat = [...byCatInput];
+  const totalCat = byCat.reduce((s, r) => s + r.qty, 0);
+  byCat.sort((a, b) => {
+    let va, vb;
+    if (rotCatSort.col === 'cat') { va = a.cat.toLowerCase(); vb = b.cat.toLowerCase(); }
+    else if (rotCatSort.col === 'pct') { va = totalCat > 0 ? a.qty / totalCat : 0; vb = totalCat > 0 ? b.qty / totalCat : 0; }
+    else { va = a.qty; vb = b.qty; }
+    if (va < vb) return rotCatSort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return rotCatSort.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const thC = (label, key) => {
+    const cls = rotCatSort.col === key ? ` class="sort-${rotCatSort.dir}"` : '';
+    return `<th${cls} onclick="rotCatOrdenarPor('${key}')">${label}</th>`;
+  };
+  const maxCat = Math.max(...byCat.map(r => r.qty), 1);
+  const linhasCat = byCat.map(r => {
+    const pct  = totalCat > 0 ? ((r.qty / totalCat) * 100).toFixed(1) : '0.0';
+    const barW = ((r.qty / maxCat) * 100).toFixed(1);
+    return `<tr>
+      <td class="td-nome">${r.cat}</td>
+      <td class="td-qty">${r.qty.toLocaleString('pt-BR')}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="width:${barW}%;max-width:150px"></div>
+        <span style="font-size:.78rem;color:var(--text-dim);font-family:'DM Mono',monospace">${pct}%</span>
+      </div></td>
+    </tr>`;
+  }).join('');
+  const rotCatTotalLinha = `<tr style="background:var(--surface2)">
+    <td class="td-nome" style="font-weight:600;color:var(--accent2)">TOTAL GERAL</td>
+    <td class="td-qty" style="color:var(--accent2)">${totalCat.toLocaleString('pt-BR')}</td>
+    <td><span style="font-size:.78rem;color:var(--accent2);font-family:'DM Mono',monospace">100%</span></td>
+  </tr>`;
+  document.getElementById('d3-rot-categorias-body').innerHTML = byCat.length === 0
+    ? '<div class="no-data">Nenhum dado para os filtros selecionados</div>'
+    : `<table><thead><tr>${thC('Categoria','cat')}${thC('Qtd em Estoque','qty')}${thC('Participação','pct')}</tr></thead><tbody>${linhasCat}${rotCatTotalLinha}</tbody></table>`;
+}
+
 function seConstruirFiltros() {
   const anos  = [...new Set(rawData.map(r => col(r,'Ano')).filter(Boolean))].sort();
   const meses = [...new Set(rawData.map(r => col(r,'Mês','Mes')).filter(Boolean))];

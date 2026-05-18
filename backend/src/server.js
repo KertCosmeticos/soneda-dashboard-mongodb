@@ -1207,7 +1207,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/estoque", async (req, res) => {
       try {
-        const cacheKey = 'est:v2:' + JSON.stringify(req.query);
+        const cacheKey = 'est:v3:' + JSON.stringify(req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
@@ -1279,6 +1279,17 @@ async function iniciarServidor() {
             por_loja_dia: [
               { $group: { _id: { loja: "$Loja", data: dateGroupExpr }, qty: { $sum: estoqueExpr } } },
               { $sort: { "_id.data": 1, qty: -1 } }
+            ],
+            por_produto: [
+              { $group: { _id: { $ifNull: [
+                { $getField: "Produto" },
+                { $ifNull: [{ $getField: "produto" }, { $getField: "Descrição" }] }
+              ]}, qty: { $sum: estoqueExpr } } },
+              { $sort: { qty: -1 } }
+            ],
+            por_cat: [
+              { $group: { _id: "$_cat", qty: { $sum: estoqueExpr } } },
+              { $sort: { qty: -1 } }
             ]
           }}
         ], { allowDiskUse: true }).toArray();
@@ -1287,7 +1298,9 @@ async function iniciarServidor() {
           total:       facet?.total?.[0]?.total       || 0,
           total_lojas: facet?.total?.[0]?.total_lojas || 0,
           por_loja:    (facet?.por_loja || []).map(r => ({ loja: r._id, qty: r.qty })),
-          por_loja_dia: (facet?.por_loja_dia || []).map(r => ({ loja: r._id.loja, data: r._id.data, qty: r.qty }))
+          por_loja_dia: (facet?.por_loja_dia || []).map(r => ({ loja: r._id.loja, data: r._id.data, qty: r.qty })),
+          por_produto: (facet?.por_produto || []).map(r => ({ nome: r._id || "SEM PRODUTO", qty: r.qty })),
+          por_cat: (facet?.por_cat || []).map(r => ({ cat: r._id || "SEM CATEGORIA", qty: r.qty }))
         };
 
         cacheSet(cacheKey, result);
