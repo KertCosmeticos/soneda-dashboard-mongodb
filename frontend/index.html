@@ -3239,7 +3239,7 @@ function d3Filtrar(excl) {
   });
 }
 
-function d3Renderizar() {
+async function d3Renderizar() {
   mostrarBanner('d3-active-banner', d3_active, {loja:'FILIAL'}, 'd3LimparAtivo');
   const dados = d3Filtrar();
   const dadosTabela = d3Filtrar('loja');
@@ -3250,6 +3250,13 @@ function d3Renderizar() {
   const periodo  = ([ano,mes].filter(Boolean).join(' · ') || 'Todos os períodos') + ' · ' + nomeLoja;
   document.getElementById('d3-chart-sub').textContent = periodo;
   document.getElementById('d3-line-sub').textContent  = periodo;
+
+  let estoqueAg = null;
+  try {
+    estoqueAg = await fetchJSON(`${API_BASE}/api/dashboard/estoque-agregados?${buildAgreParams('d3', d3_active)}`);
+  } catch (e) {
+    console.warn('Estoque agregado backend indisponível:', e.message);
+  }
 
   const mapLoja = {};
   dados.forEach(r => {
@@ -3332,8 +3339,19 @@ function d3Renderizar() {
   }
 
   const dadosChart = d3Filtrar('loja');
-  const dias = [...new Set(dadosChart.map(r => { const dt=d2ParseData(col(r,'Data','data')); return dt?dataParaISO(dt):null; }).filter(Boolean))].sort();
-  const lojas = loja ? [loja] : (() => {
+  const dias = estoqueAg
+    ? [...new Set((estoqueAg.por_loja_dia || []).map(r => r.data).filter(Boolean))]
+        .sort((a,b) => {
+          const da = d2ParseData(a);
+          const db = d2ParseData(b);
+          return String(da ? dataParaISO(da) : a).localeCompare(String(db ? dataParaISO(db) : b));
+        })
+    : [...new Set(dadosChart.map(r => { const dt=d2ParseData(col(r,'Data','data')); return dt?dataParaISO(dt):null; }).filter(Boolean))].sort();
+  const lojas = loja ? [loja] : estoqueAg ? (estoqueAg.por_loja_tabela || [])
+    .filter(r => r.loja && deParaMap[String(r.loja)])
+    .sort((a,b) => b.qty - a.qty)
+    .slice(0,10)
+    .map(r => String(r.loja)) : (() => {
     const totPorLoja = {};
     dadosChart.forEach(r => {
       const l = col(r,'Loja','loja'); if (!l || !deParaMap[l]) return;
@@ -3352,11 +3370,13 @@ function d3Renderizar() {
   } else {
     if(lineState) lineState.style.display = 'none';
     const mapLD = {};
-    dadosChart.forEach(r => {
-      const l   = col(r,'Loja','loja'); if (!l || !lojas.includes(l)) return;
-      const dt  = d2ParseData(col(r,'Data','data')); if (!dt) return;
-      const dk  = dataParaISO(dt);
-      const est = parseBR(col(r,'Estoque Diario','Estoque Diário','Estoque','estoque'));
+    (estoqueAg ? (estoqueAg.por_loja_dia || []) : dadosChart).forEach(r => {
+      const l = String(estoqueAg ? r.loja : col(r,'Loja','loja'));
+      if (!l || !lojas.includes(l)) return;
+      const rawData = estoqueAg ? r.data : col(r,'Data','data');
+      const dt = d2ParseData(rawData); if (!dt) return;
+      const dk = estoqueAg ? rawData : dataParaISO(dt);
+      const est = estoqueAg ? Number(r.qty || 0) : parseBR(col(r,'Estoque Diario','Estoque Diário','Estoque','estoque'));
       if (!mapLD[l]) mapLD[l] = {};
       mapLD[l][dk] = (mapLD[l][dk] || 0) + est;
     });

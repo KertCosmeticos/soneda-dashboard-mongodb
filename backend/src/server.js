@@ -1072,7 +1072,7 @@ async function iniciarServidor() {
         }
 
         // Join único (uma vez para todos os facets de cat/fam) — pulado quando _cat já está pré-computado
-        if (!_migCat) {
+        if ((cat || familia) && !_migCat) {
           if (_catCountCache < 0) _catCountCache = await db.collection("categorias_depara").estimatedDocumentCount();
           if (_catCountCache > 0) preStages.push(...joinCat);
         }
@@ -1135,6 +1135,100 @@ async function iniciarServidor() {
         res.json(result);
       } catch(e) {
         res.status(500).json({ erro: "Erro ao agregar dados", detalhe: e.message });
+      }
+    });
+
+    // ─────────────────────────────────────
+    // ESTOQUE AGREGADO (por loja e histórico diário)
+    // ─────────────────────────────────────
+    app.get("/api/dashboard/estoque-agregados", async (req, res) => {
+      try {
+        const cacheKey = 'estoque:v1:' + JSON.stringify(req.query);
+        const cached = cacheGet(cacheKey);
+        if (cached) return res.json(cached);
+
+        const { ano, mes, loja, cat, familia } = req.query;
+        const di    = req.query.di || null;
+        const df    = req.query.df || null;
+        const aLoja = req.query.ativo_loja || null;
+
+        const joinCat = _migGtin
+          ? [
+              { $lookup: { from: "categorias_depara", localField: "_gtin", foreignField: "CODBARRAS", as: "_c" } },
+              { $addFields: { _cat: { $arrayElemAt: ["$_c.CATEGORIA", 0] }, _fam: { $arrayElemAt: ["$_c.FAMILIA", 0] } } }
+            ]
+          : [
+              { $lookup: {
+                  from: "categorias_depara",
+                  let: { gtin: { $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } } },
+                  pipeline: [{ $match: { $expr: { $eq: ["$$gtin", { $toString: "$CODBARRAS" }] } } }],
+                  as: "_c"
+              }},
+              { $addFields: { _cat: { $arrayElemAt: ["$_c.CATEGORIA", 0] }, _fam: { $arrayElemAt: ["$_c.FAMILIA", 0] } } }
+            ];
+
+        const preStages = [];
+        const baseMatch = {};
+        if (ano)  baseMatch["Ano"]  = String(ano);
+        if (mes)  baseMatch["Mês"]  = String(mes);
+        if (loja) baseMatch["Loja"] = String(loja);
+        if ((di || df) && _migData) {
+          const dr = {};
+          if (di) dr.$gte = di;
+          if (df) dr.$lte = df;
+          baseMatch["_data_iso"] = dr;
+        }
+        if (Object.keys(baseMatch).length) preStages.push({ $match: baseMatch });
+
+        if ((di || df) && !_migData) {
+          const conds = [];
+          const isoExpr = { $dateToString: { date: { $ifNull: [
+            { $dateFromString: { dateString: { $toString: { $ifNull: [{ $getField: "Data" }, ""] } }, format: "%d/%m/%Y", onError: null, onNull: null } },
+            { $dateFromString: { dateString: { $toString: { $ifNull: [{ $getField: "Data" }, ""] } }, format: "%Y-%m-%d", onError: null, onNull: null } }
+          ]}, format: "%Y-%m-%d", onNull: "" }};
+          if (di) conds.push({ $gte: [isoExpr, di] });
+          if (df) conds.push({ $lte: [isoExpr, df] });
+          preStages.push({ $match: { $expr: conds.length === 1 ? conds[0] : { $and: conds } } });
+        }
+
+        if (!_migCat) {
+          if (_catCountCache < 0) _catCountCache = await db.collection("categorias_depara").estimatedDocumentCount();
+          if (_catCountCache > 0) preStages.push(...joinCat);
+        }
+        if (cat)     preStages.push({ $match: { _cat: cat } });
+        if (familia) preStages.push({ $match: { _fam: familia } });
+
+        const estoqueExpr = brToDouble({ $getField: "Estoque Diario" });
+        const mLoja = aLoja ? [{ $match: { "Loja": String(aLoja) } }] : [];
+
+        const [facet] = await db.collection("dados_brutos").aggregate([
+          ...preStages,
+          { $facet: {
+            por_loja: [
+              ...mLoja,
+              { $group: { _id: "$Loja", qty: { $sum: estoqueExpr } } },
+              { $sort: { qty: -1 } }
+            ],
+            por_loja_tabela: [
+              { $group: { _id: "$Loja", qty: { $sum: estoqueExpr } } },
+              { $sort: { qty: -1 } }
+            ],
+            por_loja_dia: [
+              { $group: { _id: { loja: "$Loja", data: _migData ? "$_data_iso" : "$Data" }, qty: { $sum: estoqueExpr } } },
+              { $sort: { "_id.data": 1, qty: -1 } }
+            ]
+          }}
+        ], { allowDiskUse: true }).toArray();
+
+        const result = {
+          por_loja:        (facet?.por_loja        || []).map(r => ({ loja: r._id, qty: r.qty })),
+          por_loja_tabela: (facet?.por_loja_tabela || []).map(r => ({ loja: r._id, qty: r.qty })),
+          por_loja_dia:    (facet?.por_loja_dia    || []).map(r => ({ loja: r._id.loja, data: r._id.data, qty: r.qty }))
+        };
+        cacheSet(cacheKey, result);
+        res.json(result);
+      } catch(e) {
+        res.status(500).json({ erro: "Erro ao agregar estoque", detalhe: e.message });
       }
     });
 
