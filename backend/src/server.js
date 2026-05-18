@@ -329,11 +329,24 @@ async function iniciarServidor() {
         console.log(`📄 Template criado: ${t.filename}`);
       }
     }
-    // Migração: renomeia registro antigo csv → xlsx para De/Para Categorias
-    await db.collection("templates_importacao").updateOne(
-      { filename: "modelo_categorias_depara.csv" },
-      { $set: { filename: "modelo_categorias_depara.xlsx", nome: "De/Para Categorias" }, $unset: { conteudo: "" } }
-    );
+    // Migração: garante que De/Para Categorias existe apenas como xlsx, sem duplicatas
+    {
+      const catCsv  = await db.collection("templates_importacao").findOne({ filename: "modelo_categorias_depara.csv" });
+      const catXlsx = await db.collection("templates_importacao").findOne({ filename: "modelo_categorias_depara.xlsx" });
+      if (catCsv && catXlsx) {
+        // Ambos existem (duplicata gerada pela migração anterior): remove o csv
+        await db.collection("templates_importacao").deleteOne({ filename: "modelo_categorias_depara.csv" });
+        console.log("🧹 Duplicata modelo_categorias_depara.csv removida");
+      } else if (catCsv && !catXlsx) {
+        // Apenas o csv existe: renomeia para xlsx
+        await db.collection("templates_importacao").updateOne(
+          { filename: "modelo_categorias_depara.csv" },
+          { $set: { filename: "modelo_categorias_depara.xlsx", nome: "De/Para Categorias" }, $unset: { conteudo: "" } }
+        );
+        console.log("📄 modelo_categorias_depara.csv renomeado para .xlsx");
+      }
+      // Se já só existe o xlsx: nada a fazer
+    }
 
     // Seed super-admin no MongoDB (permite reset de senha por e-mail)
     const adminExistente = await db.collection("usuarios_admin").findOne({ usuario: process.env.ADMIN_USER });
