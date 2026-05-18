@@ -120,11 +120,12 @@ function limparValor(valor) {
 }
 
 function parseBRNumber(val) {
+  if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
   let s = String(val ?? '').trim().replace(/^R\$\s*/i, '');
-  if (/^\d{1,3}(?:\.\d{3})*,\d+$/.test(s) || /^\d+,\d+$/.test(s)) {
-    return parseFloat(s.replace(/\./g, '').replace(',', '.'));
-  }
-  return val;
+  if (!s) return 0;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : 0;
 }
 
 // Normaliza código de barras: trata notação científica do Excel (ex: "7,891E+12" → "7891000000000")
@@ -140,33 +141,43 @@ function normalizarEAN(val) {
 }
 
 function brToDouble(expr) {
-  // Strip "R$ " / "R$" prefix, remove thousands dots, replace comma decimal → double
-  const str = { $toString: { $ifNull: [expr, "0"] } };
+  const raw = { $ifNull: [expr, 0] };
+  const str = { $toString: raw };
   const noPrefix = {
     $replaceAll: {
       input: { $replaceAll: { input: str, find: "R$ ", replacement: "" } },
       find: "R$", replacement: ""
     }
   };
-  return {
-    $convert: {
-      input: {
+  const normalizedString = {
+    $cond: [
+      { $gte: [{ $indexOfCP: [noPrefix, ","] }, 0] },
+      {
         $replaceAll: {
           input: { $replaceAll: { input: noPrefix, find: ".", replacement: "" } },
           find: ",", replacement: "."
         }
       },
+      noPrefix
+    ]
+  };
+  const convertedString = {
+    $convert: {
+      input: normalizedString,
       to: "double", onError: 0, onNull: 0
     }
   };
+  return {
+    $cond: [
+      { $in: [{ $type: raw }, ["int", "long", "double", "decimal"]] },
+      { $toDouble: raw },
+      convertedString
+    ]
+  };
 }
 
-// Tries "Venda (R$)" first; if 0, tries "Venda Pdv Valor" then "Venda Nf Valor"
 function brValorExpr() {
-  const rv  = brToDouble({ $getField: "Venda (R$)" });
-  const pdv = brToDouble({ $getField: "Venda Pdv Valor" });
-  const nf  = brToDouble({ $getField: "Venda Nf Valor"  });
-  return { $cond: [{ $gt: [rv, 0] }, rv, { $cond: [{ $gt: [pdv, 0] }, pdv, nf] }] };
+  return brToDouble({ $getField: "Venda (R$)" });
 }
 
 // ─────────────────────────────────────────
@@ -964,7 +975,7 @@ async function iniciarServidor() {
               $group: {
                 _id: null,
                 total_vendido: { $sum: _migNumericos ? "$_qtd_num"  : brToDouble({ $getField: "Venda (Qtd)" }) },
-                total_valor:   { $sum: _migNumericos ? "$_valor_num" : brValorExpr() },
+                total_valor:   { $sum: brValorExpr() },
                 lojas:         { $addToSet: "$Loja" }
               }
             },
@@ -1027,7 +1038,7 @@ async function iniciarServidor() {
         // Usa campos numéricos pré-computados quando disponíveis
         const grp = {
           qty:   { $sum: _migNumericos ? "$_qtd_num"  : brToDouble({ $getField: "Venda (Qtd)" }) },
-          valor: { $sum: _migNumericos ? "$_valor_num" : brValorExpr() }
+          valor: { $sum: brValorExpr() }
         };
 
         const AGG_OPTS = { allowDiskUse: true };

@@ -1713,7 +1713,9 @@ function col(row, ...nomes) {
 
 function parseBR(raw) {
   if (typeof raw === 'number') return isNaN(raw) ? 0 : raw;
-  return parseFloat((String(raw) || '').replace(/R\$\s*/i, '').replace(/\./g, '').replace(',', '.')) || 0;
+  let s = (String(raw) || '').trim().replace(/R\$\s*/i, '');
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  return parseFloat(s) || 0;
 }
 
 function normCodLoja(v) {
@@ -1968,8 +1970,9 @@ function prefetchFiltros(ag) {
 
 // ── CACHE DE AGREGADOS (memória + sessionStorage, TTL 60 min) ────────────────
 const AGRE_CACHE_TTL = 60 * 60 * 1000;
+const AGRE_CACHE_PREFIX = 'agre_v2__';
 function agreCache(key, data) {
-  const k = 'agre__' + key;
+  const k = AGRE_CACHE_PREFIX + key;
   if (data !== undefined) {
     _agreMemCache.set(k, { t: Date.now(), d: data });
     try { sessionStorage.setItem(k, JSON.stringify({ t: Date.now(), d: data })); } catch(e) {}
