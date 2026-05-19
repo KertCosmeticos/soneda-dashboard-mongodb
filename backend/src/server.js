@@ -1269,7 +1269,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/estoque", async (req, res) => {
       try {
-        const cacheKey = 'est:v3:' + JSON.stringify(req.query);
+        const cacheKey = 'est:v4:' + JSON.stringify(req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
@@ -1287,10 +1287,27 @@ async function iniciarServidor() {
           if (df) dr.$lte = df;
           baseMatch["_data_iso"] = dr;
         }
-        if (cat)     baseMatch["_cat"] = cat;
-        if (familia) baseMatch["_fam"] = familia;
-
         const preStages = Object.keys(baseMatch).length ? [{ $match: baseMatch }] : [];
+        preStages.push(
+          { $addFields: { _gtin_atual_lookup: { $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } } } },
+          {
+            $lookup: {
+              from: "categorias_depara",
+              localField: "_gtin_atual_lookup",
+              foreignField: "CODBARRAS",
+              as: "_cat_atual_join"
+            }
+          },
+          {
+            $addFields: {
+              _cat_atual: { $ifNull: [{ $arrayElemAt: ["$_cat_atual_join.CATEGORIA", 0] }, "$_cat"] },
+              _fam_atual: { $ifNull: [{ $arrayElemAt: ["$_cat_atual_join.FAMILIA", 0] }, "$_fam"] }
+            }
+          },
+          { $unset: ["_cat_atual_join", "_gtin_atual_lookup"] }
+        );
+        if (cat)     preStages.push({ $match: { _cat_atual: cat } });
+        if (familia) preStages.push({ $match: { _fam_atual: familia } });
         const estoqueExpr = brToDouble({ $getField: "Estoque Diario" });
         const dateGroupExpr = {
           $ifNull: [
@@ -1350,7 +1367,7 @@ async function iniciarServidor() {
               { $sort: { qty: -1 } }
             ],
             por_cat: [
-              { $group: { _id: "$_cat", qty: { $sum: estoqueExpr } } },
+              { $group: { _id: "$_cat_atual", qty: { $sum: estoqueExpr } } },
               { $sort: { qty: -1 } }
             ]
           }}
