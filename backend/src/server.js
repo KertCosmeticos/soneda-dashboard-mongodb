@@ -1800,16 +1800,24 @@ async function iniciarServidor() {
         const log = await db.collection("logs_importacao").findOne({ _id: new ObjectId(req.params.id) });
         if (!log) return res.status(404).json({ erro: "Log não encontrado." });
 
+        let removidos = 0;
         if (log.tipo === "dados_brutos") {
-          await db.collection("dados_brutos").deleteMany({ _import_id: log.importId });
+          const result = await db.collection("dados_brutos").deleteMany({ _import_id: log.importId });
+          removidos = result.deletedCount;
+          await atualizarFlagsMigracao();
         } else if (log.tipo === "categorias_depara") {
-          await db.collection("categorias_depara").deleteMany({});
+          const result = await db.collection("categorias_depara").deleteMany({});
+          removidos = result.deletedCount;
+          _migCat = false;
+          _catCountCache = -1;
         } else if (log.tipo === "lojas_depara") {
-          await db.collection("lojas_depara").deleteMany({});
+          const result = await db.collection("lojas_depara").deleteMany({});
+          removidos = result.deletedCount;
         }
 
         await db.collection("logs_importacao").deleteOne({ _id: new ObjectId(req.params.id) });
-        res.json({ ok: true });
+        cacheClear();
+        res.json({ ok: true, removidos });
       } catch (error) {
         res.status(500).json({ erro: "Erro ao desfazer importação.", detalhe: error.message });
       }
