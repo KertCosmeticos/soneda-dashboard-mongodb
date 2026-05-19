@@ -120,10 +120,17 @@ function limparValor(valor) {
 }
 
 function parseBRNumber(val) {
-  let s = String(val ?? '').trim().replace(/^R\$\s*/i, '');
-  if (/^\d{1,3}(?:\.\d{3})*,\d+$/.test(s) || /^\d+,\d+$/.test(s)) {
-    return parseFloat(s.replace(/\./g, '').replace(',', '.'));
-  }
+  if (val === undefined || val === null || val === "") return val;
+  if (typeof val === "number") return val;
+  let s = String(val).trim().replace(/^R\$\s*/i, '').replace(/\s/g, '');
+  if (!s) return val;
+  let sign = 1;
+  if (/^\(.*\)$/.test(s)) { sign = -1; s = s.slice(1, -1); }
+  if (s.startsWith('-')) { sign = -1; s = s.slice(1); }
+  if (/^\d{1,3}(?:\.\d{3})+,\d+$/.test(s)) return sign * parseFloat(s.replace(/\./g, '').replace(',', '.'));
+  if (/^\d+,\d+$/.test(s)) return sign * parseFloat(s.replace(',', '.'));
+  if (/^\d{1,3}(?:\.\d{3})+$/.test(s)) return sign * parseFloat(s.replace(/\./g, ''));
+  if (/^\d+(?:\.\d+)?$/.test(s)) return sign * parseFloat(s);
   return val;
 }
 
@@ -148,25 +155,42 @@ function brToDouble(expr) {
       find: "R$", replacement: ""
     }
   };
+  const noSpaces = {
+    $replaceAll: {
+      input: { $replaceAll: { input: { $trim: { input: noPrefix } }, find: " ", replacement: "" } },
+      find: " ", replacement: ""
+    }
+  };
+  const normalized = {
+    $switch: {
+      branches: [
+        {
+          case: { $regexMatch: { input: noSpaces, regex: /^-?\d{1,3}(?:\.\d{3})+,\d+$/ } },
+          then: { $replaceAll: { input: { $replaceAll: { input: noSpaces, find: ".", replacement: "" } }, find: ",", replacement: "." } }
+        },
+        {
+          case: { $regexMatch: { input: noSpaces, regex: /^-?\d+,\d+$/ } },
+          then: { $replaceAll: { input: noSpaces, find: ",", replacement: "." } }
+        },
+        {
+          case: { $regexMatch: { input: noSpaces, regex: /^-?\d{1,3}(?:\.\d{3})+$/ } },
+          then: { $replaceAll: { input: noSpaces, find: ".", replacement: "" } }
+        }
+      ],
+      default: noSpaces
+    }
+  };
   return {
     $convert: {
-      input: {
-        $replaceAll: {
-          input: { $replaceAll: { input: noPrefix, find: ".", replacement: "" } },
-          find: ",", replacement: "."
-        }
-      },
+      input: normalized,
       to: "double", onError: 0, onNull: 0
     }
   };
 }
 
-// Tries "Venda (R$)" first; if 0, tries "Venda Pdv Valor" then "Venda Nf Valor"
+// Valor oficial de venda: usar somente a coluna bruta "Venda (R$)".
 function brValorExpr() {
-  const rv  = brToDouble({ $getField: "Venda (R$)" });
-  const pdv = brToDouble({ $getField: "Venda Pdv Valor" });
-  const nf  = brToDouble({ $getField: "Venda Nf Valor"  });
-  return { $cond: [{ $gt: [rv, 0] }, rv, { $cond: [{ $gt: [pdv, 0] }, pdv, nf] }] };
+  return brToDouble({ $getField: "Venda (R$)" });
 }
 
 // ─────────────────────────────────────────
@@ -182,16 +206,17 @@ async function iniciarServidor() {
 
     // ── FUNÇÕES DE OTIMIZAÇÃO ────────────────────────────────────────────────
     async function atualizarFlagsMigracao() {
+      const catPendente = { $or: [{ _cat: { $exists: false } }, { _cat: null }, { _cat: "" }] };
       const [s1, s2, s3, s4] = await Promise.all([
         db.collection("dados_brutos").findOne({ _qtd_num:  { $exists: true } }, { projection: { _id: 1 } }),
         db.collection("dados_brutos").findOne({ _gtin:     { $exists: true } }, { projection: { _id: 1 } }),
         db.collection("dados_brutos").findOne({ _data_iso: { $exists: true } }, { projection: { _id: 1 } }),
-        db.collection("dados_brutos").findOne({ _cat:      { $exists: true } }, { projection: { _id: 1 } })
+        db.collection("dados_brutos").findOne(catPendente, { projection: { _id: 1 } })
       ]);
       _migNumericos = !!s1;
       _migGtin      = !!s2;
       _migData      = !!s3;
-      _migCat       = !!s4;
+      _migCat       = !s4;
       _catCountCache = -1; // força re-leitura do catCount
       console.log(`📊 Otimizações ativas: numéricos=${_migNumericos}, gtin=${_migGtin}, data=${_migData}, cat=${_migCat}`);
     }
@@ -244,10 +269,11 @@ async function iniciarServidor() {
           const catCnt = await db.collection("categorias_depara").estimatedDocumentCount();
           _catCountCache = catCnt;
           if (catCnt > 0) {
-            const semCat = await db.collection("dados_brutos").countDocuments({ _cat: { $exists: false } });
+            const catPendente = { $or: [{ _cat: { $exists: false } }, { _cat: null }, { _cat: "" }] };
+            const semCat = await db.collection("dados_brutos").countDocuments(catPendente);
             if (semCat > 0) {
               await db.collection("dados_brutos").aggregate([
-                { $match: { _cat: { $exists: false } } },
+                { $match: catPendente },
                 { $lookup: {
                     from: "categorias_depara",
                     let: { gtin: { $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } } },
@@ -939,7 +965,7 @@ async function iniciarServidor() {
             $group: {
               _id: null,
               total_vendido: { $sum: _migNumericos ? "$_qtd_num"   : brToDouble({ $getField: "Venda (Qtd)" }) },
-              total_valor:   { $sum: _migNumericos ? "$_valor_num" : brValorExpr() },
+              total_valor:   { $sum: brValorExpr() },
               lojas:         { $addToSet: "$Loja" }
             }
           },
@@ -957,7 +983,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/kpis", async (req, res) => {
       try {
-        const cacheKey = 'kpis:' + JSON.stringify(req.query);
+        const cacheKey = 'kpis:v3:' + JSON.stringify(req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
@@ -995,7 +1021,7 @@ async function iniciarServidor() {
               $group: {
                 _id: null,
                 total_vendido: { $sum: _migNumericos ? "$_qtd_num"  : brToDouble({ $getField: "Venda (Qtd)" }) },
-                total_valor:   { $sum: _migNumericos ? "$_valor_num" : brValorExpr() },
+                total_valor:   { $sum: brValorExpr() },
                 lojas:         { $addToSet: "$Loja" }
               }
             },
@@ -1024,7 +1050,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/agregados", async (req, res) => {
       try {
-        const cacheKey = 'agre:v2:' + JSON.stringify(req.query);
+        const cacheKey = 'agre:v4:' + JSON.stringify(req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
@@ -1058,7 +1084,7 @@ async function iniciarServidor() {
         // Usa campos numéricos pré-computados quando disponíveis
         const grp = {
           qty:   { $sum: _migNumericos ? "$_qtd_num"  : brToDouble({ $getField: "Venda (Qtd)" }) },
-          valor: { $sum: _migNumericos ? "$_valor_num" : brValorExpr() }
+          valor: { $sum: brValorExpr() }
         };
 
         const AGG_OPTS = { allowDiskUse: true };
@@ -1436,7 +1462,7 @@ async function iniciarServidor() {
           // Pré-computa campos numéricos, _gtin e _data_iso para queries indexadas
           if (colecao.collectionName === 'dados_brutos') {
             const qtdRaw = registro['Venda (Qtd)'] ?? registro['Venda Nf Quantidade'] ?? registro['Venda Pdv Quantidade'] ?? 0;
-            const valRaw = registro['Venda (R$)']  ?? registro['Venda Pdv Valor']      ?? registro['Venda Nf Valor']      ?? 0;
+            const valRaw = registro['Venda (R$)'] ?? 0;
             const qtd = parseBRNumber(qtdRaw);
             const val = parseBRNumber(valRaw);
             registro._qtd_num   = typeof qtd === 'number' ? qtd : (parseFloat(String(qtd)) || 0);
