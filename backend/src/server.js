@@ -1435,12 +1435,16 @@ async function iniciarServidor() {
 
           // Pré-computa campos numéricos, _gtin e _data_iso para queries indexadas
           if (colecao.collectionName === 'dados_brutos') {
-            const qtdRaw = registro['Venda (Qtd)'] ?? registro['Venda Nf Quantidade'] ?? registro['Venda Pdv Quantidade'] ?? 0;
-            const valRaw = registro['Venda (R$)']  ?? registro['Venda Pdv Valor']      ?? registro['Venda Nf Valor']      ?? 0;
-            const qtd = parseBRNumber(qtdRaw);
-            const val = parseBRNumber(valRaw);
-            registro._qtd_num   = typeof qtd === 'number' ? qtd : (parseFloat(String(qtd)) || 0);
-            registro._valor_num = typeof val === 'number' ? val : (parseFloat(String(val)) || 0);
+            const toNum = v => (typeof v === 'number' ? v : (parseFloat(String(v ?? '')) || 0));
+            // Usa mesma lógica do brValorExpr(): tenta o campo principal; se for 0 ou vazio, tenta o seguinte
+            const qRv  = toNum(registro['Venda (Qtd)']);
+            const qNf  = toNum(registro['Venda Nf Quantidade']);
+            const qPdv = toNum(registro['Venda Pdv Quantidade']);
+            registro._qtd_num   = qRv > 0 ? qRv : (qNf > 0 ? qNf : qPdv);
+            const vRv  = toNum(registro['Venda (R$)']);
+            const vPdv = toNum(registro['Venda Pdv Valor']);
+            const vNf  = toNum(registro['Venda Nf Valor']);
+            registro._valor_num = vRv > 0 ? vRv : (vPdv > 0 ? vPdv : vNf);
             registro._gtin      = String(registro['GTIN/PLU'] || '').trim() || null;
             // Converte Data (DD/MM/AAAA ou AAAA-MM-DD) para string ISO AAAA-MM-DD
             const dataStr = String(registro['Data'] || '').trim();
@@ -1513,8 +1517,17 @@ async function iniciarServidor() {
       const totalChunks  = parseInt(req.body.totalChunks  ?? "1",  10);
       const totalRecords = parseInt(req.body.totalRecords ?? "0",  10);
       const nomeArquivo  = req.file.originalname || req.file.filename;
+      const substituir   = req.body.substituir === 'true';
 
       try {
+        // Modo substituir: apaga todos os dados brutos existentes antes do primeiro lote
+        if (substituir && chunkIndex === 0) {
+          await db.collection("dados_brutos").deleteMany({});
+          await db.collection("logs_importacao").deleteMany({ tipo: "dados_brutos" });
+          cacheClear();
+          _migNumericos = false; _migGtin = false; _migData = false; _migCat = false; _catCountCache = -1;
+        }
+
         const inserido = await processarChunkCSV(req, db.collection("dados_brutos"), false, {
           extraCampos: { importado_em: new Date(), _import_id: importId }
         });
@@ -1612,6 +1625,24 @@ async function iniciarServidor() {
         res.json({ ok: true });
       } catch (error) {
         res.status(500).json({ erro: "Erro ao limpar histórico.", detalhe: error.message });
+      }
+    });
+
+    // Apaga TODOS os dados brutos e os logs associados (operação irreversível, requer senha de admin)
+    app.delete("/api/admin/dados-brutos", verificarTokenAdmin, async (req, res) => {
+      try {
+        const { senha } = req.body || {};
+        if (!senha) return res.status(401).json({ erro: "Senha obrigatória." });
+        const admins = await db.collection("usuarios_admin").find({}).toArray();
+        const senhaValida = admins.some(a => verificarSenha(senha, a.senha));
+        if (!senhaValida) return res.status(401).json({ erro: "Senha incorreta." });
+        const result = await db.collection("dados_brutos").deleteMany({});
+        await db.collection("logs_importacao").deleteMany({ tipo: "dados_brutos" });
+        cacheClear();
+        _migNumericos = false; _migGtin = false; _migData = false; _migCat = false; _catCountCache = -1;
+        res.json({ ok: true, deletados: result.deletedCount });
+      } catch (error) {
+        res.status(500).json({ erro: "Erro ao limpar dados brutos.", detalhe: error.message });
       }
     });
 

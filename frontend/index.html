@@ -449,7 +449,13 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Modelo
         </a>
-        <button class="btn-import" onclick="enviarCSV('csvDadosBrutos', '/api/importar/dados-brutos')">Importar</button>
+        <button class="btn-import" onclick="enviarCSV('csvDadosBrutos', '/api/importar/dados-brutos', document.getElementById('chkSubstituirBrutos').checked)">Importar</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 0 2px 0">
+        <input type="checkbox" id="chkSubstituirBrutos" style="accent-color:var(--accent);width:14px;height:14px;cursor:pointer" />
+        <label for="chkSubstituirBrutos" style="font-size:0.78rem;color:#e87070;cursor:pointer;user-select:none">
+          Substituir tudo — apaga <strong>todos</strong> os dados brutos do banco antes de importar
+        </label>
       </div>
       <div class="import-row">
         <div class="import-label">De/Para Categorias</div>
@@ -490,6 +496,9 @@
         </ol>
         <div style="margin-top:12px;padding:10px 12px;background:var(--surface2);border-radius:8px;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--text-dim);line-height:1.5">
           Pode importar apenas o mês novo — o histórico já está salvo no banco.
+        </div>
+        <div style="margin-top:8px;padding:10px 12px;background:rgba(232,112,112,0.08);border:1px solid rgba(232,112,112,0.25);border-radius:8px;font-size:0.75rem;color:#e87070;line-height:1.5">
+          Para reimportar tudo do zero, marque <strong>"Substituir tudo"</strong> antes de clicar em Importar — isso apaga todos os dados brutos existentes antes de carregar o arquivo novo.
         </div>
       </div>
 
@@ -1480,7 +1489,7 @@ async function admLogout() {
   admAtualizarUI();
 }
 
-async function enviarCSV(inputId, rota) {
+async function enviarCSV(inputId, rota, substituir = false) {
   const fileInput = document.getElementById(inputId);
   const status    = document.getElementById('import-status');
   const token     = admGetToken();
@@ -1532,6 +1541,7 @@ async function enviarCSV(inputId, rota) {
       formData.append('chunkIndex', String(i));
       formData.append('totalChunks', String(totalLotes));
       formData.append('totalRecords', String(dados.length));
+      if (substituir) formData.append('substituir', 'true');
 
       setProgresso(i, totalLotes,
         `Enviando lote ${i + 1} de ${totalLotes} · ${fatia.length.toLocaleString('pt-BR')} linhas · total ${dados.length.toLocaleString('pt-BR')} registros`);
