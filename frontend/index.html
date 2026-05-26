@@ -1371,6 +1371,26 @@ let seRiskSort     = { col: 'sellout', dir: 'desc' };
 let seViewMode     = 'loja';
 let seDataSort     = { col: 'data', dir: 'asc' };
 const tabsRenderizadas = new Set();
+const DASHBOARD_CACHE_BUST_KEY = 'soneda_dashboard_cache_bust';
+const AGRE_CACHE_PREFIX = 'agre_v4__';
+
+function limparCacheDashboard(notificarOutrasAbas = true) {
+  _agreMemCache.clear();
+  Object.keys(sessionStorage)
+    .filter(k => k.startsWith('agre__') || k.startsWith(AGRE_CACHE_PREFIX))
+    .forEach(k => sessionStorage.removeItem(k));
+
+  rawDataPreviewOk = false;
+  tabsRenderizadas.clear();
+
+  if (notificarOutrasAbas) {
+    try { localStorage.setItem(DASHBOARD_CACHE_BUST_KEY, String(Date.now())); } catch(e) {}
+  }
+}
+
+window.addEventListener('storage', event => {
+  if (event.key === DASHBOARD_CACHE_BUST_KEY) limparCacheDashboard(false);
+});
 
 // ── HELPERS DE FILTRO INTERATIVO ──────────────────────────────────────────────
 function normalizeFilterValue(val) {
@@ -1607,7 +1627,7 @@ async function enviarCSV(inputId, rota) {
     }
     status.className = 'import-status ok';
     // Limpa cache de agregados para que o painel recarregue com dados novos
-    _agreMemCache.clear(); Object.keys(sessionStorage).filter(k => k.startsWith('agre__') || k.startsWith(AGRE_CACHE_PREFIX)).forEach(k => sessionStorage.removeItem(k));
+    limparCacheDashboard();
 
   } catch (error) {
     console.error(error);
@@ -1624,6 +1644,7 @@ async function enviarCSV(inputId, rota) {
 }
 
 function recarregarDados() {
+  limparCacheDashboard();
   window.location.reload();
 }
 
@@ -1669,7 +1690,7 @@ async function enviarXLSX(inputId, rota) {
 
     status.innerHTML = `✔ Importação concluída — <strong>${(data.inserido || 0).toLocaleString('pt-BR')}</strong> registros inseridos.`;
     status.className = 'import-status ok';
-    _agreMemCache.clear(); Object.keys(sessionStorage).filter(k => k.startsWith('agre__') || k.startsWith(AGRE_CACHE_PREFIX)).forEach(k => sessionStorage.removeItem(k));
+    limparCacheDashboard();
     fileInput.value = '';
   } catch (error) {
     console.error(error);
@@ -2078,7 +2099,6 @@ function prefetchFiltros(ag) {
 
 // ── CACHE DE AGREGADOS (memória + sessionStorage, TTL 60 min) ────────────────
 const AGRE_CACHE_TTL = 60 * 60 * 1000;
-const AGRE_CACHE_PREFIX = 'agre_v4__';
 function agreCache(key, data) {
   const k = AGRE_CACHE_PREFIX + key;
   if (data !== undefined) {
@@ -5286,12 +5306,21 @@ async function vRenderizar() {
 // ── FILTRO DE MÊS/ANO ATUAL ───────────────────────────────────────────────────
 function aplicarFiltroAtual(prefix) {
   const MESES_ABREV = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-  const agora    = new Date();
-  const anoAtual = String(agora.getFullYear());
-  const mesAtual = MESES_ABREV[agora.getMonth()];
-
   const elAno = document.getElementById(`${prefix}-ano`);
   const elMes = document.getElementById(`${prefix}-mes`);
+
+  let dataMaisRecente = null;
+  rawData.forEach(r => {
+    const dt = parseDataBR(col(r, '_data_iso', 'Data', 'data'));
+    if (dt && (!dataMaisRecente || dt > dataMaisRecente)) dataMaisRecente = dt;
+  });
+
+  const anoAtual = dataMaisRecente
+    ? String(dataMaisRecente.getFullYear())
+    : String(new Date().getFullYear());
+  const mesAtual = dataMaisRecente
+    ? MESES_ABREV[dataMaisRecente.getMonth()]
+    : MESES_ABREV[new Date().getMonth()];
 
   if (elAno) {
     const temAno = [...elAno.options].some(o => o.value === anoAtual);
@@ -5892,6 +5921,7 @@ async function guConfirmarLimpeza() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.erro || 'Erro');
     document.getElementById('modal-limpar-historico').remove();
+    limparCacheDashboard();
     guCarregarLogs();
   } catch(e) {
     erroEl.textContent = e.message;
@@ -5969,6 +5999,7 @@ async function guExcluirImportacao(id, arquivo, tipo) {
 
     msgEl.className  = 'gu-msg ok';
     msgEl.textContent = 'Importação desfeita com sucesso.';
+    limparCacheDashboard();
     guCarregarLogs();
     setTimeout(() => { msgEl.textContent = ''; }, 4000);
   } catch (err) {
