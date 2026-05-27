@@ -239,6 +239,107 @@ function matchTextoOuNumero(valor) {
   return Number.isFinite(n) && s.trim() !== "" ? { $in: [s, n] } : s;
 }
 
+const MESES_ABREV = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+function normalizarMes(valor) {
+  const raw = String(valor ?? "").trim();
+  if (!raw) return "";
+  const numero = Number(raw);
+  if (Number.isInteger(numero) && numero >= 1 && numero <= 12) return MESES_ABREV[numero - 1];
+  const semAcento = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const mapa = {
+    jan: "Jan", janeiro: "Jan",
+    fev: "Fev", fevereiro: "Fev",
+    mar: "Mar", marco: "Mar", marcoo: "Mar",
+    abr: "Abr", abril: "Abr",
+    mai: "Mai", maio: "Mai",
+    jun: "Jun", junho: "Jun",
+    jul: "Jul", julho: "Jul",
+    ago: "Ago", agosto: "Ago",
+    set: "Set", setembro: "Set",
+    out: "Out", outubro: "Out",
+    nov: "Nov", novembro: "Nov",
+    dez: "Dez", dezembro: "Dez"
+  };
+  return mapa[semAcento.slice(0, 3)] || mapa[semAcento] || raw;
+}
+
+function mesDeData(valor) {
+  const dataStr = String(valor ?? "").trim();
+  const brMatch = dataStr.match(/^\d{1,2}\/(\d{1,2})\/\d{4}$/);
+  const isoMatch = dataStr.match(/^\d{4}-(\d{2})-\d{2}$/);
+  const mesNum = brMatch ? Number(brMatch[1]) : (isoMatch ? Number(isoMatch[1]) : 0);
+  return mesNum >= 1 && mesNum <= 12 ? MESES_ABREV[mesNum - 1] : "";
+}
+
+function aplicarFiltroMes(match, mes) {
+  const mesAbrev = normalizarMes(mes);
+  if (!mesAbrev) return;
+  const mesNum = MESES_ABREV.indexOf(mesAbrev) + 1;
+  match.$or = [
+    { "Mês": mesAbrev },
+    { "Mes": mesAbrev },
+    { "Mês": String(mesNum) },
+    { "Mes": String(mesNum) },
+    { "Mês": mesNum },
+    { "Mes": mesNum }
+  ];
+}
+
+function mesNumeroExpr() {
+  const mesRaw = { $toString: { $ifNull: [{ $getField: "Mês" }, { $getField: "Mes" }] } };
+  return {
+    $switch: {
+      branches: [
+        { case: { $in: [mesRaw, ["1", "01", "Jan", "jan"]] }, then: "01" },
+        { case: { $in: [mesRaw, ["2", "02", "Fev", "fev"]] }, then: "02" },
+        { case: { $in: [mesRaw, ["3", "03", "Mar", "mar"]] }, then: "03" },
+        { case: { $in: [mesRaw, ["4", "04", "Abr", "abr"]] }, then: "04" },
+        { case: { $in: [mesRaw, ["5", "05", "Mai", "mai"]] }, then: "05" },
+        { case: { $in: [mesRaw, ["6", "06", "Jun", "jun"]] }, then: "06" },
+        { case: { $in: [mesRaw, ["7", "07", "Jul", "jul"]] }, then: "07" },
+        { case: { $in: [mesRaw, ["8", "08", "Ago", "ago"]] }, then: "08" },
+        { case: { $in: [mesRaw, ["9", "09", "Set", "set"]] }, then: "09" },
+        { case: { $in: [mesRaw, ["10", "Out", "out"]] }, then: "10" },
+        { case: { $in: [mesRaw, ["11", "Nov", "nov"]] }, then: "11" },
+        { case: { $in: [mesRaw, ["12", "Dez", "dez"]] }, then: "12" }
+      ],
+      default: "00"
+    }
+  };
+}
+
+function dataFallbackPorMesExpr() {
+  return {
+    $concat: [
+      { $toString: { $ifNull: ["$Ano", "0000"] } },
+      "-",
+      mesNumeroExpr(),
+      "-01"
+    ]
+  };
+}
+
+function mesAbrevPorIsoExpr() {
+  const mesIso = { $substr: ["$_data_iso", 5, 2] };
+  return {
+    $switch: {
+      branches: MESES_ABREV.map((nome, idx) => ({
+        case: { $eq: [mesIso, String(idx + 1).padStart(2, "0")] },
+        then: nome
+      })),
+      default: { $ifNull: [{ $getField: "Mês" }, { $getField: "Mes" }] }
+    }
+  };
+}
+
+function filtroMesDivergente() {
+  return {
+    _data_iso: { $type: "string", $regex: /^\d{4}-\d{2}-\d{2}$/ },
+    $expr: { $ne: [{ $getField: "Mês" }, mesAbrevPorIsoExpr()] }
+  };
+}
+
 // ─────────────────────────────────────────
 // SERVIDOR
 // ─────────────────────────────────────────
@@ -302,12 +403,16 @@ async function iniciarServidor() {
             }}]
           )
         ]);
+        const rMes = await db.collection("dados_brutos").updateMany(
+          filtroMesDivergente(),
+          [{ $set: { "Mês": mesAbrevPorIsoExpr() } }]
+        );
         if (rNum.modifiedCount > 0)  { _migNumericos = true; }
         if (rGtin.modifiedCount > 0) { _migGtin      = true; }
         if (rData.modifiedCount > 0) { _migData      = true; }
-        if (rNum.modifiedCount > 0 || rGtin.modifiedCount > 0 || rData.modifiedCount > 0) {
+        if (rNum.modifiedCount > 0 || rGtin.modifiedCount > 0 || rData.modifiedCount > 0 || rMes.modifiedCount > 0) {
           cacheClear();
-          console.log(`✅ Auto-migração: ${rNum.modifiedCount} numéricos, ${rGtin.modifiedCount} gtin, ${rData.modifiedCount} data_iso`);
+          console.log(`✅ Auto-migração: ${rNum.modifiedCount} numéricos, ${rGtin.modifiedCount} gtin, ${rData.modifiedCount} data_iso, ${rMes.modifiedCount} meses`);
         }
 
         // Pré-computa _cat/_fam via $merge — elimina o $lookup caro em cada query
@@ -1115,7 +1220,7 @@ async function iniciarServidor() {
         const df = req.query.df || null;
         const match = {};
         if (ano)  match["Ano"]   = matchTextoOuNumero(ano);
-        if (mes)  match["Mês"]   = String(mes);
+        if (mes)  aplicarFiltroMes(match, mes);
         if (loja) match["Loja"]  = matchTextoOuNumero(loja);
         if ((di || df) && _migData) {
           const dr = {};
@@ -1218,7 +1323,7 @@ async function iniciarServidor() {
         // Match base aproveita os índices existentes (Ano, Mês, Loja, _data_iso)
         const baseMatch = {};
         if (ano)  baseMatch["Ano"]  = matchTextoOuNumero(ano);
-        if (mes)  baseMatch["Mês"]  = String(mes);
+        if (mes)  aplicarFiltroMes(baseMatch, mes);
         if (loja) baseMatch["Loja"] = matchTextoOuNumero(loja);
         if ((di || df) && _migData) {
           const dr = {};
@@ -1266,27 +1371,7 @@ async function iniciarServidor() {
               ]},
               onNull: null
             }},
-            { $concat: [
-              { $ifNull: ["$Ano", "0000"] }, "-",
-              { $switch: {
-                branches: [
-                  { case: { $eq: ["$MÃªs", "Jan"] }, then: "01" },
-                  { case: { $eq: ["$MÃªs", "Fev"] }, then: "02" },
-                  { case: { $eq: ["$MÃªs", "Mar"] }, then: "03" },
-                  { case: { $eq: ["$MÃªs", "Abr"] }, then: "04" },
-                  { case: { $eq: ["$MÃªs", "Mai"] }, then: "05" },
-                  { case: { $eq: ["$MÃªs", "Jun"] }, then: "06" },
-                  { case: { $eq: ["$MÃªs", "Jul"] }, then: "07" },
-                  { case: { $eq: ["$MÃªs", "Ago"] }, then: "08" },
-                  { case: { $eq: ["$MÃªs", "Set"] }, then: "09" },
-                  { case: { $eq: ["$MÃªs", "Out"] }, then: "10" },
-                  { case: { $eq: ["$MÃªs", "Nov"] }, then: "11" },
-                  { case: { $eq: ["$MÃªs", "Dez"] }, then: "12" }
-                ],
-                default: "00"
-              }},
-              "-01"
-            ]}
+            dataFallbackPorMesExpr()
           ]
         };
 
@@ -1326,27 +1411,7 @@ async function iniciarServidor() {
                         onNull: null
                       }},
                       // 3º (último recurso): Mês + Ano → YYYY-MM-01
-                      { $concat: [
-                        { $ifNull: ["$Ano", "0000"] }, "-",
-                        { $switch: {
-                          branches: [
-                            { case: { $eq: ["$Mês", "Jan"] }, then: "01" },
-                            { case: { $eq: ["$Mês", "Fev"] }, then: "02" },
-                            { case: { $eq: ["$Mês", "Mar"] }, then: "03" },
-                            { case: { $eq: ["$Mês", "Abr"] }, then: "04" },
-                            { case: { $eq: ["$Mês", "Mai"] }, then: "05" },
-                            { case: { $eq: ["$Mês", "Jun"] }, then: "06" },
-                            { case: { $eq: ["$Mês", "Jul"] }, then: "07" },
-                            { case: { $eq: ["$Mês", "Ago"] }, then: "08" },
-                            { case: { $eq: ["$Mês", "Set"] }, then: "09" },
-                            { case: { $eq: ["$Mês", "Out"] }, then: "10" },
-                            { case: { $eq: ["$Mês", "Nov"] }, then: "11" },
-                            { case: { $eq: ["$Mês", "Dez"] }, then: "12" }
-                          ],
-                          default: "00"
-                        }},
-                        "-01"
-                      ]}
+                      dataFallbackPorMesExpr()
                     ]
                   },
                   ...grp
@@ -1396,7 +1461,7 @@ async function iniciarServidor() {
 
         const baseMatch = {};
         if (ano)  baseMatch["Ano"]  = matchTextoOuNumero(ano);
-        if (mes)  baseMatch["Mês"]  = String(mes);
+        if (mes)  aplicarFiltroMes(baseMatch, mes);
         if (loja) baseMatch["Loja"] = matchTextoOuNumero(loja);
         if ((di || df) && _migData) {
           const dr = {};
@@ -1441,27 +1506,7 @@ async function iniciarServidor() {
               ]},
               onNull: null
             }},
-            { $concat: [
-              { $ifNull: ["$Ano", "0000"] }, "-",
-              { $switch: {
-                branches: [
-                  { case: { $eq: ["$MÃªs", "Jan"] }, then: "01" },
-                  { case: { $eq: ["$MÃªs", "Fev"] }, then: "02" },
-                  { case: { $eq: ["$MÃªs", "Mar"] }, then: "03" },
-                  { case: { $eq: ["$MÃªs", "Abr"] }, then: "04" },
-                  { case: { $eq: ["$MÃªs", "Mai"] }, then: "05" },
-                  { case: { $eq: ["$MÃªs", "Jun"] }, then: "06" },
-                  { case: { $eq: ["$MÃªs", "Jul"] }, then: "07" },
-                  { case: { $eq: ["$MÃªs", "Ago"] }, then: "08" },
-                  { case: { $eq: ["$MÃªs", "Set"] }, then: "09" },
-                  { case: { $eq: ["$MÃªs", "Out"] }, then: "10" },
-                  { case: { $eq: ["$MÃªs", "Nov"] }, then: "11" },
-                  { case: { $eq: ["$MÃªs", "Dez"] }, then: "12" }
-                ],
-                default: "00"
-              }},
-              "-01"
-            ]}
+            dataFallbackPorMesExpr()
           ]
         };
 
@@ -1625,6 +1670,14 @@ async function iniciarServidor() {
             registro._fam = categoria?.FAMILIA || null;
             // Converte Data (DD/MM/AAAA ou AAAA-MM-DD) para string ISO AAAA-MM-DD
             const dataStr = String(registro['Data'] || '').trim();
+            const mesCanonico = mesDeData(dataStr) || normalizarMes(registro['Mês'] ?? registro['Mes']);
+            if (mesCanonico) {
+              registro['Mês'] = mesCanonico;
+              const mesNumero = MESES_ABREV.indexOf(mesCanonico) + 1;
+              if (mesNumero > 0 && (registro['Mes'] === undefined || registro['Mes'] === null || registro['Mes'] === "")) {
+                registro['Mes'] = mesNumero;
+              }
+            }
             const brMatch  = dataStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
             const isoMatch = dataStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
             if (brMatch) {
@@ -1929,7 +1982,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.post("/api/admin/migrar-campos", verificarTokenAdmin, async (req, res) => {
       try {
-        let totalNum = 0, totalGtin = 0, totalData = 0;
+        let totalNum = 0, totalGtin = 0, totalData = 0, totalMes = 0;
 
         // 1. Pré-computa _qtd_num e _valor_num via pipeline MongoDB (server-side, sem transferência)
         const numResult = await db.collection("dados_brutos").updateMany(
@@ -1972,13 +2025,19 @@ async function iniciarServidor() {
         );
         totalData = dataResult.modifiedCount;
 
+        const mesResult = await db.collection("dados_brutos").updateMany(
+          filtroMesDivergente(),
+          [{ $set: { "Mês": mesAbrevPorIsoExpr() } }]
+        );
+        totalMes = mesResult.modifiedCount;
+
         _migNumericos = true;
         _migGtin      = true;
         _migData      = true;
         cacheClear();
 
-        console.log(`✅ Migração concluída: ${totalNum} numéricos, ${totalGtin} gtin, ${totalData} data_iso`);
-        res.json({ ok: true, numericosAtualizados: totalNum, gtinAtualizados: totalGtin, dataIsoAtualizados: totalData });
+        console.log(`✅ Migração concluída: ${totalNum} numéricos, ${totalGtin} gtin, ${totalData} data_iso, ${totalMes} meses`);
+        res.json({ ok: true, numericosAtualizados: totalNum, gtinAtualizados: totalGtin, dataIsoAtualizados: totalData, mesesAtualizados: totalMes });
       } catch(e) {
         console.error("❌ Erro na migração:", e.message);
         res.status(500).json({ erro: "Erro na migração", detalhe: e.message });
