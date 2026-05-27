@@ -1372,12 +1372,12 @@ let seViewMode     = 'loja';
 let seDataSort     = { col: 'data', dir: 'asc' };
 const tabsRenderizadas = new Set();
 const DASHBOARD_CACHE_BUST_KEY = 'soneda_dashboard_cache_bust';
-const AGRE_CACHE_PREFIX = 'agre_v4__';
+const AGRE_CACHE_PREFIX = 'agre_v5__';
 
 function limparCacheDashboard(notificarOutrasAbas = true) {
   _agreMemCache.clear();
   Object.keys(sessionStorage)
-    .filter(k => k.startsWith('agre__') || k.startsWith(AGRE_CACHE_PREFIX))
+    .filter(k => k.startsWith('agre__') || /^agre_v\d+__/.test(k))
     .forEach(k => sessionStorage.removeItem(k));
 
   rawDataPreviewOk = false;
@@ -2097,26 +2097,17 @@ function prefetchFiltros(ag) {
   }, 1500); // começa 1.5s após o render para não competir com a UI
 }
 
-// ── CACHE DE AGREGADOS (memória + sessionStorage, TTL 60 min) ────────────────
+// ── CACHE DE AGREGADOS (somente memória da aba atual, TTL 60 min) ─────────────
 const AGRE_CACHE_TTL = 60 * 60 * 1000;
 function agreCache(key, data) {
   const k = AGRE_CACHE_PREFIX + key;
   if (data !== undefined) {
     _agreMemCache.set(k, { t: Date.now(), d: data });
-    try { sessionStorage.setItem(k, JSON.stringify({ t: Date.now(), d: data })); } catch(e) {}
     return data;
   }
   // Memória primeiro (sem JSON.parse)
   const mem = _agreMemCache.get(k);
   if (mem && (Date.now() - mem.t) < AGRE_CACHE_TTL) return mem.d;
-  // Fallback sessionStorage (sobrevive ao F5)
-  try {
-    const item = JSON.parse(sessionStorage.getItem(k) || 'null');
-    if (item && (Date.now() - item.t) < AGRE_CACHE_TTL) {
-      _agreMemCache.set(k, item);
-      return item.d;
-    }
-  } catch(e) {}
   return null;
 }
 

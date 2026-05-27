@@ -28,6 +28,7 @@ const client = new MongoClient(uri);
 // ── CACHE DE RESULTADOS (TTL 60 min) ─────────────────────────────────────────
 const _cache = new Map();
 const CACHE_TTL_MS = 60 * 60 * 1000;
+let _dadosVersionCache = { ts: 0, value: "init" };
 function cacheGet(k) {
   const e = _cache.get(k);
   if (!e) return null;
@@ -35,7 +36,10 @@ function cacheGet(k) {
   return e.data;
 }
 function cacheSet(k, d) { _cache.set(k, { data: d, ts: Date.now() }); }
-function cacheClear() { _cache.clear(); }
+function cacheClear() {
+  _cache.clear();
+  _dadosVersionCache = { ts: 0, value: "init" };
+}
 
 // ── FLAGS DE OTIMIZAÇÃO ──────────────────────────────────────────────────────
 let _migNumericos = false; // true quando dados têm _qtd_num/_valor_num pré-computados
@@ -347,6 +351,25 @@ async function iniciarServidor() {
   try {
     await client.connect();
     const db = client.db(dbName);
+
+    async function dadosVersion() {
+      if (Date.now() - _dadosVersionCache.ts < 5000) return _dadosVersionCache.value;
+      const [total, ultimoLog] = await Promise.all([
+        db.collection("dados_brutos").countDocuments({}),
+        db.collection("logs_importacao")
+          .find({ tipo: "dados_brutos" }, { projection: { importId: 1, data: 1 } })
+          .sort({ data: -1 })
+          .limit(1)
+          .next()
+      ]);
+      const logKey = ultimoLog ? `${ultimoLog.importId || ""}:${ultimoLog.data ? new Date(ultimoLog.data).getTime() : ""}` : "sem-log";
+      _dadosVersionCache = { ts: Date.now(), value: `${total}:${logKey}` };
+      return _dadosVersionCache.value;
+    }
+
+    async function dashboardCacheKey(prefix, query) {
+      return `${prefix}:${await dadosVersion()}:${JSON.stringify(query)}`;
+    }
 
     console.log("✅ Conectado ao MongoDB");
     console.log(`📦 Banco em uso: ${dbName}`);
@@ -1211,7 +1234,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/kpis", async (req, res) => {
       try {
-        const cacheKey = 'kpis:v3:' + JSON.stringify(req.query);
+        const cacheKey = await dashboardCacheKey('kpis:v4', req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
@@ -1278,7 +1301,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/agregados", async (req, res) => {
       try {
-        const cacheKey = 'agre:v4:' + JSON.stringify(req.query);
+        const cacheKey = await dashboardCacheKey('agre:v5', req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
@@ -1451,7 +1474,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/estoque", async (req, res) => {
       try {
-        const cacheKey = 'est:v4:' + JSON.stringify(req.query);
+        const cacheKey = await dashboardCacheKey('est:v5', req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
