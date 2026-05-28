@@ -485,7 +485,14 @@ async function iniciarServidor() {
     function aquecerCacheDashboard(motivo = "startup") {
       const { request } = require('http');
       const PORT_WU = process.env.PORT || 3000;
-      const paths = ['/api/dashboard/kpis', '/api/dashboard/agregados', '/api/dashboard/estoque'];
+      const anoAtual = new Date().getFullYear();
+      const paths = [
+        '/api/dashboard/kpis',
+        '/api/dashboard/agregados',
+        `/api/dashboard/agregados?ano=${anoAtual}&escopo=loja`,
+        `/api/dashboard/agregados?ano=${anoAtual}`,
+        '/api/dashboard/estoque'
+      ];
       paths.forEach(pathReq => {
         const req = request({ hostname: 'localhost', port: PORT_WU, path: pathReq }, res => {
           res.resume();
@@ -593,6 +600,8 @@ async function iniciarServidor() {
       db.collection("dados_brutos").createIndex({ "GTIN/PLU": 1 }),
       db.collection("dados_brutos").createIndex({ "_gtin": 1 }),
       db.collection("dados_brutos").createIndex({ "_data_iso": 1 }),
+      db.collection("dados_brutos").createIndex({ "Ano": 1, "_data_iso": 1, "Loja": 1 }),
+      db.collection("dados_brutos").createIndex({ "_data_iso": -1, "importado_em": -1 }),
       db.collection("categorias_depara").createIndex({ "CODBARRAS": 1 })
     ]);
     console.log("📊 Índices de dashboard criados/verificados");
@@ -1220,7 +1229,7 @@ async function iniciarServidor() {
             $group: {
               _id: null,
               total_vendido: { $sum: _migNumericos ? "$_qtd_num"   : brToDouble({ $getField: "Venda (Qtd)" }) },
-              total_valor:   { $sum: brValorExpr() },
+              total_valor:   { $sum: _migNumericos ? "$_valor_num" : brValorExpr() },
               lojas:         { $addToSet: "$Loja" }
             }
           },
@@ -1276,7 +1285,7 @@ async function iniciarServidor() {
               $group: {
                 _id: null,
                 total_vendido: { $sum: _migNumericos ? "$_qtd_num"  : brToDouble({ $getField: "Venda (Qtd)" }) },
-                total_valor:   { $sum: brValorExpr() },
+                total_valor:   { $sum: _migNumericos ? "$_valor_num" : brValorExpr() },
                 lojas:         { $addToSet: "$Loja" }
               }
             },
@@ -1315,6 +1324,8 @@ async function iniciarServidor() {
         const aLoja    = req.query.ativo_loja    || null;
         const aCat     = req.query.ativo_cat     || null;
         const aFamilia = req.query.ativo_familia || null;
+        const incluirDiaDetalhado = req.query.detalhe_dia === "1";
+        const apenasLoja = req.query.escopo === "loja";
 
         // Join com categorias_depara em tempo de query.
         // Quando _migGtin=true (todos os docs têm _gtin), usa localField/foreignField
@@ -1339,7 +1350,7 @@ async function iniciarServidor() {
         // Usa campos numéricos pré-computados quando disponíveis
         const grp = {
           qty:   { $sum: _migNumericos ? "$_qtd_num"  : brToDouble({ $getField: "Venda (Qtd)" }) },
-          valor: { $sum: brValorExpr() }
+          valor: { $sum: _migNumericos ? "$_valor_num" : brValorExpr() }
         };
 
         const AGG_OPTS = { allowDiskUse: true };
@@ -1349,7 +1360,7 @@ async function iniciarServidor() {
 
         // Match base aproveita os índices existentes (Ano, Mês, Loja, _data_iso)
         const baseMatch = {};
-        if (ano)  baseMatch["Ano"]  = matchTextoOuNumero(ano);
+        if (ano)  baseMatch["Ano"]  = String(ano);
         if (mes)  aplicarFiltroMes(baseMatch, mes);
         if (loja) baseMatch["Loja"] = matchTextoOuNumero(loja);
         if ((di || df) && _migData) {
@@ -1403,59 +1414,48 @@ async function iniciarServidor() {
         };
 
         // Um único $facet — uma varredura, um join
+        const facets = {
+          por_loja: [
+            ...mCat, ...mFamilia,
+            { $group: { _id: "$Loja", ...grp } },
+            { $sort: { qty: -1 } }
+          ],
+          por_dia: [
+            ...mLoja, ...mCat, ...mFamilia,
+            { $group: { _id: dateGroupExpr, ...grp } },
+            { $sort: { _id: 1 } }
+          ]
+        };
+
+        if (!apenasLoja) {
+          facets.por_cat = [
+            ...mLoja, ...mFamilia,
+            { $group: { _id: "$_cat", ...grp } },
+            { $sort: { qty: -1 } }
+          ];
+          facets.por_fam = [
+            ...mLoja, ...mCat,
+            { $group: { _id: "$_fam", ...grp } },
+            { $sort: { qty: -1 } }
+          ];
+        }
+
+        if (incluirDiaDetalhado) {
+          facets.por_cat_dia = [
+            ...mLoja, ...mFamilia,
+            { $group: { _id: { cat: "$_cat", data: dateGroupExpr }, ...grp } },
+            { $sort: { "_id.data": 1, qty: -1 } }
+          ];
+          facets.por_fam_dia = [
+            ...mLoja, ...mCat,
+            { $group: { _id: { fam: "$_fam", data: dateGroupExpr }, ...grp } },
+            { $sort: { "_id.data": 1, qty: -1 } }
+          ];
+        }
+
         const [facet] = await db.collection("dados_brutos").aggregate([
           ...preStages,
-          { $facet: {
-            por_loja: [
-              ...mCat, ...mFamilia,
-              { $group: { _id: "$Loja", ...grp } },
-              { $sort: { qty: -1 } }
-            ],
-            por_cat: [
-              ...mLoja, ...mFamilia,
-              { $group: { _id: "$_cat", ...grp } },
-              { $sort: { qty: -1 } }
-            ],
-            por_fam: [
-              ...mLoja, ...mCat,
-              { $group: { _id: "$_fam", ...grp } },
-              { $sort: { qty: -1 } }
-            ],
-            por_dia: [
-              ...mLoja, ...mCat, ...mFamilia,
-              { $group: {
-                  _id: {
-                    $ifNull: [
-                      // 1º: campo _data_iso pré-computado (se migração rodou)
-                      _migData ? "$_data_iso" : null,
-                      // 2º: parsear o campo Data diretamente (DD/MM/YYYY ou YYYY-MM-DD)
-                      { $dateToString: {
-                        format: "%Y-%m-%d",
-                        date: { $ifNull: [
-                          { $dateFromString: { dateString: { $toString: { $ifNull: [{ $getField: "Data" }, ""] } }, format: "%d/%m/%Y", onError: null, onNull: null } },
-                          { $dateFromString: { dateString: { $toString: { $ifNull: [{ $getField: "Data" }, ""] } }, format: "%Y-%m-%d", onError: null, onNull: null } }
-                        ]},
-                        onNull: null
-                      }},
-                      // 3º (último recurso): Mês + Ano → YYYY-MM-01
-                      dataFallbackPorMesExpr()
-                    ]
-                  },
-                  ...grp
-              }},
-              { $sort: { _id: 1 } }
-            ],
-            por_cat_dia: [
-              ...mLoja, ...mFamilia,
-              { $group: { _id: { cat: "$_cat", data: dateGroupExpr }, ...grp } },
-              { $sort: { "_id.data": 1, qty: -1 } }
-            ],
-            por_fam_dia: [
-              ...mLoja, ...mCat,
-              { $group: { _id: { fam: "$_fam", data: dateGroupExpr }, ...grp } },
-              { $sort: { "_id.data": 1, qty: -1 } }
-            ]
-          }}
+          { $facet: facets }
         ], AGG_OPTS).toArray();
 
         const result = {
