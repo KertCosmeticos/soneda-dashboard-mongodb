@@ -3428,6 +3428,7 @@ function renderFam2(data, preAg) {
     ...totFam.filter(r => r.fam !== SEM_MAP_F2),
     ...totFam.filter(r => r.fam === SEM_MAP_F2)
   ];
+  const d2SelF = d2_active.dim === 'familia' ? d2_active.val : null;
   const linhas = famOrdenadas.map(r => {
     const pct  = totalGeral > 0 ? ((r.qty/totalGeral)*100).toFixed(1) : 0;
     const barW = ((r.qty/maxQ)*100).toFixed(1);
@@ -3438,7 +3439,8 @@ function renderFam2(data, preAg) {
         <td><span style="font-size:.78rem;color:var(--text-dim);font-family:'DM Mono',monospace">${pct}%</span></td>
       </tr>`;
     }
-    return `<tr>
+    const ativo = normalizeFilterValue(d2SelF) === normalizeFilterValue(r.fam) ? ' row-active' : '';
+    return `<tr class="clickable-row${ativo}" onclick="d2SetFilter('familia',this.dataset.v)" data-v="${r.fam.replace(/"/g,'&quot;')}">
       <td class="td-nome">${r.fam}</td>
       <td class="td-qty">${r.qty.toLocaleString('pt-BR')}</td>
       <td><div class="td-bar-wrap">
