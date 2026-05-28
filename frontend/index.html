@@ -2252,9 +2252,16 @@ async function renderizar() {
       return { loja, nome, qty: r.qty };
     })
     .filter(r => r.loja);
+  const totalFiltrado = (ag, byLoja) => ag && ag.por_dia
+    ? ag.por_dia.reduce((s, r) => s + (r.qty || 0), 0)
+    : byLoja.reduce((s, r) => s + r.qty, 0);
 
   if (cached) {
     const byLoja = toByLoja(cached);
+    if (totalFiltrado(cached, byLoja) <= 0) {
+      renderSemDados();
+      return;
+    }
     renderKPIs(byLoja, cached);
     renderGrafico(byLoja, cached);
     renderTabela(byLoja);
@@ -2280,6 +2287,11 @@ async function renderizar() {
     rawDataPreviewOk = true;
     setChartLoading(['f-kpi-row','chart-wrap','table-body'], false);
     const byLoja = toByLoja(agFast);
+    if (totalFiltrado(agFast, byLoja) <= 0) {
+      setChartLoading(['cat1-wrap','fam1-wrap','cat1-table-body','fam1-table-body'], false);
+      renderSemDados();
+      return;
+    }
     renderKPIs(byLoja, agFast);
     renderGrafico(byLoja, agFast);
     renderTabela(byLoja);
@@ -2288,6 +2300,10 @@ async function renderizar() {
     const ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('f', f_active)}`, f_renderAbort.signal);
     agreCache(cacheKey, ag);
     setChartLoading(['cat1-wrap','fam1-wrap','cat1-table-body','fam1-table-body'], false);
+    if (totalFiltrado(ag, toByLoja(ag)) <= 0) {
+      renderSemDados();
+      return;
+    }
     if (ag.por_cat.length > 0) renderCat1(null, ag.por_cat, ag); else renderCat1(filtrar('cat'));
     if (ag.por_fam.length > 0) renderFam1(null, ag.por_fam, ag); else renderFam1(filtrar('familia'));
     // Pré-aquece cache para os filtros dos itens que já estão na tela (sem bloquear UI)
@@ -2330,6 +2346,30 @@ function renderKPIs(byLoja, ag) {
     `${total.toLocaleString('pt-BR')} itens vendidos · ${lojas.toLocaleString('pt-BR')} lojas · ${fmtR(totalValor)}`;
 }
 
+function renderSemDados() {
+  document.getElementById('kpi-total').textContent = '0';
+  document.getElementById('kpi-lojas').textContent = '0';
+  document.getElementById('kpi-top').textContent = 'Sem dados';
+  document.getElementById('kpi-top-sub').textContent = 'Sem dados';
+  document.getElementById('status-msg').textContent = '0 itens vendidos · 0 lojas · R$ 0,00';
+  document.getElementById('chart-total-val').textContent = '0';
+  setEstado('Nenhum dado para os filtros selecionados.');
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+  document.getElementById('table-body').innerHTML = '<div class="no-data">Nenhum dado para os filtros selecionados</div>';
+  const catTotal = document.getElementById('cat1-total-val');
+  if (catTotal) catTotal.textContent = '0';
+  const famTotal = document.getElementById('fam1-total-val');
+  if (famTotal) famTotal.textContent = '0';
+  const catState = document.getElementById('cat1-state');
+  if (catState) { catState.style.display = 'flex'; catState.innerHTML = 'Nenhum dado para os filtros selecionados.'; }
+  const famState = document.getElementById('fam1-state');
+  if (famState) { famState.style.display = 'flex'; famState.innerHTML = 'Nenhum dado para os filtros selecionados.'; }
+  if (cat1Chart) { cat1Chart.destroy(); cat1Chart = null; }
+  if (fam1Chart) { fam1Chart.destroy(); fam1Chart = null; }
+  document.getElementById('cat1-table-body').innerHTML = '<div class="no-data">Nenhum dado para os filtros selecionados</div>';
+  document.getElementById('fam1-table-body').innerHTML = '<div class="no-data">Nenhum dado para os filtros selecionados</div>';
+}
+
 function renderGrafico(byLoja, ag) {
   // por_dia aplica todos os filtros (incluindo loja); por_loja exclui filtro de loja (cross-filter)
   const total = ag && ag.por_dia
@@ -2339,6 +2379,7 @@ function renderGrafico(byLoja, ag) {
 
   if (byLoja.length === 0) {
     setEstado('Nenhum dado para os filtros selecionados.');
+    if (chartInst) { chartInst.destroy(); chartInst = null; }
     return;
   }
   ocultarEstado();
