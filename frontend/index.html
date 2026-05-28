@@ -2216,14 +2216,14 @@ function preaquecerAbasDashboard() {
       }
 
       const d3Params = buildAgreParams('d3', d3_active).toString();
-      fetchJSON(`${API_BASE}/api/dashboard/estoque?${d3Params}`)
+      fetchJSON(`${API_BASE}/api/dashboard/estoque-resumo?${d3Params}`)
         .then(ag => { d3_estoqueAg = ag; })
         .catch(() => {});
 
       const seParamsMain = seParams(true);
       Promise.all([
         fetchJSON(`${API_BASE}/api/dashboard/agregados?${seParamsMain}`),
-        fetchJSON(`${API_BASE}/api/dashboard/estoque?${seParamsMain}`)
+        fetchJSON(`${API_BASE}/api/dashboard/estoque-resumo?${seParamsMain}`)
       ]).catch(() => {});
     } catch(e) {
       console.warn('Preaquecimento das abas falhou:', e.message);
@@ -3791,7 +3791,8 @@ function d3Renderizar() {
 async function d3FetchTotalEstoque() {
   try {
     const params = buildAgreParams('d3', d3_active);
-    const ag = await fetchJSON(`${API_BASE}/api/dashboard/estoque?${params}`);
+    params.set('escopo', 'loja');
+    const ag = await fetchJSON(`${API_BASE}/api/dashboard/estoque-resumo?${params}`);
     const totalCorreto  = ag.total       || 0;
     const ativasCorreto = ag.total_lojas || 0;
 
@@ -3808,8 +3809,16 @@ async function d3FetchTotalEstoque() {
       `${totalCorreto.toLocaleString('pt-BR')} unidades em estoque · ${ativasCorreto} loja${ativasCorreto !== 1 ? 's' : ''}`;
     d3_estoqueAg = ag;
     d3RenderTabelaFilialAgregada(ag);
-    d3RenderRotatividadeAgregada(ag);
-    d3RenderLineAgregado(ag);
+
+    const detalhesParams = buildAgreParams('d3', d3_active);
+    detalhesParams.set('detalhe', '1');
+    fetchJSON(`${API_BASE}/api/dashboard/estoque?${detalhesParams}`)
+      .then(agDetalhado => {
+        d3_estoqueAg = agDetalhado;
+        d3RenderRotatividadeAgregada(agDetalhado);
+        d3RenderLineAgregado(agDetalhado);
+      })
+      .catch(() => {});
   } catch(e) {
     // falha silenciosa: mantém os valores do rawData já exibidos
   }
@@ -4480,6 +4489,8 @@ function seSetLoading() {
 function seParams(aplicarAtivo = true) {
   const params = buildAgreParams('se', null);
   if (aplicarAtivo && se_active.dim === 'loja' && se_active.val) params.set('loja', se_active.val);
+  if (seViewMode !== 'data') params.set('escopo', 'loja');
+  else params.set('detalhe', '1');
   return params;
 }
 
@@ -4530,17 +4541,18 @@ async function seRenderizarAgregado() {
 
   const paramsMain = seParams(true);
   const paramsTabela = seParams(false);
+  const estoqueEndpoint = seViewMode === 'data' ? 'estoque' : 'estoque-resumo';
 
   try {
     const [vMain, eMain, vTabela, eTabela] = await Promise.all([
       fetchJSON(`${API_BASE}/api/dashboard/agregados?${paramsMain}`, se_renderAbort.signal),
-      fetchJSON(`${API_BASE}/api/dashboard/estoque?${paramsMain}`, se_renderAbort.signal),
+      fetchJSON(`${API_BASE}/api/dashboard/${estoqueEndpoint}?${paramsMain}`, se_renderAbort.signal),
       paramsTabela.toString() === paramsMain.toString()
         ? Promise.resolve(null)
         : fetchJSON(`${API_BASE}/api/dashboard/agregados?${paramsTabela}`, se_renderAbort.signal),
       paramsTabela.toString() === paramsMain.toString()
         ? Promise.resolve(null)
-        : fetchJSON(`${API_BASE}/api/dashboard/estoque?${paramsTabela}`, se_renderAbort.signal),
+        : fetchJSON(`${API_BASE}/api/dashboard/${estoqueEndpoint}?${paramsTabela}`, se_renderAbort.signal),
     ]);
     const vendaTabela = vTabela || vMain;
     const estoqueTabela = eTabela || eMain;

@@ -396,8 +396,12 @@ async function iniciarServidor() {
       try {
         const [rNum, rGtin, rData] = await Promise.all([
           db.collection("dados_brutos").updateMany(
-            { _qtd_num: { $exists: false } },
-            [{ $set: { _qtd_num: brToDouble({ $getField: "Venda (Qtd)" }), _valor_num: brValorExpr() } }]
+            { $or: [{ _qtd_num: { $exists: false } }, { _valor_num: { $exists: false } }, { _estoque_num: { $exists: false } }] },
+            [{ $set: {
+              _qtd_num: brToDouble({ $getField: "Venda (Qtd)" }),
+              _valor_num: brValorExpr(),
+              _estoque_num: brToDouble({ $getField: "Estoque Diario" })
+            } }]
           ),
           db.collection("dados_brutos").updateMany(
             { _gtin: { $exists: false } },
@@ -491,7 +495,7 @@ async function iniciarServidor() {
         '/api/dashboard/agregados',
         `/api/dashboard/agregados?ano=${anoAtual}&escopo=loja`,
         `/api/dashboard/agregados?ano=${anoAtual}`,
-        '/api/dashboard/estoque'
+        `/api/dashboard/estoque-resumo?ano=${anoAtual}`
       ];
       paths.forEach(pathReq => {
         const req = request({ hostname: 'localhost', port: PORT_WU, path: pathReq }, res => {
@@ -1473,6 +1477,57 @@ async function iniciarServidor() {
       }
     });
 
+    app.get("/api/dashboard/estoque-resumo", async (req, res) => {
+      try {
+        const cacheKey = await dashboardCacheKey('est-resumo:v1', req.query);
+        const cached = cacheGet(cacheKey);
+        if (cached) return res.json(cached);
+
+        const { ano, mes, loja, cat, familia } = req.query;
+        const di = req.query.di || null;
+        const df = req.query.df || null;
+
+        const baseMatch = {};
+        if (ano)  baseMatch["Ano"] = matchTextoOuNumero(ano);
+        if (mes)  aplicarFiltroMes(baseMatch, mes);
+        if (loja) baseMatch["Loja"] = matchTextoOuNumero(loja);
+        if (cat) baseMatch["_cat"] = cat;
+        if (familia) baseMatch["_fam"] = familia;
+        if ((di || df) && _migData) {
+          const dr = {};
+          if (di) dr.$gte = di;
+          if (df) dr.$lte = df;
+          baseMatch["_data_iso"] = dr;
+        }
+
+        const estoqueExpr = { $ifNull: ["$_estoque_num", brToDouble({ $getField: "Estoque Diario" })] };
+        const preStages = Object.keys(baseMatch).length ? [{ $match: baseMatch }] : [];
+        const [facet] = await db.collection("dados_brutos").aggregate([
+          ...preStages,
+          { $facet: {
+            total: [
+              { $group: { _id: null, total: { $sum: estoqueExpr }, lojas: { $addToSet: "$Loja" } } },
+              { $project: { _id: 0, total: 1, total_lojas: { $size: "$lojas" } } }
+            ],
+            por_loja: [
+              { $group: { _id: "$Loja", qty: { $sum: estoqueExpr } } },
+              { $sort: { qty: -1 } }
+            ]
+          }}
+        ], { allowDiskUse: true }).toArray();
+
+        const result = {
+          total: facet?.total?.[0]?.total || 0,
+          total_lojas: facet?.total?.[0]?.total_lojas || 0,
+          por_loja: (facet?.por_loja || []).map(r => ({ loja: r._id, qty: r.qty }))
+        };
+        cacheSet(cacheKey, result);
+        res.json(result);
+      } catch(e) {
+        res.status(500).json({ erro: "Erro ao agregar resumo de estoque", detalhe: e.message });
+      }
+    });
+
     // ─────────────────────────────────────
     // ESTOQUE AGREGADO (consulta o banco completo, sem limite de rawData)
     // ─────────────────────────────────────
@@ -1711,10 +1766,13 @@ async function iniciarServidor() {
           if (colecao.collectionName === 'dados_brutos') {
             const qtdRaw = registro['Venda (Qtd)'] ?? registro['Venda Nf Quantidade'] ?? registro['Venda Pdv Quantidade'] ?? 0;
             const valRaw = registro['Venda (R$)'] ?? 0;
+            const estRaw = registro['Estoque Diario'] ?? registro['Estoque Diário'] ?? registro['Estoque'] ?? 0;
             const qtd = parseBRNumber(qtdRaw);
             const val = parseBRNumber(valRaw);
+            const est = parseBRNumber(estRaw);
             registro._qtd_num   = typeof qtd === 'number' ? qtd : (parseFloat(String(qtd)) || 0);
             registro._valor_num = typeof val === 'number' ? val : (parseFloat(String(val)) || 0);
+            registro._estoque_num = typeof est === 'number' ? est : (parseFloat(String(est)) || 0);
             registro._gtin      = String(registro['GTIN/PLU'] || '').trim() || null;
             const categoria = categoriasPorGtin?.get(registro._gtin);
             registro._cat = categoria?.CATEGORIA || null;
