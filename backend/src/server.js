@@ -1139,7 +1139,11 @@ async function iniciarServidor() {
     app.get("/api/dados-brutos", async (req, res) => {
       try {
         const limite = Number(req.query.limite || 5000);
-        const dados  = await db.collection("dados_brutos").find({}).limit(limite).toArray();
+        const dados  = await db.collection("dados_brutos")
+          .find({})
+          .sort({ _data_iso: -1, importado_em: -1, _id: -1 })
+          .limit(limite)
+          .toArray();
         res.json(dados);
       } catch (error) {
         res.status(500).json({ erro: "Erro ao buscar dados brutos", detalhe: error.message });

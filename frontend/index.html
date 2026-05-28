@@ -1628,6 +1628,7 @@ async function enviarCSV(inputId, rota) {
     status.className = 'import-status ok';
     // Limpa cache de agregados para que o painel recarregue com dados novos
     limparCacheDashboard();
+    setTimeout(() => recarregarDados(), 900);
 
   } catch (error) {
     console.error(error);
@@ -1691,6 +1692,7 @@ async function enviarXLSX(inputId, rota) {
     status.innerHTML = `✔ Importação concluída — <strong>${(data.inserido || 0).toLocaleString('pt-BR')}</strong> registros inseridos.`;
     status.className = 'import-status ok';
     limparCacheDashboard();
+    setTimeout(() => recarregarDados(), 900);
     fileInput.value = '';
   } catch (error) {
     console.error(error);
