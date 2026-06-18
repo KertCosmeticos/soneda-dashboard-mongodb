@@ -26,6 +26,13 @@
   .logo { font-family: 'DM Serif Display', serif; font-size: 1.6rem; letter-spacing: -0.5px; }
   .logo span { color: var(--accent); }
   .badge { font-family: 'DM Mono', monospace; font-size: 0.72rem; color: var(--muted); background: var(--bg); border: 1px solid var(--border); padding: 4px 12px; border-radius: 20px; letter-spacing: 0.5px; }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .env-badge { display: none; font-family: 'DM Mono', monospace; font-size: 0.7rem; color: var(--accent); background: rgba(200,241,53,0.08); border: 1px solid rgba(200,241,53,0.45); padding: 5px 12px; border-radius: 20px; letter-spacing: .6px; text-transform: uppercase; }
+  .readonly-note { display: none; margin-bottom: 16px; padding: 12px 16px; background: rgba(255,159,67,0.08); border: 1px solid rgba(255,159,67,0.35); border-radius: 8px; color: #ffbf7a; font-family: 'DM Mono', monospace; font-size: 0.74rem; line-height: 1.5; }
+  body.read-only .env-badge,
+  body.read-only .readonly-note { display: block; }
+  body.read-only .write-action,
+  body.read-only .btn-gu.write-action { opacity: .45; cursor: not-allowed !important; filter: grayscale(.2); }
 
   main { max-width: 1300px; margin: 0 auto; padding: 36px 40px; }
   .section-title { font-family: 'DM Serif Display', serif; font-size: 1.9rem; font-style: italic; margin-bottom: 6px; }
@@ -70,6 +77,14 @@
     padding: 6px; box-shadow: 0 18px 40px rgba(0,0,0,.38);
   }
   .multi-select.open .multi-select-menu { display: block; }
+  .multi-select-search {
+    position: sticky; top: -6px; z-index: 1; padding: 2px 0 6px; background: var(--surface2);
+  }
+  .multi-select-search-input {
+    width: 100%; min-width: 210px; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 10px; border-radius: 6px; font-family: 'Figtree', sans-serif; font-size: 0.84rem;
+  }
+  .multi-select-search-input:focus { outline: none; border-color: var(--accent); }
   .multi-select-option {
     display: flex; align-items: center; gap: 8px; padding: 8px 9px; border-radius: 6px;
     color: var(--text); font-size: 0.86rem; cursor: pointer; user-select: none;
@@ -78,6 +93,7 @@
   .multi-select-option:hover { background: rgba(255,255,255,0.06); }
   .multi-select-option input { accent-color: var(--accent); }
   .multi-select-option.all { color: var(--accent); font-family: 'DM Mono', monospace; font-size: 0.76rem; text-transform: uppercase; }
+  .multi-select-empty { padding: 9px; color: var(--text-dim); font-size: 0.82rem; white-space: nowrap; }
   .btn-clear { background: transparent; border: 1px solid var(--border); color: var(--text-dim); padding: 10px 20px; border-radius: 8px; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 0.78rem; letter-spacing: .5px; transition: all .2s; white-space: nowrap; align-self: flex-end; }
   .btn-clear:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -286,6 +302,9 @@
 
 <header>
   <div class="logo">Soneda<span>.</span></div>
+  <div class="header-right">
+    <div id="env-badge" class="env-badge">Teste - somente leitura</div>
+  </div>
 </header>
 
 
@@ -339,7 +358,7 @@
         <div id="loja-ativa" style="display:none;align-items:center;margin-top:10px;gap:6px"></div>
       </div>
       <div style="text-align:right;flex-shrink:0">
-        <div class="kpi-label">Total do período</div>
+        <div class="kpi-label">Total do per?odo</div>
         <div class="kpi-value" id="chart-total-val" style="font-size:2.2rem">—</div>
         <div class="kpi-sub">unidades vendidas</div>
       </div>
@@ -377,7 +396,7 @@
   <div id="se-active-banner" class="active-banner" style="display:none"></div>
 
   <div class="kpi-row" id="se-kpi-row">
-    <div class="kpi-card"><div class="kpi-label">Sell Out Total</div><div class="kpi-value" id="se-kpi-sellout">—</div><div class="kpi-sub">unidades vendidas</div></div>
+    <div class="kpi-card"><div class="kpi-label">Sell Out Período Total</div><div class="kpi-value" id="se-kpi-sellout">—</div><div class="kpi-sub">unidades vendidas</div></div>
     <div class="kpi-card"><div class="kpi-label">Estoque Total</div><div class="kpi-value" id="se-kpi-estoque">—</div><div class="kpi-sub">unidades em estoque</div></div>
   </div>
 
@@ -387,16 +406,16 @@
         <div class="chart-title">Sell Out x Estoque por Filial</div>
         <div class="chart-subtitle" id="se-chart-sub">Todos os períodos</div>
       </div>
-      <div style="display:flex;gap:24px;flex-shrink:0">
-        <div style="text-align:right">
+      <div style="display:flex;gap:24px;flex-shrink:0;justify-content:center">
+        <div style="text-align:center">
           <div class="kpi-label">Total Sell Out</div>
           <div class="kpi-value" id="se-chart-sellout-val" style="font-size:2.2rem">—</div>
           <div class="kpi-sub">unidades vendidas</div>
         </div>
-        <div style="text-align:right">
-          <div class="kpi-label">Total Estoque</div>
+        <div style="text-align:center">
+          <div class="kpi-label">Total do Dia</div>
           <div class="kpi-value" id="se-chart-estoque-val" style="font-size:2.2rem;color:var(--accent2)">—</div>
-          <div class="kpi-sub">unidades em estoque</div>
+          <div class="kpi-sub">Estoque total</div>
         </div>
       </div>
     </div>
@@ -473,6 +492,7 @@
   <div id="import-painel" style="display:none">
     <h1 class="section-title">Importar Arquivos</h1>
     <p class="section-sub">Importe os arquivos CSV diretamente para o MongoDB. Use o modelo para garantir o formato correto.</p>
+    <div class="readonly-note">Painel de teste em modo somente leitura. Consultas e downloads continuam liberados, mas importacoes, uploads e exclusoes ficam bloqueados.</div>
 
     <div class="import-box">
       <div class="import-row">
@@ -523,7 +543,7 @@
           <li>Selecione o arquivo e clique em <strong style="color:var(--text)">Importar</strong></li>
         </ol>
         <div style="margin-top:12px;padding:10px 12px;background:var(--surface2);border-radius:8px;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--text-dim);line-height:1.5">
-          Pode importar apenas o mês novo — o histórico já está salvo no banco.
+          Pode importar apenas o mês novo · o histórico ja esta salvo no banco.
         </div>
       </div>
 
@@ -533,12 +553,12 @@
           <span style="background:rgba(200,241,53,0.12);border:1px solid var(--accent);border-radius:6px;padding:3px 10px;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent);letter-spacing:.5px;text-transform:uppercase">De/Para Categorias</span>
           <span style="font-family:'DM Mono',monospace;font-size:0.7rem;color:#ff9f43">SUBSTITUI</span>
         </div>
-        <p style="font-size:0.8rem;color:var(--text-dim);line-height:1.6;margin:0 0 12px">Tabela que vincula cada produto (EAN/GTIN) à sua Categoria e Família. Cada importação <strong style="color:var(--text)">apaga e reescreve</strong> todo o De/Para — envie sempre o arquivo completo e atualizado.</p>
+        <p style="font-size:0.8rem;color:var(--text-dim);line-height:1.6;margin:0 0 12px">Tabela que vincula cada produto (EAN/GTIN) à sua Categoria e Família. Cada importação <strong style="color:var(--text)">apaga e reescreve</strong> todo o De/Para · envie sempre o arquivo completo e atualizado.</p>
         <ol style="font-size:0.78rem;color:var(--text-dim);line-height:1.8;margin:0;padding-left:18px">
           <li>Baixe o <strong style="color:var(--text)">Modelo XLSX</strong> ao lado do botão Importar</li>
           <li>Preencha: <code style="color:var(--accent2)">CODBARRAS · CATEGORIA · FAMILIA · NOME PRODUTO</code></li>
-          <li>Salve como <strong style="color:var(--text)">.XLSX</strong> — os códigos de barras são preservados com precisão total</li>
-          <li>O painel aplica o mapeamento em tempo real — sem nenhuma etapa adicional</li>
+          <li>Salve como <strong style="color:var(--text)">.XLSX</strong> · os códigos de barras são preservados com precisão total</li>
+          <li>O painel aplica o mapeamento em tempo real · sem nenhuma etapa adicional</li>
         </ol>
         <div style="margin-top:12px;padding:10px 12px;background:var(--surface2);border-radius:8px;font-family:'DM Mono',monospace;font-size:0.7rem;color:#ff9f43;line-height:1.5">
           Use sempre o formato XLSX (não CSV). O CSV pode truncar GTINs longos em notação científica.
@@ -551,7 +571,7 @@
           <span style="background:rgba(200,241,53,0.12);border:1px solid var(--accent);border-radius:6px;padding:3px 10px;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent);letter-spacing:.5px;text-transform:uppercase">De/Para Lojas</span>
           <span style="font-family:'DM Mono',monospace;font-size:0.7rem;color:#ff9f43">SUBSTITUI</span>
         </div>
-        <p style="font-size:0.8rem;color:var(--text-dim);line-height:1.6;margin:0 0 12px">Tabela que vincula cada código de filial ao seu nome fantasia. Cada importação <strong style="color:var(--text)">apaga e reescreve</strong> todo o De/Para — envie sempre o arquivo completo.</p>
+        <p style="font-size:0.8rem;color:var(--text-dim);line-height:1.6;margin:0 0 12px">Tabela que vincula cada código de filial ao seu nome fantasia. Cada importação <strong style="color:var(--text)">apaga e reescreve</strong> todo o De/Para · envie sempre o arquivo completo.</p>
         <ol style="font-size:0.78rem;color:var(--text-dim);line-height:1.8;margin:0;padding-left:18px">
           <li>Baixe o <strong style="color:var(--text)">Modelo CSV</strong> ao lado do botão Importar</li>
           <li>Preencha: <code style="color:var(--accent2)">Cod_Loja · Nome_Fantasia</code></li>
@@ -690,7 +710,7 @@
     <!-- Sub-aba: Modelos de Importação -->
     <div id="gu-sub-modelos" class="gu-subpanel">
       <p style="font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--text-dim);margin-bottom:20px;line-height:1.6">
-        Arquivos usados como modelo na área de importação. Clique em <strong style="color:var(--text)">Subir Novo</strong> para substituir um modelo pelo seu arquivo atualizado.
+        Arquivos usados como modelo na area de importação. Clique em <strong style="color:var(--text)">Subir Novo</strong> para substituir um modelo pelo seu arquivo atualizado.
       </p>
       <div class="gu-table-wrap">
         <table>
@@ -719,7 +739,7 @@
         </div>
       </div>
       <p style="font-family:'DM Mono',monospace;font-size:0.75rem;color:var(--text-dim);margin-bottom:18px;line-height:1.6">
-        Histórico de arquivos importados. Clique em <strong style="color:#e87070">Desfazer</strong> para reverter uma importação incorreta — os dados importados serão removidos do banco.
+        Histórico de arquivos importados. Clique em <strong style="color:#e87070">Desfazer</strong> para reverter uma importação incorreta · os dados importados seráo removidos do banco.
       </p>
       <div class="gu-table-wrap">
         <table>
@@ -1004,7 +1024,7 @@
     </div>
   </div>
 
-  <!-- GRÁFICO -->
+  <!-- GRÃFICO -->
   <div class="chart-card">
     <div class="chart-header">
       <div>
@@ -1032,7 +1052,7 @@
     <div id="v-table-body"><div class="no-data">Carregando...</div></div>
   </div>
 
-  <!-- GRÁFICO CATEGORIAS -->
+  <!-- GRÃFICO CATEGORIAS -->
   <div class="chart-card" style="margin-top:20px">
     <div class="chart-header">
       <div>
@@ -1056,7 +1076,7 @@
     <div id="v-cat1-table-body"><div class="no-data">Carregando...</div></div>
   </div>
 
-  <!-- GRÁFICO FAMÍLIAS -->
+  <!-- GRÃFICO FAMÃLIAS -->
   <div class="chart-card" style="margin-top:20px">
     <div class="chart-header">
       <div>
@@ -1074,7 +1094,7 @@
     </div>
   </div>
 
-  <!-- TABELA FAMÍLIAS -->
+  <!-- TABELA FAMÃLIAS -->
   <div class="table-card" style="margin-top:20px">
     <div class="table-head"><div class="table-head-title">Detalhamento por Família</div></div>
     <div id="v-fam1-table-body"><div class="no-data">Carregando...</div></div>
@@ -1147,7 +1167,7 @@
     </div>
   </div>
 
-  <!-- GRÁFICO -->
+  <!-- GRÃFICO -->
   <div class="chart-card">
     <div class="chart-header">
       <div>
@@ -1174,7 +1194,7 @@
     <div id="d2-table-body"><div class="no-data">Carregando...</div></div>
   </div>
 
-  <!-- GRÁFICO CATEGORIAS POR DIA -->
+  <!-- GRÃFICO CATEGORIAS POR DIA -->
   <div class="chart-card timeline-card-horizontal" style="margin-top:20px">
     <div class="chart-header">
       <div>
@@ -1199,7 +1219,7 @@
     <div id="cat2-table-body"><div class="no-data">Carregando...</div></div>
   </div>
 
-  <!-- GRÁFICO FAMÍLIAS POR DIA -->
+  <!-- GRÃFICO FAMÃLIAS POR DIA -->
   <div class="chart-card" style="margin-top:20px">
     <div class="chart-header">
       <div>
@@ -1217,7 +1237,7 @@
     </div>
   </div>
 
-  <!-- TABELA FAMÍLIAS -->
+  <!-- TABELA FAMÃLIAS -->
   <div class="table-card" style="margin-top:20px">
     <div class="table-head"><div class="table-head-title">Detalhamento por Família</div></div>
     <div id="fam2-table-body"><div class="no-data">Carregando...</div></div>
@@ -1269,9 +1289,9 @@
   <!-- KPIs -->
   <div class="kpi-row" id="d3-kpi-row">
     <div class="kpi-card">
-      <div class="kpi-label">Estoque Total (Qtd)</div>
+      <div class="kpi-label">Estoque Total</div>
       <div class="kpi-value" id="d3-kpi-total">—</div>
-      <div class="kpi-sub">unidades em estoque</div>
+      <div class="kpi-sub" id="d3-kpi-total-sub">unidades em estoque</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">Lojas com Estoque</div>
@@ -1290,7 +1310,7 @@
     </div>
   </div>
 
-  <!-- GRÁFICO ESTOQUE POR LOJA -->
+  <!-- GRÃFICO ESTOQUE POR LOJA -->
   <div class="chart-card">
     <div class="chart-header">
       <div>
@@ -1298,7 +1318,7 @@
         <div class="chart-subtitle" id="d3-chart-sub">Todos os períodos · Todas as lojas</div>
       </div>
       <div style="text-align:right;flex-shrink:0">
-        <div class="kpi-label">Total do período</div>
+        <div class="kpi-label">Total do dia</div>
         <div class="kpi-value" id="d3-chart-total-val" style="font-size:2.2rem">—</div>
         <div class="kpi-sub">unidades em estoque</div>
       </div>
@@ -1308,7 +1328,7 @@
     </div>
   </div>
 
-  <!-- GRÁFICO ESTOQUE POR DIA (linha temporal) -->
+  <!-- GRÃFICO ESTOQUE POR DIA (linha temporal) -->
   <div class="chart-card timeline-card-horizontal" style="margin-top:20px">
     <div class="chart-header">
       <div>
@@ -1353,8 +1373,9 @@
 <!-- /ABA 3 -->
 
 <script>
-// ── CONFIGURAÇÃO ──────────────────────────────────────────────────────────────
+// â”€â”€ CONFIGURAÇÃO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const API_BASE = '';
+let APP_CONFIG = { readOnly: false, ambiente: 'producao' };
 
 let rawData      = [];
 let rawDataPreviewOk = false; // liberado após o primeiro carregamento completo do servidor
@@ -1412,6 +1433,34 @@ const filtrosConstruidos = new Set();
 const DASHBOARD_CACHE_BUST_KEY = 'soneda_dashboard_cache_bust';
 const AGRE_CACHE_PREFIX = 'agre_v5__';
 
+function agreCache(key, data) {
+  const cacheKey = `${AGRE_CACHE_PREFIX}${key}`;
+  if (arguments.length > 1) {
+    const payload = { ts: Date.now(), data };
+    _agreMemCache.set(cacheKey, payload);
+    try { sessionStorage.setItem(cacheKey, JSON.stringify(payload)); } catch(e) {}
+    return data;
+  }
+
+  const mem = _agreMemCache.get(cacheKey);
+  if (mem && Date.now() - mem.ts < 60 * 60 * 1000) return mem.data;
+
+  try {
+    const raw = sessionStorage.getItem(cacheKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || Date.now() - parsed.ts >= 60 * 60 * 1000) {
+      sessionStorage.removeItem(cacheKey);
+      return null;
+    }
+    _agreMemCache.set(cacheKey, parsed);
+    return parsed.data;
+  } catch(e) {
+    sessionStorage.removeItem(cacheKey);
+    return null;
+  }
+}
+
 function limparCacheDashboard(notificarOutrasAbas = true) {
   _agreMemCache.clear();
   Object.keys(sessionStorage)
@@ -1431,7 +1480,7 @@ window.addEventListener('storage', event => {
   if (event.key === DASHBOARD_CACHE_BUST_KEY) limparCacheDashboard(false);
 });
 
-// ── HELPERS DE FILTRO INTERATIVO ──────────────────────────────────────────────
+// â”€â”€ HELPERS DE FILTRO INTERATIVO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function normalizeFilterValue(val) {
   return String(val ?? '').trim();
 }
@@ -1496,7 +1545,7 @@ function d2SetCatDropdown(val) {
 
 
 
-// ── API / MONGODB ─────────────────────────────────────────────────────────────
+// â”€â”€ API / MONGODB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function fetchJSON(endpoint, signal) {
   const opts = { cache: 'no-store' };
   if (signal) opts.signal = signal;
@@ -1505,7 +1554,47 @@ async function fetchJSON(endpoint, signal) {
   return res.json();
 }
 
-// ── AUTH ADM ──────────────────────────────────────────────────────────────────
+async function carregarConfigApp() {
+  try {
+    APP_CONFIG = await fetchJSON('/api/config');
+  } catch (_) {
+    APP_CONFIG = { readOnly: false, ambiente: 'producao' };
+  }
+  document.body.classList.toggle('read-only', !!APP_CONFIG.readOnly);
+  aplicarModoSomenteLeitura();
+}
+
+function aplicarModoSomenteLeitura() {
+  const readOnly = !!APP_CONFIG.readOnly;
+  const badge = document.getElementById('env-badge');
+  if (badge) badge.style.display = readOnly ? 'block' : 'none';
+  document.querySelectorAll(
+    '#import-painel .btn-import:not(.secondary), #gu-painel .btn-gu.novo, #gu-painel .btn-gu.excluir, #gu-painel .btn-gu.senha, #gu-painel input[type="file"]'
+  ).forEach(el => {
+    el.classList.add('write-action');
+    if ('disabled' in el) el.disabled = readOnly;
+    if (readOnly) el.title = 'Painel de teste em modo somente leitura.';
+  });
+}
+
+function bloquearSomenteLeitura(acao = 'Esta acao') {
+  if (!APP_CONFIG.readOnly) return false;
+  const msg = 'Painel de teste em modo somente leitura. Alteracoes foram bloqueadas.';
+  const importStatus = document.getElementById('import-status');
+  if (importStatus) {
+    importStatus.textContent = msg;
+    importStatus.className = 'import-status err';
+  }
+  const guMsg = document.querySelector('#gu-painel .gu-msg');
+  if (guMsg) {
+    guMsg.textContent = msg;
+    guMsg.className = 'gu-msg err';
+  }
+  alert(`${acao} bloqueada: ${msg}`);
+  return true;
+}
+
+// â”€â”€ AUTH ADM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function admGetToken() {
   return sessionStorage.getItem('adm_token');
 }
@@ -1525,6 +1614,7 @@ function admAtualizarUI() {
     painelEl.style.display = 'none';
     if (barEl) barEl.style.display = 'none';
   }
+  aplicarModoSomenteLeitura();
 }
 
 const OLHO_ABERTO  = `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`;
@@ -1580,6 +1670,7 @@ async function admLogout() {
 }
 
 async function enviarCSV(inputId, rota) {
+  if (bloquearSomenteLeitura('Importacao')) return;
   const fileInput = document.getElementById(inputId);
   const status    = document.getElementById('import-status');
   const token     = admGetToken();
@@ -1597,7 +1688,7 @@ async function enviarCSV(inputId, rota) {
   const setProgresso = (atual, total, msg) => {
     const pct = total > 0 ? Math.round((atual / total) * 100) : 0;
     const blocos = Math.round(pct / 5); // barra de 20 blocos
-    const barra = '█'.repeat(blocos) + '░'.repeat(20 - blocos);
+    const barra = 'â–ˆ'.repeat(blocos) + 'â–‘'.repeat(20 - blocos);
     status.innerHTML = `<span style="font-family:'DM Mono',monospace">[${barra}] ${pct}%</span> ${msg}`;
     status.className = 'import-status';
   };
@@ -1634,7 +1725,7 @@ async function enviarCSV(inputId, rota) {
       formData.append('totalRecords', String(dados.length));
 
       setProgresso(i, totalLotes,
-        `Enviando lote ${i + 1} de ${totalLotes} · ${fatia.length.toLocaleString('pt-BR')} linhas · total ${dados.length.toLocaleString('pt-BR')} registros`);
+        `Enviando lote ${i + 1} de ${totalLotes} ? ${fatia.length.toLocaleString('pt-BR')} linhas ? total ${dados.length.toLocaleString('pt-BR')} registros`);
 
       const response = await fetch(`${API_BASE}${rota}`, {
         method: 'POST',
@@ -1660,7 +1751,7 @@ async function enviarCSV(inputId, rota) {
     }
 
     setProgresso(totalLotes, totalLotes, '');
-    status.innerHTML = `✔ Importação concluída — <strong>${totalInserido.toLocaleString('pt-BR')}</strong> registros inseridos em ${totalLotes} lote${totalLotes > 1 ? 's' : ''}.`;
+    status.innerHTML = `✓ Importação concluída · <strong>${totalInserido.toLocaleString('pt-BR')}</strong> registros inseridos em ${totalLotes} lote${totalLotes > 1 ? 's' : ''}.`;
     if (retencaoInfo?.aplicado) {
       status.innerHTML += ` Retencao aplicada: ${Number(retencaoInfo.registrosRemovidos || 0).toLocaleString('pt-BR')} registros antigos removidos; mantidos ${retencaoInfo.mesesMantidos?.length || 13} meses.`;
     }
@@ -1689,6 +1780,7 @@ function recarregarDados() {
 }
 
 async function enviarXLSX(inputId, rota) {
+  if (bloquearSomenteLeitura('Importacao')) return;
   const fileInput = document.getElementById(inputId);
   const status    = document.getElementById('import-status');
   const token     = admGetToken();
@@ -1728,7 +1820,7 @@ async function enviarXLSX(inputId, rota) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.erro || data.detalhe || 'Erro desconhecido');
 
-    status.innerHTML = `✔ Importação concluída — <strong>${(data.inserido || 0).toLocaleString('pt-BR')}</strong> registros inseridos.`;
+    status.innerHTML = `✓ Importação concluída · <strong>${(data.inserido || 0).toLocaleString('pt-BR')}</strong> registros inseridos.`;
     status.className = 'import-status ok';
     limparCacheDashboard();
     setTimeout(() => recarregarDados(), 900);
@@ -1740,9 +1832,10 @@ async function enviarXLSX(inputId, rota) {
   }
 }
 
-// ── INICIALIZAÇÃO ─────────────────────────────────────────────────────────────
+// â”€â”€ INICIALIZAÇÃO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function init() {
   try {
+    await carregarConfigApp();
     
     const [brutosRes, deParaRes, catRes, resumoRes, catsRes, famsRes, filtrosRes] = await Promise.allSettled([
       Promise.resolve([]),
@@ -1773,7 +1866,7 @@ async function init() {
         const rows = Array.isArray(catRes.value) ? catRes.value : [];
         if (rows.length > 0) {
           const semAcento = s => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-          const valido = v => v && v !== '-' && v !== '–' && v !== '—';
+          const valido = v => v && v !== '-' && v !== 'â€“' && v !== '?';
 
           rows.forEach(r => {
             const keys  = Object.keys(r).filter(k => k !== '_id');
@@ -1809,13 +1902,13 @@ async function init() {
     if (catsRes.status === 'fulfilled') {
       try {
         catList = (Array.isArray(catsRes.value) ? catsRes.value : [])
-          .map(r => r._id).filter(v => v && v !== '-' && v !== '–').sort();
+          .map(r => r._id).filter(v => v && v !== '-' && v !== 'â€“').sort();
       } catch(e) {}
     }
     if (famsRes.status === 'fulfilled') {
       try {
         familiaList = (Array.isArray(famsRes.value) ? famsRes.value : [])
-          .map(r => r._id).filter(v => v && v !== '-' && v !== '–').sort();
+          .map(r => r._id).filter(v => v && v !== '-' && v !== 'â€“').sort();
       } catch(e) {}
     }
 
@@ -1838,9 +1931,9 @@ async function init() {
     rawData = todas
       .filter(r => r && typeof r === 'object' && Object.keys(r).some(k => k !== '_id' && k !== 'importado_em' && r[k] !== null && r[k] !== ''))
       .map(r => {
-        // Strip BOM (﻿) from field names (e.g. first column from Excel CSV exports)
+        // Strip BOM (ï»¿) from field names (e.g. first column from Excel CSV exports)
         const c = {};
-        Object.keys(r).forEach(k => { c[k.replace(/^﻿/, '')] = r[k]; });
+        Object.keys(r).forEach(k => { c[k.replace(/^ï»¿/, '')] = r[k]; });
         if (c.Ano !== undefined && c.Ano !== null) c.Ano = String(c.Ano).trim();
         if (c.Loja) c.Loja = normCodLoja(c.Loja);
         // Synthesize Data (DD/MM/YYYY) from Mês + Ano when no Data column exists
@@ -1867,7 +1960,7 @@ async function init() {
         })}`;
     } else {
       document.getElementById('status-msg').textContent =
-        `${rawData.length.toLocaleString('pt-BR')} registros carregados do MongoDB · ${Object.keys(deParaMap).length} lojas no de-para`;
+        `${rawData.length.toLocaleString('pt-BR')} registros carregados do MongoDB ? ${Object.keys(deParaMap).length} lojas no de-para`;
     }
 
     preencherAnoMesTodasAbas();
@@ -1884,7 +1977,7 @@ async function init() {
   }
 }
 
-// ── HELPERS ───────────────────────────────────────────────────────────────────
+// â”€â”€ HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function col(row, ...nomes) {
   for (const n of nomes) {
     if (row[n] !== undefined && row[n] !== '') return row[n];
@@ -1908,9 +2001,18 @@ function normCodLoja(v) {
   return !isNaN(n) ? String(n) : s;
 }
 
+
+function nomeLojaDePara(loja) {
+  const raw = String(loja ?? '').trim();
+  if (!raw) return '';
+  const norm = normCodLoja(raw);
+  const padded = /^\d+$/.test(norm) ? norm.padStart(2, '0') : norm;
+  return deParaMap[raw] || deParaMap[norm] || deParaMap[padded] || `Filial ${norm || raw}`;
+}
+
 function normalizarCodigoBarras(valor) {
   let s = String(valor ?? '').trim().replace(/^["']|["']$/g, '');
-  // notação científica com vírgula BR: "7,9E+12" → "7.9E+12"
+  // notação científica com vírgula BR: "7,9E+12" â†’ "7.9E+12"
   s = s.replace(/^(\d+),(\d*[eE])/, '$1.$2');
   // notação científica com ponto: "7.9E+12"
   if (/^\d+\.?\d*[eE][+\-]?\d+$/i.test(s)) s = String(Math.round(Number(s)));
@@ -1923,7 +2025,7 @@ function parseDataBR(raw) {
   const txt = String(raw).trim();
   if (!txt) return null;
 
-  // ISO AAAA-MM-DD — evita problema de fuso horário (UTC vs local)
+  // ISO AAAA-MM-DD ? evita problema de fuso horario (UTC vs local)
   const iso = txt.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (iso) {
     const dt = new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]));
@@ -1939,13 +2041,13 @@ function parseDataBR(raw) {
     if (!Number.isNaN(a) && !Number.isNaN(b) && !Number.isNaN(y) && y >= 1900) {
       let d, m;
       if (a > 12) {
-        // primeiro número > 12 → obrigatoriamente dia (DD/MM/AAAA)
+        // primeiro número > 12 â†’ obrigatoriamente dia (DD/MM/AAAA)
         d = a; m = b;
       } else if (b > 12) {
-        // segundo número > 12 → obrigatoriamente dia, primeiro é mês (M/D/AAAA)
+        // segundo número > 12 â†’ obrigatoriamente dia, primeiro ? mês (M/D/AAAA)
         m = a; d = b;
       } else {
-        // ambíguo: padrão brasileiro DD/MM/AAAA
+        // ambiguo: padrao brasileiro DD/MM/AAAA
         d = a; m = b;
       }
       if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
@@ -1995,7 +2097,7 @@ function ocultarEstado() {
   if (el) el.style.display = 'none';
 }
 
-// ── FILTROS ───────────────────────────────────────────────────────────────────
+// â”€â”€ FILTROS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function filtroAnos() {
   return filterOptions.anos.length
     ? filterOptions.anos
@@ -2048,13 +2150,21 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+function normalizarBusca(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 function periodoLabel(prefix) {
   const anos = selectedValues(`${prefix}-ano`);
   const meses = selectedValues(`${prefix}-mes`);
   return [
     formatSelection(anos, 'ano', 'anos'),
     formatSelection(meses, 'meses', 'meses')
-  ].filter(Boolean).join(' · ') || 'Todos os períodos';
+  ].filter(Boolean).join(' ? ') || 'Todos os períodos';
 }
 
 function filtroLabel(id, vazio, plural) {
@@ -2077,6 +2187,9 @@ function prepararMultiSelect(select) {
     wrap.querySelector('.multi-select-btn').addEventListener('click', () => {
       document.querySelectorAll('.multi-select.open').forEach(el => { if (el !== wrap) el.classList.remove('open'); });
       wrap.classList.toggle('open');
+      if (wrap.classList.contains('open')) {
+        setTimeout(() => wrap.querySelector('.multi-select-search-input')?.focus(), 0);
+      }
     });
   }
   updateMultiSelect(select);
@@ -2092,15 +2205,42 @@ function updateMultiSelect(selectOrId) {
   const emptyLabel = select.options[0]?.textContent?.trim() || 'Todos';
   wrap.querySelector('.multi-select-label').textContent = formatSelection(labels, '', '') || emptyLabel;
   const menu = wrap.querySelector('.multi-select-menu');
+  const searchInputAtual = menu.querySelector('.multi-select-search-input');
+  const manterFocoBusca = document.activeElement === searchInputAtual;
+  const cursorBusca = manterFocoBusca ? searchInputAtual.selectionStart : null;
+  const busca = wrap.dataset.search || '';
+  const buscaNorm = normalizarBusca(busca);
   const options = [...select.options].filter(o => o.value);
+  const filteredOptions = buscaNorm
+    ? options.filter(o => normalizarBusca(`${o.textContent} ${o.value}`).includes(buscaNorm))
+    : options;
   menu.innerHTML = [
+    `<div class="multi-select-search"><input type="search" class="multi-select-search-input" placeholder="Buscar..." value="${escapeHtml(busca)}"></div>`,
     `<label class="multi-select-option all"><input type="checkbox" value="" ${values.length ? '' : 'checked'}>${escapeHtml(emptyLabel)}</label>`,
-    ...options.map(o => `<label class="multi-select-option"><input type="checkbox" value="${escapeHtml(o.value)}" ${o.selected ? 'checked' : ''}>${escapeHtml(o.textContent)}</label>`)
+    ...filteredOptions.map(o => `<label class="multi-select-option"><input type="checkbox" value="${escapeHtml(o.value)}" ${o.selected ? 'checked' : ''}>${escapeHtml(o.textContent)}</label>`),
+    filteredOptions.length ? '' : '<div class="multi-select-empty">Nenhum resultado encontrado</div>'
   ].join('');
+  const searchInput = menu.querySelector('.multi-select-search-input');
+  searchInput.addEventListener('input', () => {
+    wrap.dataset.search = searchInput.value;
+    updateMultiSelect(select);
+  });
+  searchInput.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      wrap.dataset.search = '';
+      updateMultiSelect(select);
+    }
+  });
+  if (manterFocoBusca) {
+    searchInput.focus();
+    searchInput.setSelectionRange(cursorBusca, cursorBusca);
+  }
   menu.querySelectorAll('input').forEach(input => {
+    if (input.classList.contains('multi-select-search-input')) return;
     input.addEventListener('change', () => {
       if (!input.value) {
         [...select.options].forEach(o => { o.selected = false; });
+        wrap.dataset.search = '';
       } else {
         const opt = [...select.options].find(o => o.value === input.value);
         if (opt) opt.selected = input.checked;
@@ -2164,8 +2304,8 @@ function construirFiltros() {
   sA.innerHTML = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
   sM.innerHTML = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
   sL.innerHTML = '<option value="">Todas</option>' + lojas.map(l => {
-    const nome = deParaMap[l] || `Filial ${l}`;
-    return `<option value="${l}">#${l} · ${nome}</option>`;
+    const nome = nomeLojaDePara(l);
+    return `<option value="${l}">#${l} - ${nome}</option>`;
   }).join('');
   sC.innerHTML = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   sF.innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
@@ -2174,6 +2314,26 @@ function construirFiltros() {
   ['f-ano','f-mes','f-di','f-df','f-loja','f-cat','f-familia'].forEach(id =>
     document.getElementById(id).addEventListener('change', renderizar)
   );
+}
+
+const filtrosAbasConstruidos = new Set();
+function garantirFiltrosAba(prefix) {
+  if (filtrosAbasConstruidos.has(prefix)) return;
+  const builders = {
+    f: construirFiltros,
+    v: vConstruirFiltros,
+    d2: d2ConstruirFiltros,
+    d3: d3ConstruirFiltros,
+    se: seConstruirFiltros
+  };
+  const builder = builders[prefix];
+  if (typeof builder !== 'function') return;
+  builder();
+  filtrosAbasConstruidos.add(prefix);
+}
+
+function prepararAbasOcultas() {
+  ['v', 'd2', 'd3', 'se'].forEach(prefix => garantirFiltrosAba(prefix));
 }
 
 function limparFiltros() {
@@ -2217,7 +2377,7 @@ function filtrar(excl) {
   });
 }
 
-// ── AGGREGATE ─────────────────────────────────────────────────────────────────
+// â”€â”€ AGGREGATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function agruparPorLoja(data) {
   const map = {};
   data.forEach(r => {
@@ -2225,7 +2385,7 @@ function agruparPorLoja(data) {
     if (!loja) return;
     const qty = parseBR(col(r,'Venda (Qtd)','Venda Nf Quantidade','Venda Pdv Quantidade'));
     const key = loja.trim();
-    const nome = deParaMap[key] || `Filial ${key}`;
+    const nome = nomeLojaDePara(key);
     if (!map[key]) {
       map[key] = { loja: key, nome, qty: 0 };
     }
@@ -2254,7 +2414,7 @@ function buildAgreParams(prefix, activeObj) {
   return params;
 }
 
-// ── OVERLAY DE CARREGAMENTO ────────────────────────────────────────────────────
+// â”€â”€ OVERLAY DE CARREGAMENTO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function setChartLoading(ids, isLoading) {
   ids.forEach(id => {
     const wrap = document.getElementById(id);
@@ -2277,116 +2437,69 @@ function setChartLoading(ids, isLoading) {
 const D3_LOADING_IDS = ['d3-kpi-row','d3-chart-wrap','d3-line-wrap','d3-table-body','d3-rot-produtos-body','d3-rot-categorias-body'];
 const SE_LOADING_IDS = ['se-kpi-row','se-chart-wrap','se-table-body'];
 
-// ── PRÉ-AQUECIMENTO DE CACHE ─────────────────────────────────────────────────
-// Chama silenciosamente os próximos filtros mais prováveis para eles já estarem em cache
+// â”€â”€ PRÉ-AQUECIMENTO DE CACHE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Chama silenciosamente os proximos filtros mais provaveis para eles j - estarem em cache
 let _prefetchTimer = null;
 function prefetchFiltros(ag) {
   if (_prefetchTimer) clearTimeout(_prefetchTimer);
   _prefetchTimer = setTimeout(() => {
-    const base = buildAgreParams('f', { dim: null, val: null });
-    const lojasTopo = (ag.por_loja || []).slice(0, 5).map(r => r.loja).filter(Boolean);
-    const catsTopo  = (ag.por_cat  || []).slice(0, 3).map(r => r.cat).filter(c => c && c !== 'Sem mapeamento');
-    const famsTopo  = (ag.por_fam  || []).slice(0, 3).map(r => r.fam).filter(f => f && f !== 'Sem mapeamento');
-    const filas = [
-      ...lojasTopo.map(l => { const p = new URLSearchParams(base); p.set('ativo_loja', l); return p.toString(); }),
-      ...catsTopo.map(c  => { const p = new URLSearchParams(base); p.set('ativo_cat', c);  return p.toString(); }),
-      ...famsTopo.map(f  => { const p = new URLSearchParams(base); p.set('ativo_familia', f); return p.toString(); }),
-    ].filter(k => !agreCache(k)); // só busca se ainda não está em cache
-
-    let i = 0;
-    function next() {
-      if (i >= filas.length) return;
-      const k = filas[i++];
-      fetchJSON(`${API_BASE}/api/dashboard/agregados?${k}`)
-        .then(ag => agreCache(k, ag))
-        .catch(() => {})
-        .finally(() => setTimeout(next, 300)); // espaça 300ms para não sobrecarregar
-    }
-    next();
-  }, 1500); // começa 1.5s após o render para não competir com a UI
-}
-
-// ── CACHE DE AGREGADOS (somente memória da aba atual, TTL 60 min) ─────────────
-const AGRE_CACHE_TTL = 60 * 60 * 1000;
-function agreCache(key, data) {
-  const k = AGRE_CACHE_PREFIX + key;
-  if (data !== undefined) {
-    _agreMemCache.set(k, { t: Date.now(), d: data });
-    return data;
-  }
-  // Memória primeiro (sem JSON.parse)
-  const mem = _agreMemCache.get(k);
-  if (mem && (Date.now() - mem.t) < AGRE_CACHE_TTL) return mem.d;
-  return null;
-}
-
-// ── RENDER PRINCIPAL ──────────────────────────────────────────────────────────
-let _prewarmStarted = false;
-
-function prepararAbasOcultas() {
-  garantirFiltrosAba('v');
-  garantirFiltrosAba('d2');
-  garantirFiltrosAba('d3');
-  garantirFiltrosAba('se');
-}
-
-function garantirFiltrosAba(prefix) {
-  if (filtrosConstruidos.has(prefix)) return;
-
-  if (prefix === 'f') construirFiltros();
-  if (prefix === 'v') vConstruirFiltros();
-  if (prefix === 'd2') d2ConstruirFiltros();
-  if (prefix === 'd3') d3ConstruirFiltros();
-  if (prefix === 'se') seConstruirFiltros();
-
-  aplicarFiltroAtual(prefix);
-  filtrosConstruidos.add(prefix);
-}
-
-function preaquecerAbasDashboard() {
-  if (_prewarmStarted) return;
-  _prewarmStarted = true;
-
-  setTimeout(() => {
     try {
-      prepararAbasOcultas();
+      const base = buildAgreParams('f', { dim: null, val: null });
+      const lojasTopo = (ag.por_loja || []).slice(0, 5).map(r => r.loja).filter(Boolean);
+      const catsTopo  = (ag.por_cat  || []).slice(0, 3).map(r => r.cat).filter(c => c && c !== 'Sem mapeamento');
+      const famsTopo  = (ag.por_fam  || []).slice(0, 3).map(r => r.fam).filter(f => f && f !== 'Sem mapeamento');
+      const filas = [
+        ...lojasTopo.map(l => { const p = new URLSearchParams(base); p.set('ativo_loja', l); return p.toString(); }),
+        ...catsTopo.map(c  => { const p = new URLSearchParams(base); p.set('ativo_cat', c);  return p.toString(); }),
+        ...famsTopo.map(f  => { const p = new URLSearchParams(base); p.set('ativo_familia', f); return p.toString(); }),
+      ].filter(k => !agreCache(k));
 
-      const d2ParamsObj = buildAgreParams('d2', d2_active);
-      d2ParamsObj.set('detalhe_dia', '1');
-      const d2Params = d2ParamsObj.toString();
-      const d2Key = 'd2v2:' + d2Params;
-      if (!agreCache(d2Key)) {
-        fetchJSON(`${API_BASE}/api/dashboard/agregados?${d2Params}`)
-          .then(ag => agreCache(d2Key, ag))
-          .catch(() => {});
+      let i = 0;
+      function next() {
+        if (i >= filas.length) return;
+        const k = filas[i++];
+        fetchJSON(`${API_BASE}/api/dashboard/agregados?${k}`)
+          .then(agResp => agreCache(k, agResp))
+          .catch(() => {})
+          .finally(() => setTimeout(next, 300));
       }
-
-      const vParams = buildAgreParams('v', v_active).toString();
-      if (!agreCache(vParams)) {
-        fetchJSON(`${API_BASE}/api/dashboard/agregados?${vParams}`)
-          .then(ag => agreCache(vParams, ag))
-          .catch(() => {});
-      }
-
-      const d3Params = buildAgreParams('d3', d3_active).toString();
-      fetchJSON(`${API_BASE}/api/dashboard/estoque-resumo?${d3Params}`)
-        .then(ag => { d3_estoqueAg = ag; })
-        .catch(() => {});
-
-      const seParamsMain = seParams(true);
-      Promise.all([
-        fetchJSON(`${API_BASE}/api/dashboard/agregados?${seParamsMain}`),
-        fetchJSON(`${API_BASE}/api/dashboard/estoque-resumo?${seParamsMain}`)
-      ]).catch(() => {});
+      next();
     } catch(e) {
       console.warn('Preaquecimento das abas falhou:', e.message);
     }
   }, 900);
 }
 
+let _prewarmStarted = false;
+function preaquecerAbasDashboard() {
+  if (_prewarmStarted) return;
+  _prewarmStarted = true;
+  setTimeout(() => {
+    try {
+      const jobs = [];
+      const vParams = buildAgreParams('v', v_active);
+      const d2Params = buildAgreParams('d2', d2_active);
+      d2Params.set('detalhe_dia', '1');
+      const d3Params = buildAgreParams('d3', d3_active);
+      d3Params.set('escopo', 'loja');
+      const seMain = buildAgreParams('se', null);
+
+      jobs.push(fetchJSON(`${API_BASE}/api/dashboard/agregados?${vParams}`).then(data => agreCache(vParams.toString(), data)));
+      jobs.push(fetchJSON(`${API_BASE}/api/dashboard/agregados?${d2Params}`).then(data => agreCache(`d2v2:${d2Params.toString()}`, data)));
+      jobs.push(fetchJSON(`${API_BASE}/api/dashboard/estoque-resumo?${d3Params}`));
+      jobs.push(fetchJSON(`${API_BASE}/api/dashboard/agregados?${seMain}`));
+      jobs.push(fetchJSON(`${API_BASE}/api/dashboard/estoque-resumo?${seMain}`));
+
+      Promise.allSettled(jobs).catch(() => {});
+    } catch(e) {
+      console.warn('Preaquecimento das abas falhou:', e.message);
+    }
+  }, 1200);
+}
+
 async function renderizar() {
   mostrarBanner('f-active-banner', f_active,
-    {loja:'FILIAL', cat:'CATEGORIA', familia:'FAMÍLIA'}, 'fLimparAtivo');
+    {loja:'FILIAL', cat:'CATEGORIA', familia:'FAMÃLIA'}, 'fLimparAtivo');
 
   document.getElementById('chart-sub').textContent = periodoLabel('f');
   document.getElementById('loja-ativa').style.display = 'none';
@@ -2396,7 +2509,7 @@ async function renderizar() {
   const toByLoja = ag => ag.por_loja
     .map(r => {
       const loja = normCodLoja(String(r.loja||''));
-      const nome = deParaMap[loja] || `Filial ${loja}`;
+      const nome = nomeLojaDePara(loja);
       return { loja, nome, qty: r.qty };
     })
     .filter(r => r.loja);
@@ -2454,13 +2567,13 @@ async function renderizar() {
     }
     if (ag.por_cat.length > 0) renderCat1(null, ag.por_cat, ag); else renderCat1(filtrar('cat'));
     if (ag.por_fam.length > 0) renderFam1(null, ag.por_fam, ag); else renderFam1(filtrar('familia'));
-    // Pré-aquece cache para os filtros dos itens que já estão na tela (sem bloquear UI)
+    // Pr?-aquece cache para os filtros dos itens que ja estao na tela (sem bloquear UI)
     // Evita disparar consultas pesadas em lote logo apos importacoes grandes.
     // Os filtros continuam carregando sob demanda quando o usuario interage.
   } catch(e) {
-    if (e.name === 'AbortError') return; // filtro mais recente já está carregando, ignorar
+    if (e.name === 'AbortError') return; // filtro mais recente ja esta carregando, ignorar
     setChartLoading(['f-kpi-row','chart-wrap','cat1-wrap','fam1-wrap','table-body','cat1-table-body','fam1-table-body'], false);
-    console.warn('Agregados backend indisponíveis:', e.message);
+    console.warn('Agregados backend indisponiveis:', e.message);
     if (!rawDataPreviewOk) {
       const byLojaChart = agruparPorLoja(filtrar('loja'));
       renderGrafico(byLojaChart); renderTabela(byLojaChart);
@@ -2474,7 +2587,7 @@ function renderKPIs(byLoja, ag) {
   const total = ag && ag.por_dia
     ? ag.por_dia.reduce((s, r) => s + r.qty, 0)
     : byLoja.reduce((s, r) => s + r.qty, 0);
-  // quando filtra por loja específica, por_loja retorna todas as lojas (design cross-filter) → forçar 1
+  // quando filtra por loja específica, por_loja retorna todas as lojas (design cross-filter) â†’ for?ar 1
   const filtrandoLoja = f_active.dim === 'loja';
   const lojas = filtrandoLoja ? 1 : byLoja.filter(r => r.qty > 0).length;
   const top   = filtrandoLoja
@@ -2556,7 +2669,7 @@ function renderGrafico(byLoja, ag) {
   const tickColor = ctx => !sel ? '#8891aa' : byLoja[ctx.index]?.loja === sel ? '#c8f135' : '#3a4060';
   const onClickLoja = (evt, elements) => { if (elements.length > 0) fSetFilter('loja', byLoja[elements[0].index].loja); };
 
-  // Atualiza gráfico existente no lugar (sem destruir/recriar → sem animação de entrada)
+  // Atualiza gráfico existente no lugar (sem destruir/recriar â†’ sem animação de entrada)
   if (chartInst) {
     chartInst.data.labels = labels;
     chartInst.data.datasets[0].data = values;
@@ -2634,12 +2747,12 @@ function renderCat1(data, preAg, ag) {
     ? preAg.map(r => ({ cat: r.cat || SEM_MAP, qty: r.qty }))
     : agruparPorCategoria(data || []).map(r => ({ ...r, cat: r.cat === 'SEM CATEGORIA' ? SEM_MAP : (r.cat || SEM_MAP) }));
   const total = byCat.reduce((s,r) => s + r.qty, 0);
-  // por_dia aplica todos os filtros (incluindo cat) → total correto no cross-filter
+  // por_dia aplica todos os filtros (incluindo cat) â†’ total correto no cross-filter
   const displayTotal = ag && ag.por_dia
     ? ag.por_dia.reduce((s, r) => s + r.qty, 0)
     : total;
   const cat1TotalEl = document.getElementById('cat1-total-val');
-  if (cat1TotalEl) cat1TotalEl.textContent = displayTotal > 0 ? displayTotal.toLocaleString('pt-BR') : '—';
+  if (cat1TotalEl) cat1TotalEl.textContent = displayTotal > 0 ? displayTotal.toLocaleString('pt-BR') : '?';
 
   document.getElementById('cat1-sub').textContent = periodoLabel('f');
 
@@ -2656,7 +2769,7 @@ function renderCat1(data, preAg, ag) {
   }
   if (state) state.style.display = 'none';
 
-  // Separa mapeados (para o gráfico) dos sem mapeamento (só na tabela)
+  // Separa mapeados (para o gráfico) dos sem mapeamento (s - na tabela)
   const byCatChart = byCat.filter(r => r.cat !== SEM_MAP);
   const byCatSorted = [...byCatChart].sort((a,b) => {
     let va, vb;
@@ -2786,12 +2899,12 @@ function renderFam1(data, preAg, ag) {
     ? preAg.map(r => ({ fam: r.fam || SEM_MAP, qty: r.qty }))
     : agruparPorFamilia(data || []).map(r => ({ ...r, fam: r.fam || SEM_MAP }));
   const total = byFam.reduce((s,r) => s + r.qty, 0);
-  // por_dia aplica todos os filtros → total correto no cross-filter
+  // por_dia aplica todos os filtros â†’ total correto no cross-filter
   const displayTotal = ag && ag.por_dia
     ? ag.por_dia.reduce((s, r) => s + r.qty, 0)
     : total;
   const fam1TotalEl = document.getElementById('fam1-total-val');
-  if (fam1TotalEl) fam1TotalEl.textContent = displayTotal > 0 ? displayTotal.toLocaleString('pt-BR') : '—';
+  if (fam1TotalEl) fam1TotalEl.textContent = displayTotal > 0 ? displayTotal.toLocaleString('pt-BR') : '?';
 
   document.getElementById('fam1-sub').textContent = periodoLabel('f');
 
@@ -2808,7 +2921,7 @@ function renderFam1(data, preAg, ag) {
   }
   if (state) state.style.display = 'none';
 
-  // Separa mapeados (para o gráfico) dos sem mapeamento (só na tabela)
+  // Separa mapeados (para o gráfico) dos sem mapeamento (s - na tabela)
   const byFamChart = byFam.filter(r => r.fam !== SEM_MAP);
   const byFamSorted = [...byFamChart].sort((a,b) => {
     let va, vb;
@@ -2985,7 +3098,7 @@ function renderTabela(byLoja) {
   </table>`;
 }
 
-// ── ABA 2: VENDA POR DIA ──────────────────────────────────────────────────────
+// â”€â”€ ABA 2: VENDA POR DIA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function d2ConstruirFiltros() {
   const anos  = filtroAnos();
   const meses = filtroMeses();
@@ -2998,8 +3111,8 @@ function d2ConstruirFiltros() {
   document.getElementById('d2-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
   document.getElementById('d2-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
   document.getElementById('d2-loja').innerHTML    = '<option value="">Todas</option>' + lojas.map(l => {
-    const nome = deParaMap[l] || `Filial ${l}`;
-    return `<option value="${l}">#${l} · ${nome}</option>`;
+    const nome = nomeLojaDePara(l);
+    return `<option value="${l}">#${l} - ${nome}</option>`;
   }).join('');
   document.getElementById('d2-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   document.getElementById('d2-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
@@ -3070,7 +3183,7 @@ function d2AgruparPorDia(data) {
     const iso = dt ? dataParaISO(dt) : dataOriginal;
 
     // A chave segue a DATA ORIGINAL da aba Dados Brutos.
-    // Assim a tabela mostra exatamente o que está na coluna Data, sem converter para ISO.
+    // Assim a tabela mostra exatamente o que est - na coluna Data, sem converter para ISO.
     const key = dataOriginal;
 
     const qty = parseBR(col(r,'Venda (Qtd)','Venda Nf Quantidade','Venda Pdv Quantidade'));
@@ -3085,7 +3198,7 @@ function d2FormatarData(valor) {
   if (!valor) return valor;
   const s = String(valor).trim();
   const MESES_BR = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-  // ISO YYYY-MM-DD: dia 01 → "Mar/2026" (dado mensal); senão → "15/03/2026"
+  // ISO YYYY-MM-DD: dia 01 â†’ "Mar/2026" (dado mensal); senão â†’ "15/03/2026"
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
     const [y, m, d] = s.split('-');
     if (d === '01') return `${MESES_BR[parseInt(m,10)-1]}/${y}`;
@@ -3120,7 +3233,7 @@ function d2RenderSemDados() {
   const d2ChartTotalEl = document.getElementById('d2-chart-total-val');
   if (d2ChartTotalEl) d2ChartTotalEl.textContent = '0';
   const d2StatusEl = document.getElementById('d2-status-msg');
-  if (d2StatusEl) d2StatusEl.textContent = '0 unidades vendidas · 0 períodos com venda';
+  if (d2StatusEl) d2StatusEl.textContent = '0 unidades vendidas \u00B7 0 períodos com venda';
   document.getElementById('d2-kpi-total').textContent = '0';
   document.getElementById('d2-kpi-dias').textContent = '0';
   document.getElementById('d2-kpi-media').textContent = '0';
@@ -3152,7 +3265,7 @@ async function d2Renderizar() {
   const nomeLoja = filtroLabel('d2-loja', 'Todas as lojas', 'lojas');
 
   document.getElementById('d2-chart-sub').textContent =
-    periodoLabel('d2') + ' · ' + nomeLoja;
+    periodoLabel('d2') + ' \u00B7 ' + nomeLoja;
 
   const toDia = r => {
     const dt = parseDataBR(String(r.data || ''));
@@ -3199,7 +3312,7 @@ async function d2Renderizar() {
   } catch(e) {
     if (e.name === 'AbortError') return;
     setChartLoading(D2_IDS, false);
-    console.warn('Agregados backend indisponíveis:', e.message);
+    console.warn('Agregados backend indisponiveis:', e.message);
   }
 }
 
@@ -3210,17 +3323,17 @@ function d2AtualizarGrafico(porDia, porDiaTabela, ag) {
   const top   = porDia.reduce((a,b) => b.qty > (a?.qty||0) ? b : a, null);
 
   const d2ChartTotalEl = document.getElementById('d2-chart-total-val');
-  if (d2ChartTotalEl) d2ChartTotalEl.textContent = total > 0 ? total.toLocaleString('pt-BR') : '—';
+  if (d2ChartTotalEl) d2ChartTotalEl.textContent = total > 0 ? total.toLocaleString('pt-BR') : '?';
 
   const d2StatusEl = document.getElementById('d2-status-msg');
   if (d2StatusEl) d2StatusEl.textContent =
-    `${total.toLocaleString('pt-BR')} unidades vendidas · ${dias} período${dias !== 1 ? 's' : ''} com venda`;
+    `${total.toLocaleString('pt-BR')} unidades vendidas \u00B7 ${dias} período${dias !== 1 ? 's' : ''} com venda`;
 
   document.getElementById('d2-kpi-total').textContent   = total.toLocaleString('pt-BR');
   document.getElementById('d2-kpi-dias').textContent    = dias;
   document.getElementById('d2-kpi-media').textContent   = Math.round(media).toLocaleString('pt-BR');
-  document.getElementById('d2-kpi-top').textContent     = top ? d2FormatarData(top.data) : '—';
-  document.getElementById('d2-kpi-top-sub').textContent = top ? `${top.qty.toLocaleString('pt-BR')} un.` : '—';
+  document.getElementById('d2-kpi-top').textContent     = top ? d2FormatarData(top.data) : '?';
+  document.getElementById('d2-kpi-top-sub').textContent = top ? `${top.qty.toLocaleString('pt-BR')} un.` : '?';
 
   const d2State = document.getElementById('d2-chart-state');
   if (porDia.length === 0 || total <= 0) {
@@ -3343,7 +3456,7 @@ function d2AtualizarGrafico(porDia, porDiaTabela, ag) {
 
 function renderCat2(data, preAg) {
   const nomeLoja = filtroLabel('d2-loja', 'Todas as lojas', 'lojas');
-  document.getElementById('cat2-sub').textContent = periodoLabel('d2') + ' · ' + nomeLoja;
+  document.getElementById('cat2-sub').textContent = periodoLabel('d2') + ' \u00B7 ' + nomeLoja;
 
   const agRows = preAg
     ? preAg.filter(r =>
@@ -3483,7 +3596,7 @@ function renderCat2(data, preAg) {
         .reduce((s,r)=>s+r.qty,0)
     : totalGeral;
   const cat2TotalEl = document.getElementById('cat2-total-val');
-  if (cat2TotalEl) cat2TotalEl.textContent = totalGrafico > 0 ? totalGrafico.toLocaleString('pt-BR') : '—';
+  if (cat2TotalEl) cat2TotalEl.textContent = totalGrafico > 0 ? totalGrafico.toLocaleString('pt-BR') : '?';
 
   totCat = [...totCat].sort((a,b) => {
     let va, vb;
@@ -3532,7 +3645,7 @@ function cat2OrdenarPor(coluna) {
 
 function renderFam2(data, preAg) {
   const nomeLoja = filtroLabel('d2-loja', 'Todas as lojas', 'lojas');
-  document.getElementById('fam2-sub').textContent = periodoLabel('d2') + ' · ' + nomeLoja;
+  document.getElementById('fam2-sub').textContent = periodoLabel('d2') + ' \u00B7 ' + nomeLoja;
   const familiasSelecionadas = selectedValues('d2-familia');
   const d2SelF = d2_active.dim === 'familia'
     ? d2_active.val
@@ -3638,7 +3751,7 @@ function renderFam2(data, preAg) {
         .reduce((s,r)=>s+r.qty,0)
     : totalGeral;
   const fam2TotalEl = document.getElementById('fam2-total-val');
-  if (fam2TotalEl) fam2TotalEl.textContent = totalGrafico > 0 ? totalGrafico.toLocaleString('pt-BR') : '—';
+  if (fam2TotalEl) fam2TotalEl.textContent = totalGrafico > 0 ? totalGrafico.toLocaleString('pt-BR') : '?';
 
   totFam = [...totFam].sort((a,b) => {
     let va, vb;
@@ -3703,7 +3816,7 @@ function t2OrdenarPor(coluna) {
   d2Renderizar();
 }
 
-// ── ABA 3: ESTOQUE ────────────────────────────────────────────────────────────
+// â”€â”€ ABA 3: ESTOQUE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function d3ConstruirFiltros() {
   const anos  = filtroAnos();
   const meses = filtroMeses();
@@ -3715,8 +3828,8 @@ function d3ConstruirFiltros() {
   document.getElementById('d3-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
   document.getElementById('d3-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
   document.getElementById('d3-loja').innerHTML    = '<option value="">Todas</option>' + lojas.map(l => {
-    const nome = deParaMap[l] || `Filial ${l}`;
-    return `<option value="${l}">#${l} · ${nome}</option>`;
+    const nome = nomeLojaDePara(l);
+    return `<option value="${l}">#${l} - ${nome}</option>`;
   }).join('');
   document.getElementById('d3-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   document.getElementById('d3-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
@@ -3776,7 +3889,7 @@ function d3Renderizar() {
   const dados = d3Filtrar();
   const dadosTabela = d3Filtrar('loja');
   const nomeLoja = filtroLabel('d3-loja', 'Todas as lojas', 'lojas');
-  const periodo  = periodoLabel('d3') + ' · ' + nomeLoja;
+  const periodo  = periodoLabel('d3') + ' ? ' + nomeLoja;
   document.getElementById('d3-chart-sub').textContent = periodo;
   document.getElementById('d3-line-sub').textContent  = periodo;
 
@@ -3807,7 +3920,7 @@ function d3Renderizar() {
   });
   const byLojaTabela = Object.values(mapLojaTabela).sort((a,b) => b.qty - a.qty);
 
-  // Total soma TODOS os registros filtrados (incluindo lojas sem de-para), igual ao padrão de seRenderizar
+  // Total soma TODOS os registros filtrados (incluindo lojas sem de-para), igual ao padrao de seRenderizar
   const total  = dados.reduce((s,r) => s + parseBR(col(r,'Estoque Diario','Estoque Diário','Estoque','estoque')), 0);
   const ativas = [...new Set(
     dados
@@ -3820,10 +3933,10 @@ function d3Renderizar() {
 
   document.getElementById('d3-kpi-total').textContent   = total.toLocaleString('pt-BR');
   document.getElementById('d3-kpi-lojas').textContent   = ativas;
-  document.getElementById('d3-kpi-top').textContent     = top ? top.nome : '—';
-  document.getElementById('d3-kpi-top-sub').textContent = top ? `${top.qty.toLocaleString('pt-BR')} un.` : '—';
-  document.getElementById('d3-kpi-bot').textContent     = bot ? bot.nome : '—';
-  document.getElementById('d3-kpi-bot-sub').textContent = bot ? `${bot.qty.toLocaleString('pt-BR')} un.` : '—';
+  document.getElementById('d3-kpi-top').textContent     = top ? top.nome : '?';
+  document.getElementById('d3-kpi-top-sub').textContent = top ? `${top.qty.toLocaleString('pt-BR')} un.` : '?';
+  document.getElementById('d3-kpi-bot').textContent     = bot ? bot.nome : '?';
+  document.getElementById('d3-kpi-bot-sub').textContent = bot ? `${bot.qty.toLocaleString('pt-BR')} un.` : '?';
   const d3ChartTotalEl = document.getElementById('d3-chart-total-val');
   if (d3ChartTotalEl) d3ChartTotalEl.textContent = total > 0 ? total.toLocaleString('pt-BR') : '—';
 
@@ -3914,13 +4027,13 @@ function d3Renderizar() {
       let entries;
       if (dataIndex != null && dias[dataIndex]) {
         entries = lojas.map((l,i) => ({
-          nome: deParaMap[l] || `Filial ${l}`,
+          nome: nomeLojaDePara(l),
           val:  mapLD[l]?.[dias[dataIndex]] || 0,
           cor:  PALETTE[i % PALETTE.length]
         })).filter(e => e.val > 0).sort((a,b) => b.val - a.val);
       } else {
         entries = lojas.map((l,i) => ({
-          nome: deParaMap[l] || `Filial ${l}`,
+          nome: nomeLojaDePara(l),
           val:  Object.values(mapLD[l] || {}).reduce((s,v) => s+v, 0),
           cor:  PALETTE[i % PALETTE.length]
         })).sort((a,b) => b.val - a.val);
@@ -3948,7 +4061,7 @@ function d3Renderizar() {
       data: {
         labels: dias.map(d2FormatarData),
         datasets: lojas.map((l,i) => ({
-          label: deParaMap[l] || `Filial ${l}`,
+          label: nomeLojaDePara(l),
           data: dias.map(d => mapLD[l]?.[d] ?? null),
           borderColor:     PALETTE[i%PALETTE.length],
           backgroundColor: PALETTE[i%PALETTE.length]+'22',
@@ -4024,49 +4137,201 @@ function d3Renderizar() {
 
 async function d3FetchTotalEstoque(renderSeq = d3_renderSeq, signal = null) {
   try {
-    const params = buildAgreParams('d3', d3_active);
-    params.set('escopo', 'loja');
-    const ag = await fetchJSON(`${API_BASE}/api/dashboard/estoque-resumo?${params}`, signal);
-    if (renderSeq !== d3_renderSeq) return;
-    const totalCorreto  = ag.total       || 0;
-    const ativasCorreto = ag.total_lojas || 0;
-
-    d3RenderResumoEstoqueAgregado(ag);
-
-    document.getElementById('d3-kpi-total').textContent = totalCorreto.toLocaleString('pt-BR');
-    document.getElementById('d3-kpi-lojas').textContent = ativasCorreto;
-
-    const d3ChartTotalEl = document.getElementById('d3-chart-total-val');
-    if (d3ChartTotalEl) d3ChartTotalEl.textContent = totalCorreto.toLocaleString('pt-BR');
-
-    const d3StatusEl = document.getElementById('d3-status-msg');
-    if (d3StatusEl) d3StatusEl.textContent =
-      `${totalCorreto.toLocaleString('pt-BR')} unidades em estoque · ${ativasCorreto} loja${ativasCorreto !== 1 ? 's' : ''}`;
-    d3_estoqueAg = ag;
-    d3RenderTabelaFilialAgregada(ag);
-
     const detalhesParams = buildAgreParams('d3', d3_active);
-    detalhesParams.set('detalhe', '1');
-    fetchJSON(`${API_BASE}/api/dashboard/estoque?${detalhesParams}`, signal)
-      .then(agDetalhado => {
-        if (renderSeq !== d3_renderSeq) return;
-        d3_estoqueAg = agDetalhado;
-        d3RenderRotatividadeAgregada(agDetalhado);
-        d3RenderLineAgregado(agDetalhado);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (renderSeq === d3_renderSeq) setChartLoading(D3_LOADING_IDS, false);
-      });
+    detalhesParams.set('snapshot', '1');
+    const agDetalhado = await fetchJSON(`${API_BASE}/api/dashboard/estoque?${detalhesParams}`, signal);
+    if (renderSeq !== d3_renderSeq) return;
+
+    d3_estoqueAg = agDetalhado;
+    d3AtualizarKpiEstoqueUltimoDia(agDetalhado);
+    d3RenderGraficoEstoqueUltimoDia(agDetalhado);
+    d3RenderTabelaFilialUltimoDia(agDetalhado);
+    d3RenderRotatividadeAgregada(agDetalhado);
+    setChartLoading(D3_LOADING_IDS, false);
+    d3FetchLineHistorico(renderSeq, signal);
   } catch(e) {
     if (e.name === 'AbortError') return;
-    // falha silenciosa: mantém os valores do rawData já exibidos
+    try {
+      const params = buildAgreParams('d3', d3_active);
+      params.set('escopo', 'loja');
+      const ag = await fetchJSON(`${API_BASE}/api/dashboard/estoque-resumo?${params}`, signal);
+      if (renderSeq !== d3_renderSeq) return;
+      d3_estoqueAg = ag;
+      d3RenderResumoEstoqueAgregado(ag);
+    } catch(_) {}
     if (renderSeq === d3_renderSeq) setChartLoading(D3_LOADING_IDS, false);
   }
 }
 
+function d3FormatarDataKpi(valor) {
+  const s = String(valor || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [ano, mes, dia] = s.split('-');
+    return `${dia}/${mes}/${ano}`;
+  }
+  return d2FormatarData(s);
+}
+
+function d3AtualizarKpiEstoqueUltimoDia(ag) {
+  const rows = (ag?.por_loja_dia || [])
+    .map(r => ({
+      loja: String(r.loja || '').trim(),
+      data: String(r.data || '').trim(),
+      qty: Number(r.qty || 0)
+    }))
+    .filter(r => r.loja && r.data);
+  if (!rows.length) return;
+
+  const ultimaData = rows.reduce((max, r) => !max || r.data > max ? r.data : max, '');
+  const dataLabel = d3FormatarDataKpi(ultimaData);
+  const rowsUltimoDia = rows
+    .filter(r => r.data === ultimaData)
+    .map(r => ({ loja: r.loja, nome: nomeLojaDePara(r.loja), qty: r.qty }));
+  const totalKpi = rowsUltimoDia.reduce((s, r) => s + r.qty, 0);
+  const rowsPositivos = rowsUltimoDia.filter(r => r.qty > 0).sort((a,b) => b.qty - a.qty);
+  const top = rowsPositivos[0];
+  const bot = rowsPositivos[rowsPositivos.length - 1];
+
+  const totalEl = document.getElementById('d3-kpi-total');
+  if (totalEl) totalEl.textContent = totalKpi.toLocaleString('pt-BR');
+  const totalLabel = totalEl?.previousElementSibling;
+  if (totalLabel) totalLabel.textContent = `Estoque Total - ${dataLabel}`;
+
+  const subEl = document.getElementById('d3-kpi-total-sub');
+  if (subEl) subEl.textContent = 'unidades em estoque';
+
+  const lojasEl = document.getElementById('d3-kpi-lojas');
+  if (lojasEl) lojasEl.textContent = rowsPositivos.length.toLocaleString('pt-BR');
+  const lojasLabel = lojasEl?.previousElementSibling;
+  if (lojasLabel) lojasLabel.textContent = `Lojas com Estoque - ${dataLabel}`;
+
+  const topEl = document.getElementById('d3-kpi-top');
+  if (topEl) topEl.textContent = top ? top.nome : 'Sem dados';
+  const topLabel = topEl?.previousElementSibling;
+  if (topLabel) topLabel.textContent = `Maior Estoque - ${dataLabel}`;
+  const topSub = document.getElementById('d3-kpi-top-sub');
+  if (topSub) topSub.textContent = top ? `${top.qty.toLocaleString('pt-BR')} un.` : 'Sem dados';
+
+  const botEl = document.getElementById('d3-kpi-bot');
+  if (botEl) botEl.textContent = bot ? bot.nome : 'Sem dados';
+  const botLabel = botEl?.previousElementSibling;
+  if (botLabel) botLabel.textContent = `Menor Estoque - ${dataLabel}`;
+  const botSub = document.getElementById('d3-kpi-bot-sub');
+  if (botSub) botSub.textContent = bot ? `${bot.qty.toLocaleString('pt-BR')} un.` : 'Sem dados';
+
+  const statusEl = document.getElementById('d3-status-msg');
+  if (statusEl) {
+    statusEl.textContent = `${totalKpi.toLocaleString('pt-BR')} unidades em estoque · ${rowsPositivos.length.toLocaleString('pt-BR')} lojas · ${dataLabel}`;
+  }
+}
+
+function d3RenderGraficoEstoqueUltimoDia(ag) {
+  const rowsBase = (ag?.por_loja_dia || [])
+    .map(r => ({
+      loja: String(r.loja || '').trim(),
+      data: String(r.data || '').trim(),
+      qty: Number(r.qty || 0)
+    }))
+    .filter(r => r.loja && r.data && deParaMap[r.loja]);
+  const barState = document.getElementById('d3-chart-state');
+  if (!rowsBase.length) {
+    if (barState) { barState.style.display = 'flex'; barState.innerHTML = 'Nenhum dado.'; }
+    if (d3BarChart) { d3BarChart.destroy(); d3BarChart = null; }
+    return;
+  }
+
+  const ultimaData = rowsBase.reduce((max, r) => !max || r.data > max ? r.data : max, '');
+  const rows = rowsBase
+    .filter(r => r.data === ultimaData)
+    .map(r => ({ loja: r.loja, nome: nomeLojaDePara(r.loja), qty: r.qty }))
+    .sort((a,b) => b.qty - a.qty);
+  const totalDia = rows.reduce((s, r) => s + r.qty, 0);
+
+  const totalEl = document.getElementById('d3-chart-total-val');
+  if (totalEl) totalEl.textContent = totalDia.toLocaleString('pt-BR');
+  const totalLabel = totalEl?.previousElementSibling;
+  if (totalLabel) totalLabel.textContent = `Total do dia - ${d3FormatarDataKpi(ultimaData)}`;
+  const totalSub = totalEl?.nextElementSibling;
+  if (totalSub) totalSub.textContent = 'Estoque total';
+  const subEl = document.getElementById('d3-chart-sub');
+  if (subEl) {
+    const nomeLoja = filtroLabel('d3-loja', 'Todas as lojas', 'lojas');
+    subEl.textContent = `${d3FormatarDataKpi(ultimaData)} ? ${nomeLoja}`;
+  }
+
+  if (barState) barState.style.display = 'none';
+  let c1 = document.getElementById('d3-bar-canvas');
+  if (!c1) {
+    c1 = document.createElement('canvas');
+    c1.id = 'd3-bar-canvas';
+    document.getElementById('d3-chart-wrap').appendChild(c1);
+  }
+  if (d3BarChart) { d3BarChart.destroy(); d3BarChart = null; }
+
+  const n = rows.length;
+  const d3Sel = d3_active.dim === 'loja' ? d3_active.val : null;
+  d3BarChart = new Chart(c1, {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.nome),
+      datasets: [{
+        data: rows.map(r => r.qty),
+        backgroundColor: rows.map((r,i) => { if(d3Sel) return r.loja===d3Sel?'rgba(79,255,176,0.95)':'rgba(37,42,58,0.45)'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},0.85)`; }),
+        borderColor:     rows.map((r,i) => { if(d3Sel) return r.loja===d3Sel?'rgba(79,255,176,1)':'rgba(37,42,58,0.2)'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},1)`; }),
+        borderWidth: 1.5, borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      onClick: (evt, elements) => {
+        if (elements.length > 0) setTimeout(() => d3SetFilter('loja', rows[elements[0].index].loja), 0);
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1, titleColor:'#4fffb0', bodyColor:'#e8ecf5', titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+          callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades em estoque` }
+        }
+      },
+      scales: {
+        x: { ticks:{ color: ctx => d3Sel?(rows[ctx.index]?.loja===d3Sel?'#4fffb0':'#3a4060'):'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false }, grid:{color:'#1c2030'} },
+        y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+      }
+    }
+  });
+  c1.style.cursor = 'pointer';
+}
+
 function d3SetEstoqueLoading() {
-  document.getElementById('d3-status-msg').textContent = 'Carregando estoque...';
+  const statusEl = document.getElementById('d3-status-msg');
+  if (statusEl) statusEl.textContent = 'Carregando estoque...';
+  ['d3-kpi-total','d3-kpi-lojas','d3-kpi-top','d3-kpi-bot','d3-chart-total-val'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '—';
+  });
+  ['d3-kpi-top-sub','d3-kpi-bot-sub'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '—';
+  });
+  const subEl = document.getElementById('d3-kpi-total-sub');
+  if (subEl) subEl.textContent = 'unidades em estoque';
+  const chartSub = document.getElementById('d3-chart-total-val')?.nextElementSibling;
+  if (chartSub) chartSub.textContent = 'Estoque total';
+  if (d3BarChart) { d3BarChart.destroy(); d3BarChart = null; }
+  if (d3LineChart) { d3LineChart.destroy(); d3LineChart = null; }
+  document.getElementById('d3-bar-canvas')?.remove();
+  document.getElementById('d3-line-canvas')?.remove();
+  const barState = document.getElementById('d3-chart-state');
+  if (barState) { barState.style.display = 'flex'; barState.innerHTML = '<div class="spinner"></div>Carregando dados...'; }
+  const lineState = document.getElementById('d3-line-state');
+  if (lineState) { lineState.style.display = 'flex'; lineState.innerHTML = '<div class="spinner"></div>Carregando dados...'; }
+  const legend = document.getElementById('d3-line-legend');
+  if (legend) legend.innerHTML = '<div class="horizontal-legend-title">Legenda</div>';
+  const tableBody = document.getElementById('d3-table-body');
+  if (tableBody) tableBody.innerHTML = '<div class="no-data"><div class="spinner"></div></div>';
+  const rotProd = document.getElementById('d3-rot-produtos-body');
+  if (rotProd) rotProd.innerHTML = '<div class="no-data"><div class="spinner"></div></div>';
+  const rotCat = document.getElementById('d3-rot-categorias-body');
+  if (rotCat) rotCat.innerHTML = '<div class="no-data"><div class="spinner"></div></div>';
   setChartLoading(D3_LOADING_IDS, true);
 }
 
@@ -4075,7 +4340,7 @@ function d3RenderResumoEstoqueAgregado(ag) {
   const rows = (ag?.por_loja || [])
     .map(r => {
       const loja = String(r.loja || '').trim();
-      return { loja, nome: deParaMap[loja] || `Filial ${loja}`, qty: Number(r.qty || 0) };
+      return { loja, nome: nomeLojaDePara(loja), qty: Number(r.qty || 0) };
     })
     .filter(r => r.loja && deParaMap[r.loja])
     .sort((a,b) => b.qty - a.qty);
@@ -4092,7 +4357,7 @@ function d3RenderResumoEstoqueAgregado(ag) {
   const totalEl = document.getElementById('d3-chart-total-val');
   if (totalEl) totalEl.textContent = total.toLocaleString('pt-BR');
   const statusEl = document.getElementById('d3-status-msg');
-  if (statusEl) statusEl.textContent = `${total.toLocaleString('pt-BR')} unidades em estoque Â· ${ativas} loja${ativas !== 1 ? 's' : ''}`;
+  if (statusEl) statusEl.textContent = `${total.toLocaleString('pt-BR')} unidades em estoque · ${ativas} loja${ativas !== 1 ? 's' : ''}`;
 
   const barState = document.getElementById('d3-chart-state');
   if (rows.length === 0) {
@@ -4142,6 +4407,21 @@ function d3RenderResumoEstoqueAgregado(ag) {
   c1.style.cursor = 'pointer';
 }
 
+function d3FetchLineHistorico(renderSeq = d3_renderSeq, signal = null) {
+  const params = buildAgreParams('d3', d3_active);
+  params.set('historico', '1');
+  fetchJSON(`${API_BASE}/api/dashboard/estoque?${params}`, signal)
+    .then(agHistorico => {
+      if (renderSeq !== d3_renderSeq) return;
+      d3RenderLineAgregado(agHistorico);
+    })
+    .catch(() => {
+      if (renderSeq !== d3_renderSeq) return;
+      const lineState = document.getElementById('d3-line-state');
+      if (lineState) { lineState.style.display = 'flex'; lineState.innerHTML = 'Nenhum dado.'; }
+    });
+}
+
 function d3RenderLineAgregado(ag) {
   const rows = (ag?.por_loja_dia || [])
     .map(r => ({ loja: String(r.loja || '').trim(), data: r.data, qty: Number(r.qty || 0) }))
@@ -4180,13 +4460,13 @@ function d3RenderLineAgregado(ag) {
     let entries;
     if (dataIndex != null && dias[dataIndex]) {
       entries = lojas.map((l,i) => ({
-        nome: deParaMap[l] || `Filial ${l}`,
+        nome: nomeLojaDePara(l),
         val:  mapLD[l]?.[dias[dataIndex]] || 0,
         cor:  PALETTE[i % PALETTE.length]
       })).filter(e => e.val > 0).sort((a,b) => b.val - a.val);
     } else {
       entries = lojas.map((l,i) => ({
-        nome: deParaMap[l] || `Filial ${l}`,
+        nome: nomeLojaDePara(l),
         val:  Object.values(mapLD[l] || {}).reduce((s,v) => s+v, 0),
         cor:  PALETTE[i % PALETTE.length]
       })).sort((a,b) => b.val - a.val);
@@ -4214,7 +4494,7 @@ function d3RenderLineAgregado(ag) {
     data: {
       labels: dias.map(d2FormatarData),
       datasets: lojas.map((l,i) => ({
-        label: deParaMap[l] || `Filial ${l}`,
+        label: nomeLojaDePara(l),
         data: dias.map(d => mapLD[l]?.[d] ?? null),
         borderColor:     PALETTE[i%PALETTE.length],
         backgroundColor: PALETTE[i%PALETTE.length]+'22',
@@ -4247,7 +4527,7 @@ function d3RenderTabelaFilialAgregada(ag) {
   const rows = (ag?.por_loja || [])
     .map(r => {
       const loja = String(r.loja || '').trim();
-      return { loja, nome: deParaMap[loja] || `Filial ${loja}`, qty: Number(r.qty || 0) };
+      return { loja, nome: nomeLojaDePara(loja), qty: Number(r.qty || 0) };
     })
     .filter(r => r.loja);
 
@@ -4283,7 +4563,7 @@ function d3RenderTabelaFilialAgregada(ag) {
 
   const total = rows.reduce((s,r) => s + r.qty, 0);
   const totalLinha = `<tr style="background:var(--surface2)">
-    <td class="td-loja">â€”</td>
+    <td class="td-loja">—</td>
     <td class="td-nome" style="font-weight:600;color:var(--accent2)">TOTAL GERAL</td>
     <td class="td-qty" style="color:var(--accent2)">${total.toLocaleString('pt-BR')}</td>
     <td></td>
@@ -4293,7 +4573,105 @@ function d3RenderTabelaFilialAgregada(ag) {
     : `<table><thead><tr>${th3('Filial','loja')}${th3('Nome Fantasia','nome')}${th3('Estoque Atual','qty')}${th3('Volume','volume')}</tr></thead><tbody>${linhas}${totalLinha}</tbody></table>`;
 }
 
+function d3RenderTabelaFilialUltimoDia(ag) {
+  const rowsBase = (ag?.por_loja_dia || [])
+    .map(r => ({
+      loja: String(r.loja || '').trim(),
+      data: String(r.data || '').trim(),
+      qty: Number(r.qty || 0)
+    }))
+    .filter(r => r.loja && r.data);
+  const container = document.getElementById('d3-table-body');
+  if (!container) return;
+
+  if (!rowsBase.length) {
+    container.innerHTML = '<div class="no-data">Nenhum dado para os filtros selecionados</div>';
+    return;
+  }
+
+  const ultimaData = rowsBase.reduce((max, r) => !max || r.data > max ? r.data : max, '');
+  const dataLabel = d3FormatarDataKpi(ultimaData);
+  const titulo = container.closest('.table-card')?.querySelector('.table-head-title');
+  if (titulo) titulo.textContent = 'Detalhamento de Estoque por Filial';
+  const estoqueAtualLabel = `Qtd em Estoque - ${dataLabel}`;
+
+  const rows = rowsBase
+    .filter(r => r.data === ultimaData)
+    .map(r => ({ loja: r.loja, nome: nomeLojaDePara(r.loja), qty: r.qty }));
+
+  const sorted = [...rows].sort((a,b) => {
+    let va, vb;
+    if (t3Sort.col === 'loja') { va=+a.loja; vb=+b.loja; }
+    else if (t3Sort.col === 'nome') { va=a.nome.toLowerCase(); vb=b.nome.toLowerCase(); }
+    else if (t3Sort.col === 'volume') { va=a.qty; vb=b.qty; }
+    else { va=a.qty; vb=b.qty; }
+    if (va<vb) return t3Sort.dir==='asc'?-1:1;
+    if (va>vb) return t3Sort.dir==='asc'?1:-1;
+    return 0;
+  });
+
+  const maxQ = Math.max(...rows.map(r => r.qty), 1);
+  const th3 = (label, key) => {
+    const cls = t3Sort.col === key ? ` class="sort-${t3Sort.dir}"` : '';
+    return `<th${cls} onclick="t3OrdenarPor('${key}')">${label}</th>`;
+  };
+  const d3SelTab = d3_active.dim === 'loja' ? d3_active.val : null;
+  const linhas = sorted.map(r => {
+    const barW = ((r.qty/maxQ)*100).toFixed(1);
+    const ativo = d3SelTab === r.loja ? ' row-active' : '';
+    return `<tr class="clickable-row${ativo}" onclick="d3SetFilter('loja','${r.loja}')">
+      <td class="td-loja">#${r.loja}</td>
+      <td class="td-nome">${r.nome}</td>
+      <td class="td-qty" style="color:var(--accent2)">${r.qty.toLocaleString('pt-BR')}</td>
+      <td><div class="td-bar-wrap">
+        <div class="td-bar" style="background:linear-gradient(90deg,var(--accent2),#38bdf8);width:${barW}%;max-width:150px"></div>
+      </div></td>
+    </tr>`;
+  }).join('');
+
+  const total = rows.reduce((s,r) => s + r.qty, 0);
+  const totalLinha = `<tr style="background:var(--surface2)">
+    <td class="td-loja">-</td>
+    <td class="td-nome" style="font-weight:600;color:var(--accent2)">TOTAL GERAL</td>
+    <td class="td-qty" style="color:var(--accent2)">${total.toLocaleString('pt-BR')}</td>
+    <td></td>
+  </tr>`;
+
+  container.innerHTML = rows.length === 0
+    ? '<div class="no-data">Nenhum dado para os filtros selecionados</div>'
+    : `<table><thead><tr>${th3('Filial','loja')}${th3('Nome Fantasia','nome')}${th3(estoqueAtualLabel,'qty')}${th3('Volume','volume')}</tr></thead><tbody>${linhas}${totalLinha}</tbody></table>`;
+}
+
 function d3RenderRotatividadeAgregada(ag) {
+  const prodDia = Array.isArray(ag?.por_produto_dia) ? ag.por_produto_dia : [];
+  const catDia = Array.isArray(ag?.por_cat_dia) ? ag.por_cat_dia : [];
+  const ultimaDataProd = prodDia.reduce((max, r) => {
+    const data = String(r.data || '').trim();
+    return data && (!max || data > max) ? data : max;
+  }, '');
+  const ultimaDataCat = catDia.reduce((max, r) => {
+    const data = String(r.data || '').trim();
+    return data && (!max || data > max) ? data : max;
+  }, '');
+
+  if (ultimaDataProd || ultimaDataCat) {
+    const byProdDia = ultimaDataProd
+      ? prodDia
+          .filter(r => String(r.data || '').trim() === ultimaDataProd)
+          .map(r => ({ nome: r.nome || 'SEM PRODUTO', qty: Number(r.qty || 0) }))
+      : [];
+    const byCatDia = ultimaDataCat
+      ? catDia
+          .filter(r => String(r.data || '').trim() === ultimaDataCat)
+          .map(r => ({ cat: r.cat || 'SEM CATEGORIA', qty: Number(r.qty || 0) }))
+      : [];
+    const dataLabel = d3FormatarDataKpi(ultimaDataProd || ultimaDataCat);
+    const titulo = document.querySelector('#rot-panel-produtos')?.closest('.table-card')?.querySelector('.table-head-title');
+    if (titulo) titulo.textContent = `Análise de Rotatividade de Produtos - ${dataLabel}`;
+    d3RenderRotatividadeTabela(byProdDia, byCatDia, dataLabel);
+    return;
+  }
+
   d3RenderRotatividadeTabela(
     (ag?.por_produto || []).map(r => ({ nome: r.nome || 'SEM PRODUTO', qty: Number(r.qty || 0) })),
     (ag?.por_cat || []).map(r => ({ cat: r.cat || 'SEM CATEGORIA', qty: Number(r.qty || 0) }))
@@ -4329,8 +4707,14 @@ function rotCatOrdenarPor(coluna) {
 
 function d3RenderRotatividade(dados) {
   const estKey = (r) => parseBR(col(r, 'Estoque Diario', 'Estoque Diário', 'Estoque', 'estoque'));
+  const ultimaData = (dados || []).reduce((max, r) => {
+    const dt = d2ParseData(col(r, 'Data', 'data'));
+    const iso = dt ? dataParaISO(dt) : '';
+    return iso && (!max || iso > max) ? iso : max;
+  }, '');
+  const estoqueLabel = ultimaData ? `Qtd em Estoque - ${d3FormatarDataKpi(ultimaData)}` : 'Qtd em Estoque';
 
-  // ── Aba Produtos ──
+  // â”€â”€ Aba Produtos â”€â”€
   const mapProd = {};
   dados.forEach(r => {
     const nome = getProduto(r);
@@ -4362,7 +4746,7 @@ function d3RenderRotatividade(dados) {
     const pct  = totalProd > 0 ? ((r.qty / totalProd) * 100).toFixed(1) : '0.0';
     const barW = ((r.qty / maxProd) * 100).toFixed(1);
     return `<tr>
-      <td class="td-nome">${r.nome}</td>
+      <td class="td-nome">${d3FormatarNomeProdutoEstoque(r.nome)}</td>
       <td class="td-qty">${r.qty.toLocaleString('pt-BR')}</td>
       <td><div class="td-bar-wrap">
         <div class="td-bar" style="width:${barW}%;max-width:150px"></div>
@@ -4378,9 +4762,9 @@ function d3RenderRotatividade(dados) {
   </tr>`;
   document.getElementById('d3-rot-produtos-body').innerHTML = byProd.length === 0
     ? '<div class="no-data">Nenhum produto encontrado. Verifique se a tabela de de-para possui a coluna de nome do produto.</div>'
-    : `<table><thead><tr>${thP('Produto','nome')}${thP('Qtd em Estoque','qty')}${thP('Participação','pct')}</tr></thead><tbody>${linhasProd}${rotProdTotalLinha}</tbody></table>`;
+    : `<table><thead><tr>${thP('Produto','nome')}${thP(estoqueLabel,'qty')}${thP('Participação','pct')}</tr></thead><tbody>${linhasProd}${rotProdTotalLinha}</tbody></table>`;
 
-  // ── Aba Categorias ──
+  // â”€â”€ Aba Categorias â”€â”€
   const mapCat = {};
   dados.forEach(r => {
     const cat = getCat(r) || 'SEM CATEGORIA';
@@ -4427,12 +4811,20 @@ function d3RenderRotatividade(dados) {
   </tr>`;
   document.getElementById('d3-rot-categorias-body').innerHTML = byCat.length === 0
     ? '<div class="no-data">Nenhum dado para os filtros selecionados</div>'
-    : `<table><thead><tr>${thC('Categoria','cat')}${thC('Qtd em Estoque','qty')}${thC('Participação','pct')}</tr></thead><tbody>${linhasCat}${rotCatTotalLinha}</tbody></table>`;
+    : `<table><thead><tr>${thC('Categoria','cat')}${thC(estoqueLabel,'qty')}${thC('Participação','pct')}</tr></thead><tbody>${linhasCat}${rotCatTotalLinha}</tbody></table>`;
 }
 
 
-// ── ABA SELL OUT X ESTOQUE ───────────────────────────────────────────────────
-function d3RenderRotatividadeTabela(byProdInput, byCatInput) {
+// â”€â”€ ABA SELL OUT X ESTOQUE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function d3FormatarNomeProdutoEstoque(nome) {
+  return String(nome || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/([A-Za-zÀ-ÿ.])(\d{2,})$/g, '$1 $2');
+}
+
+function d3RenderRotatividadeTabela(byProdInput, byCatInput, dataLabel = '') {
+  const estoqueLabel = dataLabel ? `Qtd em Estoque - ${dataLabel}` : 'Qtd em Estoque';
   const byProd = [...byProdInput];
   const totalProd = byProd.reduce((s, r) => s + r.qty, 0);
   byProd.sort((a, b) => {
@@ -4454,7 +4846,7 @@ function d3RenderRotatividadeTabela(byProdInput, byCatInput) {
     const pct  = totalProd > 0 ? ((r.qty / totalProd) * 100).toFixed(1) : '0.0';
     const barW = ((r.qty / maxProd) * 100).toFixed(1);
     return `<tr>
-      <td class="td-nome">${r.nome}</td>
+      <td class="td-nome">${d3FormatarNomeProdutoEstoque(r.nome)}</td>
       <td class="td-qty">${r.qty.toLocaleString('pt-BR')}</td>
       <td><div class="td-bar-wrap">
         <div class="td-bar" style="width:${barW}%;max-width:150px"></div>
@@ -4469,7 +4861,7 @@ function d3RenderRotatividadeTabela(byProdInput, byCatInput) {
   </tr>`;
   document.getElementById('d3-rot-produtos-body').innerHTML = byProd.length === 0
     ? '<div class="no-data">Nenhum produto encontrado. Verifique se a tabela de de-para possui a coluna de nome do produto.</div>'
-    : `<table><thead><tr>${thP('Produto','nome')}${thP('Qtd em Estoque','qty')}${thP('Participação','pct')}</tr></thead><tbody>${linhasProd}${rotProdTotalLinha}</tbody></table>`;
+    : `<table><thead><tr>${thP('Produto','nome')}${thP(estoqueLabel,'qty')}${thP('Participação','pct')}</tr></thead><tbody>${linhasProd}${rotProdTotalLinha}</tbody></table>`;
 
   const byCat = [...byCatInput];
   const totalCat = byCat.reduce((s, r) => s + r.qty, 0);
@@ -4507,24 +4899,49 @@ function d3RenderRotatividadeTabela(byProdInput, byCatInput) {
   </tr>`;
   document.getElementById('d3-rot-categorias-body').innerHTML = byCat.length === 0
     ? '<div class="no-data">Nenhum dado para os filtros selecionados</div>'
-    : `<table><thead><tr>${thC('Categoria','cat')}${thC('Qtd em Estoque','qty')}${thC('Participação','pct')}</tr></thead><tbody>${linhasCat}${rotCatTotalLinha}</tbody></table>`;
+    : `<table><thead><tr>${thC('Categoria','cat')}${thC(estoqueLabel,'qty')}${thC('Participação','pct')}</tr></thead><tbody>${linhasCat}${rotCatTotalLinha}</tbody></table>`;
+}
+
+function seOpcoesLojas() {
+  const lojasFiltro = (filterOptions.lojas || []).map(l => normCodLoja(String(l || '').trim())).filter(Boolean);
+  const lojasDePara = Object.keys(deParaMap || {}).map(l => normCodLoja(l)).filter(Boolean);
+  return [...new Set([...lojasFiltro, ...lojasDePara])]
+    .filter(l => l && deParaMap[l])
+    .sort((a,b) => +a - +b);
+}
+
+function seOpcoesCategorias() {
+  const fromList = Array.isArray(catList) ? catList : [];
+  const fromMap = Object.values(catMap || {});
+  const fromRaw = rawData.map(r => getCat(r));
+  return [...new Set([...fromList, ...fromMap, ...fromRaw].map(v => String(v || '').trim()).filter(Boolean))]
+    .filter(v => v !== '-' && v !== 'Ã¢â‚¬â€œ' && v !== '?')
+    .sort();
+}
+
+function seOpcoesFamilias() {
+  const fromList = Array.isArray(familiaList) ? familiaList : [];
+  const fromMap = Object.values(familiaMap || {});
+  const fromRaw = rawData.map(r => getFamilia(r));
+  return [...new Set([...fromList, ...fromMap, ...fromRaw].map(v => String(v || '').trim()).filter(Boolean))]
+    .filter(v => v !== '-' && v !== 'Ã¢â‚¬â€œ' && v !== '?')
+    .sort();
 }
 
 function seConstruirFiltros() {
   const anos  = filtroAnos();
   const meses = filtroMeses();
 
-  // Regra: só mostrar lojas existentes no De-Para
-  const lojas = filtroLojas(true);
-  const cats  = catList.length ? catList : [...new Set(rawData.map(r => getCat(r)).filter(Boolean))].sort();
-  const familias = familiaList.length ? familiaList : [...new Set(rawData.map(r => getFamilia(r)).filter(Boolean))].sort();
+  const lojas = seOpcoesLojas();
+  const cats  = seOpcoesCategorias();
+  const familias = seOpcoesFamilias();
 
   document.getElementById('se-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
   document.getElementById('se-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
-  document.getElementById('se-loja').innerHTML    = '<option value="">Todas</option>' + lojas.map(l => `<option value="${l}">#${l} · ${deParaMap[String(l).trim()]}</option>`).join('');
+  document.getElementById('se-loja').innerHTML    = '<option value="">Todas</option>' + lojas.map(l => `<option value="${l}">#${l} - ${nomeLojaDePara(l)}</option>`).join('');
   document.getElementById('se-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   document.getElementById('se-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
-  prepararTodosMultiSelect();
+  ['se-ano','se-mes','se-loja','se-cat','se-familia'].forEach(id => prepararMultiSelect(document.getElementById(id)));
 
   ['se-ano','se-mes','se-di','se-df','se-loja','se-cat','se-familia'].forEach(id =>
     document.getElementById(id).addEventListener('change', seRenderizar)
@@ -4668,7 +5085,7 @@ function seRenderizar() {
   seRenderizarAgregado();
   return;
   document.getElementById('se-chart-sub').textContent =
-    [ano, mes].filter(Boolean).join(' · ') || 'Todos os períodos';
+    [ano, mes].filter(Boolean).join(' ? ') || 'Todos os períodos';
 
   // Total de sell out de TODOS os registros (não apenas lojas no de/para)
   const totalSellout = dados.reduce((s,r) =>
@@ -4679,8 +5096,8 @@ function seRenderizar() {
   document.getElementById('se-kpi-estoque').textContent = totalEstoque.toLocaleString('pt-BR');
   const seChartSOEl  = document.getElementById('se-chart-sellout-val');
   const seChartEstEl = document.getElementById('se-chart-estoque-val');
-  if (seChartSOEl)  seChartSOEl.textContent  = totalSellout > 0 ? totalSellout.toLocaleString('pt-BR') : '—';
-  if (seChartEstEl) seChartEstEl.textContent = totalEstoque > 0 ? totalEstoque.toLocaleString('pt-BR') : '—';
+  if (seChartSOEl)  seChartSOEl.textContent  = totalSellout > 0 ? totalSellout.toLocaleString('pt-BR') : '?';
+  if (seChartEstEl) seChartEstEl.textContent = totalEstoque > 0 ? totalEstoque.toLocaleString('pt-BR') : '?';
 
   const seStatusEl = document.getElementById('se-status-msg');
   if (seStatusEl) seStatusEl.textContent =
@@ -4712,14 +5129,14 @@ function seCombinarPorLoja(vendas, estoques) {
   const map = {};
   (vendas || []).forEach(r => {
     const loja = normCodLoja(String(r.loja || ''));
-    if (!loja || !deParaMap[loja]) return;
-    if (!map[loja]) map[loja] = { loja, nome: deParaMap[loja], sellout: 0, estoque: 0, risco: '' };
+    if (!loja) return;
+    if (!map[loja]) map[loja] = { loja, nome: nomeLojaDePara(loja), sellout: 0, estoque: 0, risco: '' };
     map[loja].sellout += Number(r.qty || 0);
   });
   (estoques || []).forEach(r => {
     const loja = normCodLoja(String(r.loja || ''));
-    if (!loja || !deParaMap[loja]) return;
-    if (!map[loja]) map[loja] = { loja, nome: deParaMap[loja], sellout: 0, estoque: 0, risco: '' };
+    if (!loja) return;
+    if (!map[loja]) map[loja] = { loja, nome: nomeLojaDePara(loja), sellout: 0, estoque: 0, risco: '' };
     map[loja].estoque += Number(r.qty || 0);
   });
   return Object.values(map).map(r => {
@@ -4748,6 +5165,18 @@ function seCombinarPorData(vendas, estoqueLojaDia) {
   return Object.values(map).sort((a,b) => String(a.iso).localeCompare(String(b.iso)));
 }
 
+function seResumoEstoqueUltimoDia(ag) {
+  const rows = (ag?.por_loja_dia || [])
+    .map(r => ({ data: String(r.data || '').trim(), qty: Number(r.qty || 0) }))
+    .filter(r => r.data);
+  if (!rows.length) return { total: 0, data: '' };
+  const ultimaData = rows.reduce((max, r) => !max || r.data > max ? r.data : max, '');
+  return {
+    total: rows.filter(r => r.data === ultimaData).reduce((s, r) => s + r.qty, 0),
+    data: ultimaData
+  };
+}
+
 async function seRenderizarAgregado() {
   seSetLoading();
   if (se_renderAbort) se_renderAbort.abort();
@@ -4756,9 +5185,13 @@ async function seRenderizarAgregado() {
   const paramsMain = seParams(true);
   const paramsTabela = seParams(false);
   const estoqueEndpoint = seViewMode === 'data' ? 'estoque' : 'estoque-resumo';
+  const paramsEstoqueUltimoDia = seParams(true);
+  paramsEstoqueUltimoDia.set('snapshot', '1');
+  const paramsEstoqueUltimoDiaTabela = seParams(false);
+  paramsEstoqueUltimoDiaTabela.set('snapshot', '1');
 
   try {
-    const [vMain, eMain, vTabela, eTabela] = await Promise.all([
+    const [vMain, eMain, vTabela, eTabela, eUltimoDia, eUltimoDiaTabela] = await Promise.all([
       fetchJSON(`${API_BASE}/api/dashboard/agregados?${paramsMain}`, se_renderAbort.signal),
       fetchJSON(`${API_BASE}/api/dashboard/${estoqueEndpoint}?${paramsMain}`, se_renderAbort.signal),
       paramsTabela.toString() === paramsMain.toString()
@@ -4767,38 +5200,56 @@ async function seRenderizarAgregado() {
       paramsTabela.toString() === paramsMain.toString()
         ? Promise.resolve(null)
         : fetchJSON(`${API_BASE}/api/dashboard/${estoqueEndpoint}?${paramsTabela}`, se_renderAbort.signal),
+      fetchJSON(`${API_BASE}/api/dashboard/estoque?${paramsEstoqueUltimoDia}`, se_renderAbort.signal),
+      seViewMode === 'data' || paramsEstoqueUltimoDiaTabela.toString() === paramsEstoqueUltimoDia.toString()
+        ? Promise.resolve(null)
+        : fetchJSON(`${API_BASE}/api/dashboard/estoque?${paramsEstoqueUltimoDiaTabela}`, se_renderAbort.signal),
     ]);
     const vendaTabela = vTabela || vMain;
     const estoqueTabela = eTabela || eMain;
+    const estoqueTabelaUltimoDia = eUltimoDiaTabela || eUltimoDia;
 
     const byLoja = seCombinarPorLoja(vMain.por_loja, eMain.por_loja);
-    const byLojaTabela = seCombinarPorLoja(vendaTabela.por_loja, estoqueTabela.por_loja);
+    const byLojaTabela = seCombinarPorLoja(vendaTabela.por_loja, estoqueTabelaUltimoDia.por_loja);
     const totalSellout = (vMain.por_dia || []).reduce((s,r) => s + Number(r.qty || 0), 0);
-    const totalEstoque = Number(eMain.total || 0);
+    const estoqueUltimoDia = seResumoEstoqueUltimoDia(eUltimoDia);
+    const totalEstoque = Number(estoqueUltimoDia.total || 0);
 
     document.getElementById('se-kpi-sellout').textContent = totalSellout.toLocaleString('pt-BR');
     document.getElementById('se-kpi-estoque').textContent = totalEstoque.toLocaleString('pt-BR');
+    const seKpiEstoqueLabel = document.getElementById('se-kpi-estoque')?.previousElementSibling;
+    if (seKpiEstoqueLabel) seKpiEstoqueLabel.textContent = estoqueUltimoDia.data
+      ? `Estoque Total - ${d3FormatarDataKpi(estoqueUltimoDia.data)}`
+      : 'Estoque Total';
+    const seKpiEstoqueSub = document.getElementById('se-kpi-estoque')?.nextElementSibling;
+    if (seKpiEstoqueSub) seKpiEstoqueSub.textContent = 'unidades em estoque';
     const seChartSOEl  = document.getElementById('se-chart-sellout-val');
     const seChartEstEl = document.getElementById('se-chart-estoque-val');
-    if (seChartSOEl)  seChartSOEl.textContent  = totalSellout > 0 ? totalSellout.toLocaleString('pt-BR') : '—';
-    if (seChartEstEl) seChartEstEl.textContent = totalEstoque > 0 ? totalEstoque.toLocaleString('pt-BR') : '—';
+    if (seChartSOEl)  seChartSOEl.textContent  = totalSellout > 0 ? totalSellout.toLocaleString('pt-BR') : '?';
+    if (seChartEstEl) seChartEstEl.textContent = totalEstoque > 0 ? totalEstoque.toLocaleString('pt-BR') : '?';
+    const seChartEstLabel = seChartEstEl?.previousElementSibling;
+    if (seChartEstLabel) seChartEstLabel.textContent = estoqueUltimoDia.data
+      ? `Total do Dia - ${d3FormatarDataKpi(estoqueUltimoDia.data)}`
+      : 'Total do Dia';
+    const seChartEstSub = seChartEstEl?.nextElementSibling;
+    if (seChartEstSub) seChartEstSub.textContent = 'Estoque total';
 
     const seStatusEl = document.getElementById('se-status-msg');
     if (seStatusEl) seStatusEl.textContent =
-      `${totalSellout.toLocaleString('pt-BR')} unidades vendidas · ${totalEstoque.toLocaleString('pt-BR')} em estoque`;
+      `${totalSellout.toLocaleString('pt-BR')} unidades vendidas · ${totalEstoque.toLocaleString('pt-BR')} em estoque${estoqueUltimoDia.data ? ` - ${d3FormatarDataKpi(estoqueUltimoDia.data)}` : ''}`;
 
     seRenderGrafico(byLoja);
     if (seViewMode === 'data') {
       seRenderTabelaDataAgregada(seCombinarPorData(vMain.por_dia, eMain.por_loja_dia));
     } else {
-      seRenderTabela(byLojaTabela);
+      seRenderTabela(byLojaTabela, estoqueUltimoDia.data);
     }
     seRenderRiskTabela(byLoja);
     setChartLoading(SE_LOADING_IDS, false);
   } catch(e) {
     if (e.name === 'AbortError') return;
     setChartLoading(SE_LOADING_IDS, false);
-    console.warn('Sell out x estoque agregado indisponível:', e.message);
+    console.warn('Sell out x estoque agregado indisponivel:', e.message);
     const state = document.getElementById('se-chart-state');
     if (state) { state.style.display = 'flex'; state.innerHTML = 'Erro ao carregar dados.'; }
     document.getElementById('se-table-body').innerHTML = '<div class="no-data">Erro ao carregar dados</div>';
@@ -4890,7 +5341,7 @@ function seRenderGrafico(byLoja) {
   });
 }
 
-function seRenderTabela(byLoja) {
+function seRenderTabela(byLoja, estoqueData = '') {
   const container = document.getElementById('se-table-body');
 
   if (byLoja.length === 0) {
@@ -4899,9 +5350,10 @@ function seRenderTabela(byLoja) {
   }
 
   const sorted = seAplicarSort(byLoja, seSort);
-  const th = (label, key) => {
+  const estoqueLabel = estoqueData ? `Qtd em Estoque - ${d3FormatarDataKpi(estoqueData)}` : 'Qtd em Estoque';
+  const th = (label, key, align = 'left') => {
     const cls = seSort.col === key ? ` class="sort-${seSort.dir}"` : '';
-    return `<th${cls} onclick="seOrdenarPor('${key}')">${label}</th>`;
+    return `<th${cls} style="text-align:${align}" onclick="seOrdenarPor('${key}')">${label}</th>`;
   };
 
   const totalSO  = sorted.reduce((s,r) => s + r.sellout, 0);
@@ -4913,8 +5365,8 @@ function seRenderTabela(byLoja) {
     <tr class="clickable-row${ativo}" onclick="seFiltrarPorLoja('${r.loja}')">
       <td class="td-loja">#${r.loja}</td>
       <td class="td-nome">${r.nome}</td>
-      <td class="td-qty">${r.sellout.toLocaleString('pt-BR')}</td>
-      <td class="td-qty" style="color:var(--accent2)">${r.estoque.toLocaleString('pt-BR')}</td>
+      <td class="td-qty" style="text-align:center">${r.sellout.toLocaleString('pt-BR')}</td>
+      <td class="td-qty" style="text-align:center;color:var(--accent2)">${r.estoque.toLocaleString('pt-BR')}</td>
     </tr>
   `;
   }).join('');
@@ -4922,16 +5374,16 @@ function seRenderTabela(byLoja) {
   const seTotalLinha = `<tr style="background:var(--surface2)">
     <td class="td-loja">—</td>
     <td class="td-nome" style="font-weight:600;color:var(--accent)">TOTAL GERAL</td>
-    <td class="td-qty" style="color:var(--accent)">${totalSO.toLocaleString('pt-BR')}</td>
-    <td class="td-qty" style="color:var(--accent2)">${totalEst.toLocaleString('pt-BR')}</td>
+    <td class="td-qty" style="text-align:center;color:var(--accent)">${totalSO.toLocaleString('pt-BR')}</td>
+    <td class="td-qty" style="text-align:center;color:var(--accent2)">${totalEst.toLocaleString('pt-BR')}</td>
   </tr>`;
 
   container.innerHTML = `<table>
     <thead><tr>
       ${th('Filial','loja')}
       ${th('Nome Fantasia','nome')}
-      ${th('Sell Out','sellout')}
-      ${th('Estoque','estoque')}
+      ${th('Sell Out','sellout','center')}
+      ${th(estoqueLabel,'estoque','center')}
     </tr></thead>
     <tbody>${linhas}${seTotalLinha}</tbody>
   </table>`;
@@ -5065,7 +5517,7 @@ function seRenderTabelaDataAgregada(porData) {
   </table>`;
 }
 
-// ── ABA VALOR: VENDA VALOR (R$) ───────────────────────────────────────────────
+// â”€â”€ ABA VALOR: VENDA VALOR (R$) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function vConstruirFiltros() {
   const anos     = filtroAnos();
   const meses    = filtroMeses();
@@ -5076,8 +5528,8 @@ function vConstruirFiltros() {
   document.getElementById('v-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
   document.getElementById('v-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
   document.getElementById('v-loja').innerHTML    = '<option value="">Todas</option>' + lojas.map(l => {
-    const nome = deParaMap[l] || `Filial ${l}`;
-    return `<option value="${l}">#${l} · ${nome}</option>`;
+    const nome = nomeLojaDePara(l);
+    return `<option value="${l}">#${l} - ${nome}</option>`;
   }).join('');
   document.getElementById('v-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   document.getElementById('v-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
@@ -5137,7 +5589,8 @@ function vAgruparPorLoja(data) {
     if (!loja) return;
     const val = parseBR(col(r,'Venda (R$)'));
     const key = loja.trim();
-    if (!map[key]) map[key] = { loja: key, nome: deParaMap[key] || `Filial ${key}`, val: 0 };
+    const lojaNorm = normCodLoja(key);
+    if (!map[key]) map[key] = { loja: key, nome: nomeLojaDePara(key), val: 0 };
     map[key].val += val;
   });
   return Object.values(map).sort((a,b) => b.val - a.val);
@@ -5347,7 +5800,7 @@ function vRenderCat1(data, preAg, ag) {
     ? ag.por_dia.reduce((s, r) => s + (r.valor || 0), 0)
     : total;
   const vCat1TotalEl = document.getElementById('v-cat1-total-val');
-  if (vCat1TotalEl) vCat1TotalEl.textContent = displayTotal > 0 ? vFmtR(displayTotal) : '—';
+  if (vCat1TotalEl) vCat1TotalEl.textContent = displayTotal > 0 ? vFmtR(displayTotal) : '?';
 
   document.getElementById('v-cat1-sub').textContent = periodoLabel('v');
 
@@ -5464,14 +5917,14 @@ function vRenderFam1(data, preAg, ag) {
     });
     byFam = Object.values(map);
   }
-  // Separa famílias reais das sem mapeamento (para o gráfico mostra só as reais)
+  // Separa famílias reais das sem mapeamento (para o gráfico mostra so as reais)
   let byFamChart = byFam.filter(r => r.fam !== SEM_MAP_V);
   const total = byFam.reduce((s,r) => s + r.val, 0);
   const displayTotalFam = ag && ag.por_dia
     ? ag.por_dia.reduce((s, r) => s + (r.valor || 0), 0)
     : total;
   const vFam1TotalEl = document.getElementById('v-fam1-total-val');
-  if (vFam1TotalEl) vFam1TotalEl.textContent = displayTotalFam > 0 ? vFmtR(displayTotalFam) : '—';
+  if (vFam1TotalEl) vFam1TotalEl.textContent = displayTotalFam > 0 ? vFmtR(displayTotalFam) : '?';
 
   document.getElementById('v-fam1-sub').textContent = periodoLabel('v');
 
@@ -5500,7 +5953,7 @@ function vRenderFam1(data, preAg, ag) {
     if (va > vb) return vFam1Sort.dir === 'asc' ? 1 : -1;
     return 0;
   });
-  // Tabela = famílias classificadas (já ordenadas) + "Sem mapeamento" sempre no fim
+  // Tabela = famílias classificadas (j - ordenadas) + "Sem mapeamento" sempre no fim
   const byFamTable = [...byFamChart, ...byFam.filter(r => r.fam === SEM_MAP_V)];
 
   let canvas = document.getElementById('v-fam1-canvas');
@@ -5611,7 +6064,7 @@ function vFam1OrdenarPor(coluna) {
 }
 
 async function vRenderizar() {
-  mostrarBanner('v-active-banner', v_active, {loja:'FILIAL', cat:'CATEGORIA', familia:'FAMÍLIA'}, 'vLimparAtivo');
+  mostrarBanner('v-active-banner', v_active, {loja:'FILIAL', cat:'CATEGORIA', familia:'FAMÃLIA'}, 'vLimparAtivo');
 
   document.getElementById('v-chart-sub').textContent = periodoLabel('v');
   document.getElementById('v-loja-ativa').style.display = 'none';
@@ -5621,7 +6074,7 @@ async function vRenderizar() {
   const toByLoja = ag => ag.por_loja
     .map(r => {
       const loja = normCodLoja(String(r.loja || ''));
-      return { loja, nome: deParaMap[loja] || `Filial ${loja}`, val: r.valor };
+      return { loja, nome: nomeLojaDePara(loja), val: r.valor };
     })
     .filter(r => r.loja);
   const renderFromAg = (ag, byLoja) => {
@@ -5659,7 +6112,7 @@ async function vRenderizar() {
   } catch(e) {
     if (e.name === 'AbortError') return;
     setChartLoading(V_IDS, false);
-    console.warn('Agregados backend indisponíveis:', e.message);
+    console.warn('Agregados backend indisponiveis:', e.message);
     if (!rawDataPreviewOk) {
       const byLojaChart = vAgruparPorLoja(vFiltrar('loja'));
       vRenderKPIs(byLojaChart, null);
@@ -5669,7 +6122,7 @@ async function vRenderizar() {
   }
 }
 
-// ── FILTRO DE ANO ATUAL ───────────────────────────────────────────────────────
+// â”€â”€ FILTRO DE ANO ATUAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function aplicarFiltroAtual(prefix) {
   const elAno = document.getElementById(`${prefix}-ano`);
   const elMes = document.getElementById(`${prefix}-mes`);
@@ -5695,7 +6148,7 @@ function aplicarFiltroAtual(prefix) {
   }
 }
 
-// ── TABS ──────────────────────────────────────────────────────────────────────
+// â”€â”€ TABS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function trocarAba(aba, evt) {
   document.querySelectorAll('.tab-panel').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
@@ -5706,7 +6159,7 @@ function trocarAba(aba, evt) {
   if (aba === 'importar') { admAtualizarUI(); return; }
   if (aba === 'gerir')    { guAtualizarUI(); return; }
 
-  // Constrói filtros e renderiza apenas na primeira vez que a aba for aberta
+  // Constr?i filtros e renderiza apenas na primeira vez que a aba for aberta
   if (!tabsRenderizadas.has(aba)) {
     if (aba === 'valor') {
       garantirFiltrosAba('v');
@@ -5731,7 +6184,7 @@ function trocarAba(aba, evt) {
 
 
 
-// ── GESTÃO DE USUÁRIOS (super-admin) ─────────────────────────────────────────
+// â”€â”€ GESTÃO DE USUÁRIOS (super-admin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let guIdSenha = null; // id do usuário aguardando troca de senha
 
@@ -5751,7 +6204,7 @@ function guAtualizarUI() {
     painelEl.style.display = 'block';
     guCarregarUsuarios();
   } else {
-    // só mostra o login se a tela de reset não estiver ativa
+    // so mostra o login se a tela de reset não estiver ativa
     if (resetEl.style.display !== 'flex') loginEl.style.display = 'flex';
     painelEl.style.display = 'none';
   }
@@ -5832,7 +6285,7 @@ async function guCarregarUsuarios() {
     tbody.innerHTML = usuarios.map(u => {
       const dataCriacao = u.criadoEm
         ? new Date(u.criadoEm).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-        : '—';
+        : '?';
       const id    = u._id;
       const email = u.email || '';
       const emailLabel = email
@@ -5872,7 +6325,7 @@ function guMostrarMsg(texto, tipo) {
   setTimeout(() => { if (el.textContent === texto) el.textContent = ''; }, 4000);
 }
 
-// ── RESET DE SENHA (tela de importação) ──────────────────────────────────────
+// â”€â”€ RESET DE SENHA (tela de importação) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function importMostrarReset() {
   document.getElementById('import-login').style.display = 'none';
@@ -5921,7 +6374,7 @@ async function importSolicitarReset() {
   }
 }
 
-// ── RESET DE SENHA (login de administração) ──────────────────────────────────
+// â”€â”€ RESET DE SENHA (login de administração) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function guMostrarReset() {
   document.getElementById('gu-login').style.display = 'none';
@@ -5970,7 +6423,7 @@ async function guSolicitarReset() {
   }
 }
 
-// ── MODAL DE E-MAIL (admin) ───────────────────────────────────────────────────
+// â”€â”€ MODAL DE E-MAIL (admin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let guIdEmail = null;
 let guIdUsuario = null;
@@ -5985,6 +6438,7 @@ function guAbrirModalUsuario(id, nome) {
 }
 
 async function guConfirmarUsuario() {
+  if (bloquearSomenteLeitura('Atualizacao de usuario')) return;
   const usuario = document.getElementById('modal-usuario-valor').value.trim();
   const errEl   = document.getElementById('modal-usuario-err');
   errEl.textContent = '';
@@ -6021,6 +6475,7 @@ function guAbrirModalEmail(id, nome, emailAtual) {
 }
 
 async function guConfirmarEmail() {
+  if (bloquearSomenteLeitura('Atualizacao de e-mail')) return;
   const email = document.getElementById('modal-email-valor').value.trim();
   const errEl = document.getElementById('modal-email-err');
   errEl.textContent = '';
@@ -6042,9 +6497,10 @@ async function guConfirmarEmail() {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function guAbrirModalNovo() {
+  if (bloquearSomenteLeitura('Criacao de usuario')) return;
   const senhaInput = document.getElementById('modal-novo-senha');
   senhaInput.value = '';
   senhaInput.type  = 'password';
@@ -6073,6 +6529,7 @@ function guFecharModal(id) {
 }
 
 async function guConfirmarNovo() {
+  if (bloquearSomenteLeitura('Criacao de usuario')) return;
   const usuario = document.getElementById('modal-novo-user').value.trim();
   const senha   = document.getElementById('modal-novo-senha').value;
   const email   = document.getElementById('modal-novo-email').value.trim();
@@ -6102,6 +6559,7 @@ async function guConfirmarNovo() {
 }
 
 async function guConfirmarSenha() {
+  if (bloquearSomenteLeitura('Alteracao de senha')) return;
   const novaSenha = document.getElementById('modal-nova-senha').value;
   const errEl     = document.getElementById('modal-senha-err');
   errEl.textContent = '';
@@ -6128,6 +6586,7 @@ async function guConfirmarSenha() {
 }
 
 async function guExcluir(id, nome) {
+  if (bloquearSomenteLeitura('Exclusao de usuario')) return;
   if (!confirm(`Excluir o usuário "${nome}"?\nEsta ação não pode ser desfeita.`)) return;
   const token = guGetToken();
   try {
@@ -6144,7 +6603,7 @@ async function guExcluir(id, nome) {
   }
 }
 
-// ── SUB-ABAS DE GESTÃO ────────────────────────────────────────────────────────
+// â”€â”€ SUB-ABAS DE GESTÃO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function guMudarSubAba(aba, btn) {
   document.querySelectorAll('.gu-subtab-btn').forEach(b => b.classList.remove('active'));
@@ -6156,7 +6615,7 @@ function guMudarSubAba(aba, btn) {
   if (aba === 'logs')     guCarregarLogs();
 }
 
-// ── MODELOS DE IMPORTAÇÃO ─────────────────────────────────────────────────────
+// â”€â”€ MODELOS DE IMPORTAÇÃO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function guCarregarModelos() {
   const token  = guGetToken();
@@ -6176,7 +6635,7 @@ async function guCarregarModelos() {
     tbody.innerHTML = templates.map(t => {
       const atualizado = t.atualizadoEm
         ? new Date(t.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-        : '—';
+        : '?';
       return `
         <tr>
           <td>
@@ -6203,6 +6662,10 @@ async function guCarregarModelos() {
 }
 
 async function guFazUploadModelo(filename, inputEl) {
+  if (bloquearSomenteLeitura('Upload de modelo')) {
+    if (inputEl) inputEl.value = '';
+    return;
+  }
   const file    = inputEl.files[0];
   const msgEl   = document.getElementById('gu-modelos-msg');
   const token   = guGetToken();
@@ -6234,7 +6697,7 @@ async function guFazUploadModelo(filename, inputEl) {
   }
 }
 
-// ── LOGS DE IMPORTAÇÃO ────────────────────────────────────────────────────────
+// â”€â”€ LOGS DE IMPORTAÇÃO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const TIPO_LABEL = {
   dados_brutos:      'Dados Brutos',
@@ -6254,7 +6717,7 @@ function guLimparHistorico() {
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px;width:360px;font-family:'DM Mono',monospace">
       <div style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px">Limpar histórico</div>
       <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:20px;line-height:1.6">
-        Digite a senha do <strong style="color:var(--text)">usuário pai</strong> para confirmar. Os dados do painel <strong style="color:var(--text)">não</strong> serão removidos.
+        Digite a senha do <strong style="color:var(--text)">usuário pai</strong> para confirmar. Os dados do painel <strong style="color:var(--text)">não</strong> seráo removidos.
       </div>
       <input id="modal-limpar-senha" type="password" placeholder="Senha" autocomplete="current-password"
         style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px 12px;color:var(--text);font-family:'DM Mono',monospace;font-size:0.8rem;outline:none;margin-bottom:8px">
@@ -6279,6 +6742,7 @@ function guLimparHistorico() {
 }
 
 async function guConfirmarLimpeza() {
+  if (bloquearSomenteLeitura('Limpeza de historico')) return;
   const senha   = document.getElementById('modal-limpar-senha').value;
   const erroEl  = document.getElementById('modal-limpar-erro');
   const btn     = document.getElementById('modal-limpar-btn');
@@ -6321,7 +6785,7 @@ async function guCarregarLogs() {
 
     const logs = await res.json();
 
-    if (labelEl) labelEl.textContent = `${logs.length} importaç${logs.length !== 1 ? 'ões' : 'ão'} registrada${logs.length !== 1 ? 's' : ''}`;
+    if (labelEl) labelEl.textContent = `${logs.length} importacao${logs.length !== 1 ? 'es' : ''} registrada${logs.length !== 1 ? 's' : ''}`;
 
     if (logs.length === 0) {
       tbody.innerHTML = '<tr><td colspan="6"><div class="no-data">Nenhuma importação registrada.</div></td></tr>';
@@ -6336,10 +6800,10 @@ async function guCarregarLogs() {
       return `
         <tr>
           <td class="td-date">${data} ${hora}</td>
-          <td style="font-family:'DM Mono',monospace;font-size:0.82rem">${escHtml(l.usuario || '—')}</td>
-          <td style="font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--text-dim);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(l.arquivo || '')}">${escHtml(l.arquivo || '—')}</td>
+          <td style="font-family:'DM Mono',monospace;font-size:0.82rem">${escHtml(l.usuario || '?')}</td>
+          <td style="font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--text-dim);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(l.arquivo || '')}">${escHtml(l.arquivo || '?')}</td>
           <td style="font-family:'DM Mono',monospace;font-size:0.75rem;color:var(--accent2)">${escHtml(tipo)}</td>
-          <td style="text-align:right;font-family:'DM Mono',monospace;font-size:0.82rem">${l.total ?? '—'}</td>
+          <td style="text-align:right;font-family:'DM Mono',monospace;font-size:0.82rem">${l.total ?? '?'}</td>
           <td>
             <div class="td-actions" style="justify-content:flex-end">
               <button class="btn-gu excluir" onclick="guExcluirImportacao('${escHtml(String(l._id))}', '${escHtml(l.arquivo || '')}', '${escHtml(tipo)}')">Desfazer</button>
@@ -6354,9 +6818,10 @@ async function guCarregarLogs() {
 }
 
 async function guExcluirImportacao(id, arquivo, tipo) {
+  if (bloquearSomenteLeitura('Desfazer importacao')) return;
   const msgEl = document.getElementById('gu-logs-msg');
   const aviso = tipo === 'Dados Brutos'
-    ? `Desfazer importação "${arquivo}"?\n\nTodos os registros desta importação serão removidos do banco.`
+    ? `Desfazer importação "${arquivo}"?\n\nTodos os registros desta importação seráo removidos do banco.`
     : `Desfazer importação "${arquivo}" (${tipo})?\n\nATENÇÃO: a coleção inteira será apagada, pois este tipo de importação substitui o conteúdo anterior.`;
   if (!confirm(aviso)) return;
 
@@ -6383,7 +6848,7 @@ async function guExcluirImportacao(id, arquivo, tipo) {
   }
 }
 
-// ── GESTÃO DE ADMINISTRADORES ─────────────────────────────────────────────────
+// â”€â”€ GESTÃO DE ADMINISTRADORES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let guIdSenhaAdmin = null;
 let guIdEmailAdmin = null;
@@ -6416,7 +6881,7 @@ async function guCarregarAdmins() {
     tbody.innerHTML = admins.map(a => {
       const dataCriacao = a.criadoEm
         ? new Date(a.criadoEm).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-        : '—';
+        : '?';
       const id    = a._id;
       const email = a.email || '';
       const emailLabel = email
@@ -6464,6 +6929,7 @@ function guMostrarMsgAdmin(texto, tipo) {
 }
 
 function guAbrirModalNovoAdmin() {
+  if (bloquearSomenteLeitura('Criacao de administrador')) return;
   const senhaInput = document.getElementById('modal-admin-senha');
   senhaInput.value = '';
   senhaInput.type  = 'password';
@@ -6506,6 +6972,7 @@ function guAbrirModalUsuarioAdmin(id, nome) {
 }
 
 async function guConfirmarNovoAdmin() {
+  if (bloquearSomenteLeitura('Criacao de administrador')) return;
   const usuario = document.getElementById('modal-admin-user').value.trim();
   const senha   = document.getElementById('modal-admin-senha').value;
   const email   = document.getElementById('modal-admin-email').value.trim();
@@ -6532,6 +6999,7 @@ async function guConfirmarNovoAdmin() {
 }
 
 async function guConfirmarSenhaAdmin() {
+  if (bloquearSomenteLeitura('Alteracao de senha')) return;
   const novaSenha = document.getElementById('modal-nova-senha-admin').value;
   const errEl     = document.getElementById('modal-senha-admin-err');
   errEl.textContent = '';
@@ -6555,6 +7023,7 @@ async function guConfirmarSenhaAdmin() {
 }
 
 async function guConfirmarUsuarioAdmin() {
+  if (bloquearSomenteLeitura('Atualizacao de administrador')) return;
   const usuario = document.getElementById('modal-usuario-admin-valor').value.trim();
   const errEl   = document.getElementById('modal-usuario-admin-err');
   errEl.textContent = '';
@@ -6579,6 +7048,7 @@ async function guConfirmarUsuarioAdmin() {
 }
 
 async function guConfirmarEmailAdmin() {
+  if (bloquearSomenteLeitura('Atualizacao de e-mail')) return;
   const email = document.getElementById('modal-email-admin-valor').value.trim();
   const errEl = document.getElementById('modal-email-admin-err');
   errEl.textContent = '';
@@ -6601,6 +7071,7 @@ async function guConfirmarEmailAdmin() {
 }
 
 async function guExcluirAdmin(id, nome) {
+  if (bloquearSomenteLeitura('Exclusao de administrador')) return;
   if (!confirm(`Excluir o administrador "${nome}"?\nEsta ação não pode ser desfeita.`)) return;
   const token = guGetToken();
   try {
@@ -6617,7 +7088,7 @@ async function guExcluirAdmin(id, nome) {
   }
 }
 
-// ── START ─────────────────────────────────────────────────────────────────────
+// â”€â”€ START â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 init();
 
 </script>

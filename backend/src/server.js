@@ -16,14 +16,99 @@ app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 const frontendPath = path.resolve(__dirname, "../../frontend");
 
+app.use((req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  next();
+});
+
 app.use(express.static(frontendPath));
 
 const PORT = process.env.PORT || 3000;
 const uri = process.env.MONGODB_URI;
 const dbName = process.env.DB_NAME || "soneda_dashboard";
+const READ_ONLY = /^(1|true|yes|sim)$/i.test(process.env.READ_ONLY || "");
 const USUARIO_PAI_PADRAO = "larissa antunez";
 
 const client = new MongoClient(uri);
+
+const WRITE_METHODS = new Set([
+  "bulkWrite",
+  "createIndex",
+  "createIndexes",
+  "deleteMany",
+  "deleteOne",
+  "drop",
+  "dropIndex",
+  "dropIndexes",
+  "findOneAndDelete",
+  "findOneAndReplace",
+  "findOneAndUpdate",
+  "insertMany",
+  "insertOne",
+  "replaceOne",
+  "updateMany",
+  "updateOne"
+]);
+
+function pipelineTemEscrita(pipeline = []) {
+  return Array.isArray(pipeline) && pipeline.some(stage => stage && (stage.$merge || stage.$out));
+}
+
+function bloquearEscritaMongo(operacao) {
+  const erro = new Error(`Ambiente somente leitura: operacao Mongo bloqueada (${operacao}).`);
+  erro.code = "READ_ONLY_MONGO_WRITE_BLOCKED";
+  throw erro;
+}
+
+function criarDbSomenteLeitura(db) {
+  return new Proxy(db, {
+    get(target, prop) {
+      if (prop === "collection") {
+        return (nome, ...args) => {
+          const collection = target.collection(nome, ...args);
+          return new Proxy(collection, {
+            get(colTarget, colProp) {
+              if (WRITE_METHODS.has(colProp)) {
+                return () => bloquearEscritaMongo(`${String(nome)}.${String(colProp)}`);
+              }
+              if (colProp === "aggregate") {
+                return (pipeline, options) => {
+                  if (pipelineTemEscrita(pipeline)) {
+                    bloquearEscritaMongo(`${String(nome)}.aggregate($merge/$out)`);
+                  }
+                  return colTarget.aggregate(pipeline, options);
+                };
+              }
+              const value = colTarget[colProp];
+              return typeof value === "function" ? value.bind(colTarget) : value;
+            }
+          });
+        };
+      }
+      const value = target[prop];
+      return typeof value === "function" ? value.bind(target) : value;
+    }
+  });
+}
+
+app.use((req, res, next) => {
+  if (!READ_ONLY) return next();
+  const metodoEscrita = ["POST", "PUT", "PATCH", "DELETE"].includes(req.method);
+  const rotaSessao = [
+    "/api/login",
+    "/api/logout",
+    "/api/admin/login",
+    "/api/admin/logout"
+  ].includes(req.path);
+  if (metodoEscrita && !rotaSessao) {
+    return res.status(403).json({
+      erro: "Ambiente de testes em modo somente leitura. Alteracoes foram bloqueadas."
+    });
+  }
+  next();
+});
 
 // ── CACHE DE RESULTADOS (TTL 60 min) ─────────────────────────────────────────
 const _cache = new Map();
@@ -386,7 +471,7 @@ function filtroMesDivergente() {
 async function iniciarServidor() {
   try {
     await client.connect();
-    const db = client.db(dbName);
+    const db = READ_ONLY ? criarDbSomenteLeitura(client.db(dbName)) : client.db(dbName);
 
     async function dadosVersion() {
       if (Date.now() - _dadosVersionCache.ts < 5000) return _dadosVersionCache.value;
@@ -521,7 +606,7 @@ async function iniciarServidor() {
 
     await atualizarFlagsMigracao();
     // Migra campos de performance em background sem bloquear o startup
-    migrarCamposBackground();
+    if (!READ_ONLY) migrarCamposBackground();
     function aquecerCacheDashboard(motivo = "startup") {
       const { request } = require('http');
       const PORT_WU = process.env.PORT || 3000;
@@ -556,6 +641,7 @@ async function iniciarServidor() {
     }, 4000);
 
     // Seed usuário inicial de importação a partir das variáveis de ambiente
+    if (!READ_ONLY) {
     const totalUsuarios = await db.collection("usuarios_importacao").countDocuments();
     if (totalUsuarios === 0 && process.env.ADMIN_USER && process.env.ADMIN_PASSWORD) {
       await db.collection("usuarios_importacao").insertOne({
@@ -648,9 +734,17 @@ async function iniciarServidor() {
 
     // TTL automático para tokens de reset expirados (importação e admin)
     await db.collection("tokens_reset").createIndex({ expira: 1 }, { expireAfterSeconds: 0 });
+    }
 
     app.get("/", (req, res) => {
       res.sendFile(path.join(frontendPath, "index.html"));
+    });
+
+    app.get("/api/config", (req, res) => {
+      res.json({
+        readOnly: READ_ONLY,
+        ambiente: READ_ONLY ? "teste" : "producao"
+      });
     });
 
     app.get("/reset-senha", (req, res) => {
@@ -1538,8 +1632,34 @@ async function iniciarServidor() {
 
         const estoqueExpr = { $ifNull: ["$_estoque_num", brToDouble({ $getField: "Estoque Diario" })] };
         const preStages = Object.keys(baseMatch).length ? [{ $match: baseMatch }] : [];
+        const latestMatch = { ...baseMatch };
+        if (cat && _migCat) latestMatch["_cat"] = matchListaTexto(cat);
+        if (familia && _migCat) latestMatch["_fam"] = matchListaTexto(familia);
+        const latestDoc = _migData
+          ? await db.collection("dados_brutos")
+              .find(latestMatch, { projection: { _data_iso: 1 } })
+              .sort({ _data_iso: -1 })
+              .limit(1)
+              .next()
+          : null;
+        let ultimaDataEstoque = latestDoc?._data_iso || null;
+        if (!ultimaDataEstoque) {
+          const [ultimaDataDoc] = await db.collection("dados_brutos").aggregate([
+            ...preStages,
+            { $group: { _id: null, data: { $max: dateGroupExpr } } }
+          ], { allowDiskUse: true }).toArray();
+          ultimaDataEstoque = ultimaDataDoc?.data || null;
+        }
+        const matchUltimaDataEstoque = ultimaDataEstoque
+          ? (_migData
+              ? [{ $match: { _data_iso: ultimaDataEstoque } }]
+              : [{ $match: { $expr: { $eq: [dateGroupExpr, ultimaDataEstoque] } } }])
+          : [];
+        const snapshotUltimoDia = req.query.snapshot === "1";
+        const facetPreStages = snapshotUltimoDia ? [...preStages, ...matchUltimaDataEstoque] : preStages;
+
         const [facet] = await db.collection("dados_brutos").aggregate([
-          ...preStages,
+          ...facetPreStages,
           { $facet: {
             total: [
               { $group: { _id: null, total: { $sum: estoqueExpr }, lojas: { $addToSet: "$Loja" } } },
@@ -1569,7 +1689,9 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/estoque", async (req, res) => {
       try {
-        const cacheKey = await dashboardCacheKey('est:v5', req.query);
+        const cacheKey = req.query.snapshot === "1"
+          ? `est:v13:snapshot:${JSON.stringify(req.query)}`
+          : await dashboardCacheKey('est:v13', req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
@@ -1612,7 +1734,7 @@ async function iniciarServidor() {
         const famCampo = _migCat ? "_fam" : "_fam_atual";
         if (cat)     preStages.push({ $match: { [catCampo]: matchListaTexto(cat) } });
         if (familia) preStages.push({ $match: { [famCampo]: matchListaTexto(familia) } });
-        const estoqueExpr = brToDouble({ $getField: "Estoque Diario" });
+        const estoqueExpr = { $ifNull: ["$_estoque_num", brToDouble({ $getField: "Estoque Diario" })] };
         const dateGroupExpr = {
           $ifNull: [
             _migData ? "$_data_iso" : null,
@@ -1628,8 +1750,48 @@ async function iniciarServidor() {
           ]
         };
 
+        if (req.query.historico === "1") {
+          const historico = await db.collection("dados_brutos").aggregate([
+            ...preStages,
+            { $group: { _id: { loja: "$Loja", data: dateGroupExpr }, qty: { $sum: estoqueExpr } } },
+            { $sort: { "_id.data": 1, qty: -1 } }
+          ], { allowDiskUse: true }).toArray();
+
+          const resultHistorico = {
+            por_loja_dia: historico.map(r => ({ loja: r._id.loja, data: r._id.data, qty: r.qty }))
+          };
+          cacheSet(cacheKey, resultHistorico);
+          return res.json(resultHistorico);
+        }
+
+        const latestMatch = { ...baseMatch };
+        if (cat && _migCat) latestMatch["_cat"] = matchListaTexto(cat);
+        if (familia && _migCat) latestMatch["_fam"] = matchListaTexto(familia);
+        const latestDoc = _migData
+          ? await db.collection("dados_brutos")
+              .find(latestMatch, { projection: { _data_iso: 1 } })
+              .sort({ _data_iso: -1 })
+              .limit(1)
+              .next()
+          : null;
+        let ultimaDataEstoque = latestDoc?._data_iso || null;
+        if (!ultimaDataEstoque) {
+          const [ultimaDataDoc] = await db.collection("dados_brutos").aggregate([
+            ...preStages,
+            { $group: { _id: null, data: { $max: dateGroupExpr } } }
+          ], { allowDiskUse: true }).toArray();
+          ultimaDataEstoque = ultimaDataDoc?.data || null;
+        }
+        const matchUltimaDataEstoque = ultimaDataEstoque
+          ? (_migData
+              ? [{ $match: { _data_iso: ultimaDataEstoque } }]
+              : [{ $match: { $expr: { $eq: [dateGroupExpr, ultimaDataEstoque] } } }])
+          : [];
+        const snapshotUltimoDia = req.query.snapshot === "1";
+        const facetPreStages = snapshotUltimoDia ? [...preStages, ...matchUltimaDataEstoque] : preStages;
+
         const [facet] = await db.collection("dados_brutos").aggregate([
-          ...preStages,
+          ...facetPreStages,
           { $facet: {
             total: [
               { $group: { _id: null, total: { $sum: estoqueExpr }, lojas: { $addToSet: "$Loja" } } },
@@ -1644,15 +1806,30 @@ async function iniciarServidor() {
               { $sort: { "_id.data": 1, qty: -1 } }
             ],
             por_produto: [
+              { $match: { _id: "__skip_acumulado__" } },
               { $group: { _id: { $ifNull: [
                 { $getField: "Produto" },
                 { $ifNull: [{ $getField: "produto" }, { $getField: "Descrição" }] }
               ]}, qty: { $sum: estoqueExpr } } },
               { $sort: { qty: -1 } }
             ],
+            por_produto_dia: [
+              ...matchUltimaDataEstoque,
+              { $group: { _id: { nome: { $ifNull: [
+                { $getField: "Produto" },
+                { $ifNull: [{ $getField: "produto" }, { $getField: "DescriÃ§Ã£o" }] }
+              ]}, data: dateGroupExpr }, qty: { $sum: estoqueExpr } } },
+              { $sort: { "_id.data": 1, qty: -1 } }
+            ],
             por_cat: [
+              { $match: { _id: "__skip_acumulado__" } },
               { $group: { _id: `$${catCampo}`, qty: { $sum: estoqueExpr } } },
               { $sort: { qty: -1 } }
+            ],
+            por_cat_dia: [
+              ...matchUltimaDataEstoque,
+              { $group: { _id: { cat: `$${catCampo}`, data: dateGroupExpr }, qty: { $sum: estoqueExpr } } },
+              { $sort: { "_id.data": 1, qty: -1 } }
             ]
           }}
         ], { allowDiskUse: true }).toArray();
@@ -1663,7 +1840,9 @@ async function iniciarServidor() {
           por_loja:    (facet?.por_loja || []).map(r => ({ loja: r._id, qty: r.qty })),
           por_loja_dia: (facet?.por_loja_dia || []).map(r => ({ loja: r._id.loja, data: r._id.data, qty: r.qty })),
           por_produto: (facet?.por_produto || []).map(r => ({ nome: r._id || "SEM PRODUTO", qty: r.qty })),
-          por_cat: (facet?.por_cat || []).map(r => ({ cat: r._id || "SEM CATEGORIA", qty: r.qty }))
+          por_produto_dia: (facet?.por_produto_dia || []).map(r => ({ nome: r._id.nome || "SEM PRODUTO", data: r._id.data, qty: r.qty })),
+          por_cat: (facet?.por_cat || []).map(r => ({ cat: r._id || "SEM CATEGORIA", qty: r.qty })),
+          por_cat_dia: (facet?.por_cat_dia || []).map(r => ({ cat: r._id.cat || "SEM CATEGORIA", data: r._id.data, qty: r.qty }))
         };
 
         cacheSet(cacheKey, result);
