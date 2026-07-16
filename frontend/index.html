@@ -340,6 +340,7 @@
     <div class="filter-group"><label>Loja</label><select id="f-loja" data-multi-filter="1" multiple><option value="">Todas</option></select></div>
     <div class="filter-group"><label>Categoria</label><select id="f-cat" data-multi-filter="1" multiple><option value="">Todas</option></select></div>
     <div class="filter-group"><label>Família</label><select id="f-familia" data-multi-filter="1" multiple><option value="">Todas</option></select></div>
+    <div class="filter-group"><label>Produto</label><select id="f-produto" data-multi-filter="1" multiple><option value="">Todos</option></select></div>
     <button class="btn-clear" onclick="limparFiltros()">↺ Limpar</button>
   </div>
   <div id="f-active-banner" class="active-banner" style="display:none"></div>
@@ -391,6 +392,7 @@
     <div class="filter-group"><label>Loja</label><select id="se-loja" data-multi-filter="1" multiple><option value="">Todas</option></select></div>
     <div class="filter-group"><label>Categoria</label><select id="se-cat" data-multi-filter="1" multiple><option value="">Todas</option></select></div>
     <div class="filter-group"><label>Família</label><select id="se-familia" data-multi-filter="1" multiple><option value="">Todas</option></select></div>
+    <div class="filter-group"><label>Produto</label><select id="se-produto" data-multi-filter="1" multiple><option value="">Todos</option></select></div>
     <button class="btn-clear" onclick="seLimparFiltros()">↺ Limpar</button>
   </div>
   <div id="se-active-banner" class="active-banner" style="display:none"></div>
@@ -1001,6 +1003,10 @@
       <label>Família</label>
       <select id="v-familia" data-multi-filter="1" multiple><option value="">Todas</option></select>
     </div>
+    <div class="filter-group">
+      <label>Produto</label>
+      <select id="v-produto" data-multi-filter="1" multiple><option value="">Todos</option></select>
+    </div>
     <button class="btn-clear" onclick="vLimparFiltros()">↺ Limpar</button>
   </div>
   <div id="v-active-banner" class="active-banner" style="display:none"></div>
@@ -1138,6 +1144,10 @@
     <div class="filter-group">
       <label>Família</label>
       <select id="d2-familia" data-multi-filter="1" multiple><option value="">Todas</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Produto</label>
+      <select id="d2-produto" data-multi-filter="1" multiple><option value="">Todos</option></select>
     </div>
     <button class="btn-clear" onclick="d2LimparFiltros()">↺ Limpar</button>
   </div>
@@ -1281,6 +1291,10 @@
     <div class="filter-group">
       <label>Família</label>
       <select id="d3-familia" data-multi-filter="1" multiple><option value="">Todas</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Produto</label>
+      <select id="d3-produto" data-multi-filter="1" multiple><option value="">Todos</option></select>
     </div>
     <button class="btn-clear" onclick="d3LimparFiltros()">↺ Limpar</button>
   </div>
@@ -1840,7 +1854,7 @@ async function init() {
     const [brutosRes, deParaRes, catRes, resumoRes, catsRes, famsRes, filtrosRes] = await Promise.allSettled([
       Promise.resolve([]),
       fetchJSON('/api/lojas-depara'),
-      Promise.resolve([]),
+      fetchJSON('/api/categorias-depara'),
       fetchJSON('/api/dashboard/resumo'),
       fetchJSON('/api/dashboard/categorias'),
       fetchJSON('/api/dashboard/familias'),
@@ -1894,7 +1908,7 @@ async function init() {
             if (valido(vProd)) produtoMap[ean]  = vProd;
           });
         }
-        console.log(`[Categorias] ${Object.keys(catMap).length} EANs com categoria, ${Object.keys(familiaMap).length} EANs com família carregados`);
+        console.log(`[Categorias] ${Object.keys(catMap).length} EANs com categoria, ${Object.keys(familiaMap).length} EANs com família e ${Object.keys(produtoMap).length} EANs com produto carregados`);
       } catch(e) { console.warn('Categorias não carregadas:', e.message); }
     } else { console.warn('Categorias não carregadas:', catRes.reason?.message); }
 
@@ -1967,8 +1981,6 @@ async function init() {
     garantirFiltrosAba('f');
     renderizar();
     tabsRenderizadas.add('vendas');
-    prepararAbasOcultas();
-    preaquecerAbasDashboard();
 
   } catch(err) {
     console.error(err);
@@ -2188,6 +2200,7 @@ function prepararMultiSelect(select) {
       document.querySelectorAll('.multi-select.open').forEach(el => { if (el !== wrap) el.classList.remove('open'); });
       wrap.classList.toggle('open');
       if (wrap.classList.contains('open')) {
+        updateMultiSelect(select, true);
         setTimeout(() => wrap.querySelector('.multi-select-search-input')?.focus(), 0);
       }
     });
@@ -2195,7 +2208,7 @@ function prepararMultiSelect(select) {
   updateMultiSelect(select);
 }
 
-function updateMultiSelect(selectOrId) {
+function updateMultiSelect(selectOrId, renderMenu = false) {
   const select = typeof selectOrId === 'string' ? document.getElementById(selectOrId) : selectOrId;
   if (!select || select.dataset.multiFilter !== '1') return;
   const wrap = select.nextElementSibling;
@@ -2205,6 +2218,10 @@ function updateMultiSelect(selectOrId) {
   const emptyLabel = select.options[0]?.textContent?.trim() || 'Todos';
   wrap.querySelector('.multi-select-label').textContent = formatSelection(labels, '', '') || emptyLabel;
   const menu = wrap.querySelector('.multi-select-menu');
+  if (!renderMenu && !wrap.classList.contains('open')) {
+    menu.innerHTML = '';
+    return;
+  }
   const searchInputAtual = menu.querySelector('.multi-select-search-input');
   const manterFocoBusca = document.activeElement === searchInputAtual;
   const cursorBusca = manterFocoBusca ? searchInputAtual.selectionStart : null;
@@ -2223,12 +2240,12 @@ function updateMultiSelect(selectOrId) {
   const searchInput = menu.querySelector('.multi-select-search-input');
   searchInput.addEventListener('input', () => {
     wrap.dataset.search = searchInput.value;
-    updateMultiSelect(select);
+    updateMultiSelect(select, true);
   });
   searchInput.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       wrap.dataset.search = '';
-      updateMultiSelect(select);
+      updateMultiSelect(select, true);
     }
   });
   if (manterFocoBusca) {
@@ -2245,7 +2262,7 @@ function updateMultiSelect(selectOrId) {
         const opt = [...select.options].find(o => o.value === input.value);
         if (opt) opt.selected = input.checked;
       }
-      updateMultiSelect(select);
+      updateMultiSelect(select, true);
       select.dispatchEvent(new Event('change', { bubbles: true }));
     });
   });
@@ -2271,6 +2288,15 @@ function filtroLojas(apenasComDePara = false) {
     .sort((a,b) => +a - +b);
 }
 
+function filtroProdutos() {
+  return [...new Set([
+    ...Object.values(produtoMap || {}),
+    ...rawData.map(r => getProduto(r))
+  ].map(v => String(v || '').trim()).filter(Boolean))]
+    .filter(v => v !== '-' && v !== '?')
+    .sort((a,b) => a.localeCompare(b, 'pt-BR'));
+}
+
 function preencherAnoMesTodasAbas() {
   const anos = filtroAnos();
   const meses = filtroMeses();
@@ -2294,12 +2320,14 @@ function construirFiltros() {
   const lojas = filtroLojas(true);
   const cats    = catList.length    ? catList    : [...new Set(rawData.map(r => getCat(r)).filter(Boolean))].sort();
   const familias = familiaList.length ? familiaList : [...new Set(rawData.map(r => getFamilia(r)).filter(Boolean))].sort();
+  const produtos = filtroProdutos();
 
   const sA = document.getElementById('f-ano');
   const sM = document.getElementById('f-mes');
   const sL = document.getElementById('f-loja');
   const sC = document.getElementById('f-cat');
   const sF = document.getElementById('f-familia');
+  const sP = document.getElementById('f-produto');
 
   sA.innerHTML = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
   sM.innerHTML = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
@@ -2309,9 +2337,10 @@ function construirFiltros() {
   }).join('');
   sC.innerHTML = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   sF.innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
+  sP.innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   prepararTodosMultiSelect();
 
-  ['f-ano','f-mes','f-di','f-df','f-loja','f-cat','f-familia'].forEach(id =>
+  ['f-ano','f-mes','f-di','f-df','f-loja','f-cat','f-familia','f-produto'].forEach(id =>
     document.getElementById(id).addEventListener('change', renderizar)
   );
 }
@@ -2337,7 +2366,7 @@ function prepararAbasOcultas() {
 }
 
 function limparFiltros() {
-  ['f-ano','f-mes','f-di','f-df','f-loja','f-cat','f-familia'].forEach(id => clearSelect(id));
+  ['f-ano','f-mes','f-di','f-df','f-loja','f-cat','f-familia','f-produto'].forEach(id => clearSelect(id));
   f_active = { dim: null, val: null };
   renderizar();
 }
@@ -2350,6 +2379,7 @@ function filtrar(excl) {
   const lojas   = selectedValues('f-loja');
   const cats    = selectedValues('f-cat');
   const familias = selectedValues('f-familia');
+  const produtos = selectedValues('f-produto');
 
   return rawData.filter(r => {
     if (!hasSelectedValue(anos, col(r,'Ano'))) return false;
@@ -2357,6 +2387,7 @@ function filtrar(excl) {
     if (!hasSelectedValue(lojas, col(r,'Loja','loja'))) return false;
     if (!hasSelectedValue(cats, getCat(r))) return false;
     if (!hasSelectedValue(familias, getFamilia(r))) return false;
+    if (!hasSelectedValue(produtos, getProduto(r))) return false;
     if (f_active.val && f_active.dim !== excl) {
       if (f_active.dim === 'loja'    && col(r,'Loja','loja') !== f_active.val) return false;
       if (f_active.dim === 'cat'     && getCat(r) !== f_active.val) return false;
@@ -2401,11 +2432,26 @@ function buildAgreParams(prefix, activeObj) {
     const values = selectedValues(id);
     values.forEach(value => params.append(queryName, value));
   };
+  const addProdutos = id => {
+    const nomes = selectedValues(id);
+    if (!nomes.length) return;
+    const nomesNorm = new Set(nomes.map(normalizeFilterValue));
+    const gtins = Object.entries(produtoMap || {})
+      .filter(([, nome]) => nomesNorm.has(normalizeFilterValue(nome)))
+      .map(([gtin]) => gtin)
+      .filter(Boolean);
+    if (gtins.length) {
+      [...new Set(gtins)].forEach(gtin => params.append('produto_gtin', gtin));
+    } else {
+      nomes.forEach(nome => params.append('produto', nome));
+    }
+  };
   addMulti('ano', `${prefix}-ano`);
   addMulti('mes', `${prefix}-mes`);
   addMulti('loja', `${prefix}-loja`);
   addMulti('cat', `${prefix}-cat`);
   addMulti('familia', `${prefix}-familia`);
+  addProdutos(`${prefix}-produto`);
   const di  = g(`${prefix}-di`),  df  = g(`${prefix}-df`);
   if (di)     params.set('di', di);
   if (df)     params.set('df', df);
@@ -3107,6 +3153,7 @@ function d2ConstruirFiltros() {
   const cats  = catList.length ? catList : [...new Set(rawData.map(r => getCat(r)).filter(Boolean))].sort();
 
   const familias = familiaList.length ? familiaList : [...new Set(rawData.map(r => getFamilia(r)).filter(Boolean))].sort();
+  const produtos = filtroProdutos();
 
   document.getElementById('d2-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
   document.getElementById('d2-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
@@ -3116,9 +3163,10 @@ function d2ConstruirFiltros() {
   }).join('');
   document.getElementById('d2-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   document.getElementById('d2-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
+  document.getElementById('d2-produto').innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   prepararTodosMultiSelect();
 
-  ['d2-ano','d2-mes','d2-di','d2-df','d2-loja','d2-cat','d2-familia'].forEach(id =>
+  ['d2-ano','d2-mes','d2-di','d2-df','d2-loja','d2-cat','d2-familia','d2-produto'].forEach(id =>
     document.getElementById(id).addEventListener('change', d2Renderizar)
   );
 
@@ -3127,7 +3175,7 @@ function d2ConstruirFiltros() {
 }
 
 function d2LimparFiltros() {
-  ['d2-ano','d2-mes','d2-di','d2-df','d2-loja','d2-cat','d2-familia'].forEach(id => clearSelect(id));
+  ['d2-ano','d2-mes','d2-di','d2-df','d2-loja','d2-cat','d2-familia','d2-produto'].forEach(id => clearSelect(id));
   d2_active = { dim: null, val: null };
   d2Renderizar();
 }
@@ -3140,6 +3188,7 @@ function d2Filtrar(excl) {
   const lojas   = selectedValues('d2-loja');
   const cats    = selectedValues('d2-cat');
   const familias = selectedValues('d2-familia');
+  const produtos = selectedValues('d2-produto');
 
   return rawData.filter(r => {
     if (!hasSelectedValue(anos, col(r,'Ano'))) return false;
@@ -3147,6 +3196,7 @@ function d2Filtrar(excl) {
     if (!hasSelectedValue(lojas, col(r,'Loja','loja'))) return false;
     if (!hasSelectedValue(cats, getCat(r))) return false;
     if (!hasSelectedValue(familias, getFamilia(r))) return false;
+    if (!hasSelectedValue(produtos, getProduto(r))) return false;
     if (d2_active.val && d2_active.dim !== excl) {
       if (d2_active.dim === 'cat' && getCat(r) !== d2_active.val) return false;
       if (d2_active.dim === 'data') {
@@ -3824,6 +3874,7 @@ function d3ConstruirFiltros() {
   const cats  = catList.length ? catList : [...new Set(rawData.map(r => getCat(r)).filter(Boolean))].sort();
 
   const familias = familiaList.length ? familiaList : [...new Set(rawData.map(r => getFamilia(r)).filter(Boolean))].sort();
+  const produtos = filtroProdutos();
 
   document.getElementById('d3-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
   document.getElementById('d3-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
@@ -3833,16 +3884,17 @@ function d3ConstruirFiltros() {
   }).join('');
   document.getElementById('d3-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   document.getElementById('d3-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
+  document.getElementById('d3-produto').innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   prepararTodosMultiSelect();
 
-  ['d3-ano','d3-mes','d3-di','d3-df','d3-loja','d3-cat','d3-familia'].forEach(id =>
+  ['d3-ano','d3-mes','d3-di','d3-df','d3-loja','d3-cat','d3-familia','d3-produto'].forEach(id =>
     document.getElementById(id).addEventListener('change', d3Renderizar)
   );
   document.getElementById('d3-status-msg').textContent = document.getElementById('status-msg').textContent;
 }
 
 function d3LimparFiltros() {
-  ['d3-ano','d3-mes','d3-di','d3-df','d3-loja','d3-cat','d3-familia'].forEach(id => clearSelect(id));
+  ['d3-ano','d3-mes','d3-di','d3-df','d3-loja','d3-cat','d3-familia','d3-produto'].forEach(id => clearSelect(id));
   d3_active = { dim: null, val: null };
   d3Renderizar();
 }
@@ -3855,6 +3907,7 @@ function d3Filtrar(excl) {
   const lojas   = selectedValues('d3-loja');
   const cats    = selectedValues('d3-cat');
   const familias = selectedValues('d3-familia');
+  const produtos = selectedValues('d3-produto');
 
   return rawData.filter(r => {
     if (!hasSelectedValue(anos, col(r,'Ano'))) return false;
@@ -3862,6 +3915,7 @@ function d3Filtrar(excl) {
     if (!hasSelectedValue(lojas, col(r,'Loja','loja'))) return false;
     if (!hasSelectedValue(cats, getCat(r))) return false;
     if (!hasSelectedValue(familias, getFamilia(r))) return false;
+    if (!hasSelectedValue(produtos, getProduto(r))) return false;
     if (d3_active.val && d3_active.dim !== excl) {
       if (d3_active.dim === 'loja' && col(r,'Loja','loja') !== d3_active.val) return false;
     }
@@ -4935,15 +4989,17 @@ function seConstruirFiltros() {
   const lojas = seOpcoesLojas();
   const cats  = seOpcoesCategorias();
   const familias = seOpcoesFamilias();
+  const produtos = filtroProdutos();
 
   document.getElementById('se-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
   document.getElementById('se-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
   document.getElementById('se-loja').innerHTML    = '<option value="">Todas</option>' + lojas.map(l => `<option value="${l}">#${l} - ${nomeLojaDePara(l)}</option>`).join('');
   document.getElementById('se-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   document.getElementById('se-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
-  ['se-ano','se-mes','se-loja','se-cat','se-familia'].forEach(id => prepararMultiSelect(document.getElementById(id)));
+  document.getElementById('se-produto').innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+  ['se-ano','se-mes','se-loja','se-cat','se-familia','se-produto'].forEach(id => prepararMultiSelect(document.getElementById(id)));
 
-  ['se-ano','se-mes','se-di','se-df','se-loja','se-cat','se-familia'].forEach(id =>
+  ['se-ano','se-mes','se-di','se-df','se-loja','se-cat','se-familia','se-produto'].forEach(id =>
     document.getElementById(id).addEventListener('change', seRenderizar)
   );
 
@@ -4952,7 +5008,7 @@ function seConstruirFiltros() {
 }
 
 function seLimparFiltros() {
-  ['se-ano','se-mes','se-di','se-df','se-loja','se-cat','se-familia'].forEach(id => clearSelect(id));
+  ['se-ano','se-mes','se-di','se-df','se-loja','se-cat','se-familia','se-produto'].forEach(id => clearSelect(id));
   se_active = { dim: null, val: null };
   seRenderizar();
 }
@@ -4970,6 +5026,7 @@ function seFiltrar(excl) {
   const lojas   = selectedValues('se-loja');
   const cats    = selectedValues('se-cat');
   const familias = selectedValues('se-familia');
+  const produtos = selectedValues('se-produto');
 
   return rawData.filter(r => {
     const lojaRaw = col(r,'Loja','loja');
@@ -4983,6 +5040,7 @@ function seFiltrar(excl) {
     if (!hasSelectedValue(lojas, lojaKey)) return false;
     if (!hasSelectedValue(cats, getCat(r))) return false;
     if (!hasSelectedValue(familias, getFamilia(r))) return false;
+    if (!hasSelectedValue(produtos, getProduto(r))) return false;
 
     if (se_active.val && se_active.dim !== excl) {
       if (se_active.dim === 'loja' && lojaKey !== se_active.val) return false;
@@ -5524,6 +5582,7 @@ function vConstruirFiltros() {
   const lojas    = filtroLojas(false);
   const cats     = catList.length ? catList : [...new Set(rawData.map(r => getCat(r)).filter(Boolean))].sort();
   const familias = familiaList.length ? familiaList : [...new Set(rawData.map(r => getFamilia(r)).filter(Boolean))].sort();
+  const produtos = filtroProdutos();
 
   document.getElementById('v-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
   document.getElementById('v-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
@@ -5533,16 +5592,17 @@ function vConstruirFiltros() {
   }).join('');
   document.getElementById('v-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   document.getElementById('v-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
+  document.getElementById('v-produto').innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   prepararTodosMultiSelect();
 
-  ['v-ano','v-mes','v-di','v-df','v-loja','v-cat','v-familia'].forEach(id =>
+  ['v-ano','v-mes','v-di','v-df','v-loja','v-cat','v-familia','v-produto'].forEach(id =>
     document.getElementById(id).addEventListener('change', vRenderizar)
   );
   document.getElementById('v-status-msg').textContent = document.getElementById('status-msg').textContent;
 }
 
 function vLimparFiltros() {
-  ['v-ano','v-mes','v-di','v-df','v-loja','v-cat','v-familia'].forEach(id => clearSelect(id));
+  ['v-ano','v-mes','v-di','v-df','v-loja','v-cat','v-familia','v-produto'].forEach(id => clearSelect(id));
   v_active = { dim: null, val: null };
   vRenderizar();
 }
@@ -5555,6 +5615,7 @@ function vFiltrar(excl) {
   const lojas   = selectedValues('v-loja');
   const cats    = selectedValues('v-cat');
   const familias = selectedValues('v-familia');
+  const produtos = selectedValues('v-produto');
 
   return rawData.filter(r => {
     if (!hasSelectedValue(anos, col(r,'Ano'))) return false;
@@ -5562,6 +5623,7 @@ function vFiltrar(excl) {
     if (!hasSelectedValue(lojas, col(r,'Loja','loja'))) return false;
     if (!hasSelectedValue(cats, getCat(r))) return false;
     if (!hasSelectedValue(familias, getFamilia(r))) return false;
+    if (!hasSelectedValue(produtos, getProduto(r))) return false;
     if (v_active.val && v_active.dim !== excl) {
       if (v_active.dim === 'loja' && col(r,'Loja','loja') !== v_active.val) return false;
       if (v_active.dim === 'cat'  && getCat(r) !== v_active.val) return false;

@@ -389,6 +389,45 @@ function matchListaTexto(valor) {
   return valores.length === 1 ? valores[0] : { $in: valores };
 }
 
+function produtoNomeExpr() {
+  return {
+    $ifNull: [
+      { $getField: "Produto" },
+      { $ifNull: [
+        { $getField: "produto" },
+        { $ifNull: [
+          { $getField: "Descrição" },
+          { $getField: "DescriÃ§Ã£o" }
+        ] }
+      ] }
+    ]
+  };
+}
+
+function produtoDeParaExpr(fallbackExpr = produtoNomeExpr()) {
+  return {
+    $ifNull: [
+      { $arrayElemAt: ["$_c.Produto", 0] },
+      { $ifNull: [
+        { $arrayElemAt: ["$_c.PRODUTO", 0] },
+        { $ifNull: [
+          { $arrayElemAt: ["$_c.NOME PRODUTO", 0] },
+          { $ifNull: [
+            { $arrayElemAt: ["$_c.NOME_PRODUTO", 0] },
+            { $ifNull: [
+              { $arrayElemAt: ["$_c.Descrição", 0] },
+              { $ifNull: [
+                { $arrayElemAt: ["$_c.DESCRICAO", 0] },
+                fallbackExpr
+              ] }
+            ] }
+          ] }
+        ] }
+      ] }
+    ]
+  };
+}
+
 function aplicarFiltroMes(match, mes) {
   const meses = listaParam(mes)
     .map(normalizarMes)
@@ -1448,11 +1487,11 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/agregados", async (req, res) => {
       try {
-        const cacheKey = await dashboardCacheKey('agre:v5', req.query);
+        const cacheKey = await dashboardCacheKey('agre:v7', req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
-        const { ano, mes, loja, cat, familia } = req.query;
+        const { ano, mes, loja, cat, familia, produto, produto_gtin } = req.query;
         const di       = req.query.di            || null; // data início YYYY-MM-DD
         const df       = req.query.df            || null; // data fim    YYYY-MM-DD
         const aLoja    = req.query.ativo_loja    || null;
@@ -1469,7 +1508,7 @@ async function iniciarServidor() {
         const joinCat = _migGtin
           ? [
               { $lookup: { from: "categorias_depara", localField: "_gtin", foreignField: "CODBARRAS", as: "_c" } },
-              { $addFields: { _cat: { $arrayElemAt: ["$_c.CATEGORIA", 0] }, _fam: { $arrayElemAt: ["$_c.FAMILIA", 0] } } }
+              { $addFields: { _cat: { $ifNull: [{ $arrayElemAt: ["$_c.CATEGORIA", 0] }, "$_cat"] }, _fam: { $ifNull: [{ $arrayElemAt: ["$_c.FAMILIA", 0] }, "$_fam"] }, _prod: produtoDeParaExpr() } }
             ]
           : [
               { $lookup: {
@@ -1478,7 +1517,7 @@ async function iniciarServidor() {
                   pipeline: [{ $match: { $expr: { $eq: ["$$gtin", { $toString: "$CODBARRAS" }] } } }],
                   as: "_c"
               }},
-              { $addFields: { _cat: { $arrayElemAt: ["$_c.CATEGORIA", 0] }, _fam: { $arrayElemAt: ["$_c.FAMILIA", 0] } } }
+              { $addFields: { _cat: { $ifNull: [{ $arrayElemAt: ["$_c.CATEGORIA", 0] }, "$_cat"] }, _fam: { $ifNull: [{ $arrayElemAt: ["$_c.FAMILIA", 0] }, "$_fam"] }, _prod: produtoDeParaExpr() } }
             ];
 
         // Usa campos numéricos pré-computados quando disponíveis
@@ -1497,6 +1536,7 @@ async function iniciarServidor() {
         if (ano)  aplicarFiltroAno(baseMatch, ano);
         if (mes)  aplicarFiltroMes(baseMatch, mes);
         if (loja) baseMatch["Loja"] = matchTextoOuNumeroLista(loja);
+        if (produto_gtin && _migGtin) baseMatch["_gtin"] = matchListaTexto(produto_gtin);
         if ((di || df) && _migData) {
           const dr = {};
           if (di) dr.$gte = di;
@@ -1517,15 +1557,25 @@ async function iniciarServidor() {
           preStages.push({ $match: { $expr: conds.length === 1 ? conds[0] : { $and: conds } } });
         }
 
-        // Join único (uma vez para todos os facets de cat/fam) — pulado quando _cat já está pré-computado
-        if (!_migCat) {
+        // Join único (uma vez para todos os facets de cat/fam/produto) — pulado quando _cat já está pré-computado
+        if (!_migCat || (produto && !produto_gtin)) {
           if (_catCountCache < 0) _catCountCache = await db.collection("categorias_depara").estimatedDocumentCount();
           if (_catCountCache > 0) preStages.push(...joinCat);
         }
+        if (produto_gtin && !_migGtin) {
+          const gtins = listaParam(produto_gtin);
+          if (gtins.length) {
+            preStages.push({ $match: { $expr: { $in: [{ $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } }, gtins] } } });
+          }
+        }
+        if (produto && !produto_gtin) {
+          preStages.push({ $addFields: { _prod: { $ifNull: ["$_prod", produtoNomeExpr()] } } });
+        }
 
-        // Filtros dropdown de cat/fam — comuns a todos os branches do facet
+        // Filtros dropdown de cat/fam/produto — comuns a todos os branches do facet
         if (cat)     preStages.push({ $match: { _cat: matchListaTexto(cat) } });
         if (familia) preStages.push({ $match: { _fam: matchListaTexto(familia) } });
+        if (produto && !produto_gtin) preStages.push({ $match: { _prod: matchListaTexto(produto) } });
 
         // Filtros ativos (clique no gráfico) — aplicados seletivamente por branch
         const mLoja    = aLoja    ? [{ $match: { "Loja": matchTextoOuNumero(aLoja) } }]   : [];
@@ -1609,11 +1659,11 @@ async function iniciarServidor() {
 
     app.get("/api/dashboard/estoque-resumo", async (req, res) => {
       try {
-        const cacheKey = await dashboardCacheKey('est-resumo:v1', req.query);
+        const cacheKey = await dashboardCacheKey('est-resumo:v3', req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
-        const { ano, mes, loja, cat, familia } = req.query;
+        const { ano, mes, loja, cat, familia, produto, produto_gtin } = req.query;
         const di = req.query.di || null;
         const df = req.query.df || null;
 
@@ -1623,6 +1673,7 @@ async function iniciarServidor() {
         if (loja) baseMatch["Loja"] = matchTextoOuNumeroLista(loja);
         if (cat) baseMatch["_cat"] = matchListaTexto(cat);
         if (familia) baseMatch["_fam"] = matchListaTexto(familia);
+        if (produto_gtin && _migGtin) baseMatch["_gtin"] = matchListaTexto(produto_gtin);
         if ((di || df) && _migData) {
           const dr = {};
           if (di) dr.$gte = di;
@@ -1632,10 +1683,25 @@ async function iniciarServidor() {
 
         const estoqueExpr = { $ifNull: ["$_estoque_num", brToDouble({ $getField: "Estoque Diario" })] };
         const preStages = Object.keys(baseMatch).length ? [{ $match: baseMatch }] : [];
+        if (produto_gtin && !_migGtin) {
+          const gtins = listaParam(produto_gtin);
+          if (gtins.length) {
+            preStages.push({ $match: { $expr: { $in: [{ $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } }, gtins] } } });
+          }
+        }
+        if (produto && !produto_gtin) {
+          preStages.push(
+            { $addFields: { _gtin_prod_lookup: { $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } } } },
+            { $lookup: { from: "categorias_depara", localField: "_gtin_prod_lookup", foreignField: "CODBARRAS", as: "_c" } },
+            { $addFields: { _prod: produtoDeParaExpr() } },
+            { $unset: ["_c", "_gtin_prod_lookup"] },
+            { $match: { _prod: matchListaTexto(produto) } }
+          );
+        }
         const latestMatch = { ...baseMatch };
         if (cat && _migCat) latestMatch["_cat"] = matchListaTexto(cat);
         if (familia && _migCat) latestMatch["_fam"] = matchListaTexto(familia);
-        const latestDoc = _migData
+        const latestDoc = _migData && !(produto && !produto_gtin)
           ? await db.collection("dados_brutos")
               .find(latestMatch, { projection: { _data_iso: 1 } })
               .sort({ _data_iso: -1 })
@@ -1690,12 +1756,12 @@ async function iniciarServidor() {
     app.get("/api/dashboard/estoque", async (req, res) => {
       try {
         const cacheKey = req.query.snapshot === "1"
-          ? `est:v13:snapshot:${JSON.stringify(req.query)}`
-          : await dashboardCacheKey('est:v13', req.query);
+          ? `est:v15:snapshot:${JSON.stringify(req.query)}`
+          : await dashboardCacheKey('est:v15', req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
-        const { ano, mes, loja, cat, familia } = req.query;
+        const { ano, mes, loja, cat, familia, produto, produto_gtin } = req.query;
         const di = req.query.di || null;
         const df = req.query.df || null;
 
@@ -1703,6 +1769,7 @@ async function iniciarServidor() {
         if (ano)  aplicarFiltroAno(baseMatch, ano);
         if (mes)  aplicarFiltroMes(baseMatch, mes);
         if (loja) baseMatch["Loja"] = matchTextoOuNumeroLista(loja);
+        if (produto_gtin && _migGtin) baseMatch["_gtin"] = matchListaTexto(produto_gtin);
         if ((di || df) && _migData) {
           const dr = {};
           if (di) dr.$gte = di;
@@ -1734,6 +1801,21 @@ async function iniciarServidor() {
         const famCampo = _migCat ? "_fam" : "_fam_atual";
         if (cat)     preStages.push({ $match: { [catCampo]: matchListaTexto(cat) } });
         if (familia) preStages.push({ $match: { [famCampo]: matchListaTexto(familia) } });
+        if (produto_gtin && !_migGtin) {
+          const gtins = listaParam(produto_gtin);
+          if (gtins.length) {
+            preStages.push({ $match: { $expr: { $in: [{ $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } }, gtins] } } });
+          }
+        }
+        if (produto && !produto_gtin) {
+          preStages.push(
+            { $addFields: { _gtin_prod_lookup: { $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } } } },
+            { $lookup: { from: "categorias_depara", localField: "_gtin_prod_lookup", foreignField: "CODBARRAS", as: "_c" } },
+            { $addFields: { _prod: produtoDeParaExpr() } },
+            { $unset: ["_c", "_gtin_prod_lookup"] },
+            { $match: { _prod: matchListaTexto(produto) } }
+          );
+        }
         const estoqueExpr = { $ifNull: ["$_estoque_num", brToDouble({ $getField: "Estoque Diario" })] };
         const dateGroupExpr = {
           $ifNull: [
@@ -1767,7 +1849,7 @@ async function iniciarServidor() {
         const latestMatch = { ...baseMatch };
         if (cat && _migCat) latestMatch["_cat"] = matchListaTexto(cat);
         if (familia && _migCat) latestMatch["_fam"] = matchListaTexto(familia);
-        const latestDoc = _migData
+        const latestDoc = _migData && !(produto && !produto_gtin)
           ? await db.collection("dados_brutos")
               .find(latestMatch, { projection: { _data_iso: 1 } })
               .sort({ _data_iso: -1 })
