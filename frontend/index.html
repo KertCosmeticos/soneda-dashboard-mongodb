@@ -8,6 +8,7 @@
 <meta http-equiv="Expires" content="0">
 <title>Soneda · Dashboard de Vendas</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Figtree:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script>
@@ -1987,19 +1988,19 @@ async function admLogout() {
   admAtualizarUI();
 }
 
-async function enviarCSV(inputId, rota) {
+async function enviarCSV(inputId, rota, arquivoOverride = null) {
   if (bloquearSomenteLeitura('Importacao')) return;
   const fileInput = document.getElementById(inputId);
   const status    = document.getElementById('import-status');
   const token     = admGetToken();
 
-  if (!fileInput || !fileInput.files.length) {
+  if (!arquivoOverride && (!fileInput || !fileInput.files.length)) {
     status.textContent = 'Selecione um arquivo CSV antes de importar.';
     status.className = 'import-status err';
     return;
   }
 
-  const arquivo = fileInput.files[0];
+  const arquivo = arquivoOverride || fileInput.files[0];
   const kb = Math.round(arquivo.size / 1024);
 
   // Função para atualizar barra de progresso visual
@@ -2077,6 +2078,7 @@ async function enviarCSV(inputId, rota) {
     // Limpa cache de agregados para que o painel recarregue com dados novos
     limparCacheDashboard();
     setTimeout(() => recarregarDados(), 1600);
+    if (fileInput) fileInput.value = '';
 
   } catch (error) {
     console.error(error);
@@ -2092,6 +2094,54 @@ async function enviarCSV(inputId, rota) {
   }
 }
 
+function valorCSV(valor) {
+  const texto = String(valor ?? '').replace(/\r?\n/g, ' ').trim();
+  return /[;"\n\r]/.test(texto) ? `"${texto.replace(/"/g, '""')}"` : texto;
+}
+
+async function enviarPlanilhaDadosBrutosComoCSV(inputId, rota) {
+  const fileInput = document.getElementById(inputId);
+  const status = document.getElementById('import-status');
+  if (!window.XLSX) {
+    status.textContent = 'Biblioteca de leitura XLSX ainda nao carregou. Recarregue a pagina e tente novamente.';
+    status.className = 'import-status err';
+    return;
+  }
+  if (!fileInput || !fileInput.files.length) {
+    status.textContent = 'Selecione um arquivo XLS ou XLSX antes de importar.';
+    status.className = 'import-status err';
+    return;
+  }
+
+  const arquivo = fileInput.files[0];
+  const kb = Math.round(arquivo.size / 1024);
+  try {
+    status.innerHTML = htmlBarraImportacao(8, `Lendo planilha ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`);
+    status.className = 'import-status';
+
+    const buffer = await arquivo.arrayBuffer();
+    status.innerHTML = htmlBarraImportacao(14, 'Convertendo planilha para importacao em lotes...');
+    const workbook = XLSX.read(buffer, { type: 'array', raw: false, cellDates: false });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
+    const linhas = rows
+      .filter(row => row.some(cell => String(cell ?? '').trim() !== ''))
+      .map(row => row.map(valorCSV).join(';'));
+
+    if (linhas.length <= 1) throw new Error('Arquivo vazio ou sem dados.');
+
+    const csvBlob = new Blob([linhas.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const nomeCSV = arquivo.name.replace(/\.(xlsx|xls)$/i, '.csv');
+    const csvFile = new File([csvBlob], nomeCSV, { type: 'text/csv' });
+    return enviarCSV(inputId, rota, csvFile);
+  } catch (error) {
+    console.error(error);
+    status.textContent = `Erro ao ler XLS/XLSX: ${error.message}`;
+    status.className = 'import-status err';
+  }
+}
+
 async function enviarDadosBrutos(inputId, rota) {
   const fileInput = document.getElementById(inputId);
   const status = document.getElementById('import-status');
@@ -2103,7 +2153,7 @@ async function enviarDadosBrutos(inputId, rota) {
 
   const nome = fileInput.files[0].name.toLowerCase();
   if (nome.endsWith('.csv')) return enviarCSV(inputId, rota);
-  if (nome.endsWith('.xls') || nome.endsWith('.xlsx')) return enviarXLSX(inputId, rota);
+  if (nome.endsWith('.xls') || nome.endsWith('.xlsx')) return enviarPlanilhaDadosBrutosComoCSV(inputId, rota);
 
   status.textContent = 'Formato inválido. Use CSV, XLS ou XLSX.';
   status.className = 'import-status err';
