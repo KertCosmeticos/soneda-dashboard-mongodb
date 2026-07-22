@@ -758,15 +758,13 @@ async function iniciarServidor() {
     }
 
     await atualizarFlagsMigracao();
-    // Migra campos de performance em background sem bloquear o startup
-    if (!READ_ONLY) migrarCamposBackground();
+    // Migracao pesada fica disponivel apenas via /api/admin/migrar-campos.
+    // Rodar automaticamente compete com as consultas do painel.
     function aquecerCacheDashboard(motivo = "startup") {
       const { request } = require('http');
       const PORT_WU = process.env.PORT || 3000;
       const anoAtual = new Date().getFullYear();
       const paths = [
-        '/api/dashboard/kpis',
-        '/api/dashboard/agregados',
         `/api/dashboard/agregados?ano=${anoAtual}&escopo=loja`,
         `/api/dashboard/agregados?ano=${anoAtual}`,
         `/api/dashboard/estoque-resumo?ano=${anoAtual}`
@@ -780,19 +778,8 @@ async function iniciarServidor() {
         req.end();
       });
     }
-    setTimeout(() => aquecerCacheDashboard("startup"), 4500);
-    // Pré-aquece o cache com a query mais comum (sem filtros) logo após o startup
-    setTimeout(() => {
-      const { request } = require('http');
-      const PORT_WU = process.env.PORT || 3000;
-      const req = request({ hostname: 'localhost', port: PORT_WU, path: '/api/dashboard/agregados' }, res => {
-        res.resume();
-        console.log('🔥 Cache pré-aquecido');
-      });
-      req.on('error', () => {});
-      req.end();
-    }, 4000);
-
+    const WARMUP_CACHE = /^(1|true|yes|sim)$/i.test(process.env.WARMUP_CACHE || "");
+    if (WARMUP_CACHE) setTimeout(() => aquecerCacheDashboard("startup"), 4500);
     // Seed usuário inicial de importação a partir das variáveis de ambiente
     if (!READ_ONLY) {
     const totalUsuarios = await db.collection("usuarios_importacao").countDocuments();
@@ -2388,9 +2375,6 @@ async function iniciarServidor() {
           retencao = await aplicarRetencaoDadosBrutos(13);
           cacheClear();
           await atualizarFlagsMigracao();
-          // Re-migra _cat/_fam para novos registros (em background)
-          migrarCamposBackground();
-          setTimeout(() => aquecerCacheDashboard("importacao"), 1500);
         }
 
         res.json({
@@ -2441,9 +2425,7 @@ async function iniciarServidor() {
           usuario: req.usuarioLogado, total: inserido, data: new Date()
         });
         cacheClear();
-        // Re-migra _cat/_fam com o novo de/para (em background, sem bloquear a resposta)
         _migCat = false; _catCountCache = -1;
-        migrarCamposBackground();
         res.json({ ok: true, inserido, ultimo: true, mensagem: "Categorias importadas" });
       } catch (error) {
         res.status(500).json({ erro: "Erro ao salvar no banco de dados", detalhe: error.message });
