@@ -2393,7 +2393,7 @@ async function init() {
     preencherAnoMesTodasAbas();
     garantirFiltrosAba('f');
     prepararAbasOcultas();
-    aplicarFiltroAtual('f');
+    ['f','v','d2','d3','se'].forEach(aplicarFiltroAtual);
     renderizar();
     tabsRenderizadas.add('vendas');
 
@@ -7000,18 +7000,22 @@ function trocarAba(aba, evt) {
   if (!tabsRenderizadas.has(aba)) {
     if (aba === 'valor') {
       garantirFiltrosAba('v');
+      aplicarFiltroAtual('v');
       vRenderizar();
     }
     if (aba === 'dia') {
       garantirFiltrosAba('d2');
+      aplicarFiltroAtual('d2');
       d2Renderizar();
     }
     if (aba === 'estoque') {
       garantirFiltrosAba('d3');
+      aplicarFiltroAtual('d3');
       d3Renderizar();
     }
     if (aba === 'se') {
       garantirFiltrosAba('se');
+      aplicarFiltroAtual('se');
       seRenderizar();
     }
     tabsRenderizadas.add(aba);
