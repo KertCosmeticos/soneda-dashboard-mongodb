@@ -127,10 +127,10 @@ function cacheClear() {
 }
 
 // ── FLAGS DE OTIMIZAÇÃO ──────────────────────────────────────────────────────
-let _migNumericos = false; // true quando dados têm _qtd_num/_valor_num pré-computados
-let _migGtin      = false; // true quando dados têm _gtin pré-computado (join indexado)
-let _migData      = false; // true quando dados têm _data_iso pré-computado (filtro de data indexado)
-let _migCat       = false; // true quando dados têm _cat/_fam pré-computados (elimina $lookup em queries)
+let _migNumericos = true;  // importacoes atuais ja gravam _qtd_num/_valor_num
+let _migGtin      = true;  // importacoes atuais ja gravam _gtin
+let _migData      = true;  // importacoes atuais ja gravam _data_iso
+let _migCat       = true;  // importacoes atuais ja gravam _cat/_fam
 let _catCountCache = -1;   // cache em memória do estimatedDocumentCount de categorias_depara
 
 // ─────────────────────────────────────────
@@ -757,7 +757,10 @@ async function iniciarServidor() {
       }
     }
 
-    await atualizarFlagsMigracao();
+    const REFRESH_MIGRATION_FLAGS = /^(1|true|yes|sim)$/i.test(process.env.REFRESH_MIGRATION_FLAGS || "");
+    if (REFRESH_MIGRATION_FLAGS) {
+      setTimeout(() => atualizarFlagsMigracao().catch(e => console.warn('Flags de migracao em background falharam:', e.message)), 2500);
+    }
     // Migracao pesada fica disponivel apenas via /api/admin/migrar-campos.
     // Rodar automaticamente no startup pode travar consultas apos imports grandes.
     function aquecerCacheDashboard(motivo = "startup") {
@@ -853,27 +856,26 @@ async function iniciarServidor() {
       );
     }
 
-    // Garante índice único no campo usuario
+    // Indices rodam em background para nao atrasar o health check do Koyeb.
     await garantirUsuarioPai(db);
-    await db.collection("usuarios_importacao").createIndex({ usuario: 1 }, { unique: true });
-
-    // Índices de performance para dados_brutos (queries de dashboard)
-    await Promise.all([
-      db.collection("dados_brutos").createIndex({ "Ano": 1, "Mês": 1, "Loja": 1 }),
-      db.collection("dados_brutos").createIndex({ "Ano": 1, "Mês": 1, "Data": 1 }),
-      db.collection("dados_brutos").createIndex({ "Ano": 1, "Mês": 1 }),
-      db.collection("dados_brutos").createIndex({ "Loja": 1 }),
-      db.collection("dados_brutos").createIndex({ "GTIN/PLU": 1 }),
-      db.collection("dados_brutos").createIndex({ "_gtin": 1 }),
-      db.collection("dados_brutos").createIndex({ "_data_iso": 1 }),
-      db.collection("dados_brutos").createIndex({ "Ano": 1, "_data_iso": 1, "Loja": 1 }),
-      db.collection("dados_brutos").createIndex({ "_data_iso": -1, "importado_em": -1 }),
-      db.collection("categorias_depara").createIndex({ "CODBARRAS": 1 })
-    ]);
-    console.log("📊 Índices de dashboard criados/verificados");
-
-    // TTL automático para tokens de reset expirados (importação e admin)
-    await db.collection("tokens_reset").createIndex({ expira: 1 }, { expireAfterSeconds: 0 });
+    setTimeout(() => {
+      Promise.all([
+        db.collection("usuarios_importacao").createIndex({ usuario: 1 }, { unique: true }),
+        db.collection("dados_brutos").createIndex({ "Ano": 1, "M\u00EAs": 1, "Loja": 1 }),
+        db.collection("dados_brutos").createIndex({ "Ano": 1, "M\u00EAs": 1, "Data": 1 }),
+        db.collection("dados_brutos").createIndex({ "Ano": 1, "M\u00EAs": 1 }),
+        db.collection("dados_brutos").createIndex({ "Loja": 1 }),
+        db.collection("dados_brutos").createIndex({ "GTIN/PLU": 1 }),
+        db.collection("dados_brutos").createIndex({ "_gtin": 1 }),
+        db.collection("dados_brutos").createIndex({ "_data_iso": 1 }),
+        db.collection("dados_brutos").createIndex({ "Ano": 1, "_data_iso": 1, "Loja": 1 }),
+        db.collection("dados_brutos").createIndex({ "_data_iso": -1, "importado_em": -1 }),
+        db.collection("categorias_depara").createIndex({ "CODBARRAS": 1 }),
+        db.collection("tokens_reset").createIndex({ expira: 1 }, { expireAfterSeconds: 0 })
+      ])
+        .then(() => console.log("Indices de dashboard criados/verificados"))
+        .catch(e => console.warn("Indices de dashboard em background falharam:", e.message));
+    }, 30000);
     }
 
     app.get("/", (req, res) => {
