@@ -16,14 +16,99 @@ app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 const frontendPath = path.resolve(__dirname, "../../frontend");
 
+app.use((req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  next();
+});
+
 app.use(express.static(frontendPath));
 
 const PORT = process.env.PORT || 3000;
 const uri = process.env.MONGODB_URI;
 const dbName = process.env.DB_NAME || "soneda_dashboard";
+const READ_ONLY = /^(1|true|yes|sim)$/i.test(process.env.READ_ONLY || "");
 const USUARIO_PAI_PADRAO = "larissa antunez";
 
 const client = new MongoClient(uri);
+
+const WRITE_METHODS = new Set([
+  "bulkWrite",
+  "createIndex",
+  "createIndexes",
+  "deleteMany",
+  "deleteOne",
+  "drop",
+  "dropIndex",
+  "dropIndexes",
+  "findOneAndDelete",
+  "findOneAndReplace",
+  "findOneAndUpdate",
+  "insertMany",
+  "insertOne",
+  "replaceOne",
+  "updateMany",
+  "updateOne"
+]);
+
+function pipelineTemEscrita(pipeline = []) {
+  return Array.isArray(pipeline) && pipeline.some(stage => stage && (stage.$merge || stage.$out));
+}
+
+function bloquearEscritaMongo(operacao) {
+  const erro = new Error(`Ambiente somente leitura: operacao Mongo bloqueada (${operacao}).`);
+  erro.code = "READ_ONLY_MONGO_WRITE_BLOCKED";
+  throw erro;
+}
+
+function criarDbSomenteLeitura(db) {
+  return new Proxy(db, {
+    get(target, prop) {
+      if (prop === "collection") {
+        return (nome, ...args) => {
+          const collection = target.collection(nome, ...args);
+          return new Proxy(collection, {
+            get(colTarget, colProp) {
+              if (WRITE_METHODS.has(colProp)) {
+                return () => bloquearEscritaMongo(`${String(nome)}.${String(colProp)}`);
+              }
+              if (colProp === "aggregate") {
+                return (pipeline, options) => {
+                  if (pipelineTemEscrita(pipeline)) {
+                    bloquearEscritaMongo(`${String(nome)}.aggregate($merge/$out)`);
+                  }
+                  return colTarget.aggregate(pipeline, options);
+                };
+              }
+              const value = colTarget[colProp];
+              return typeof value === "function" ? value.bind(colTarget) : value;
+            }
+          });
+        };
+      }
+      const value = target[prop];
+      return typeof value === "function" ? value.bind(target) : value;
+    }
+  });
+}
+
+app.use((req, res, next) => {
+  if (!READ_ONLY) return next();
+  const metodoEscrita = ["POST", "PUT", "PATCH", "DELETE"].includes(req.method);
+  const rotaSessao = [
+    "/api/login",
+    "/api/logout",
+    "/api/admin/login",
+    "/api/admin/logout"
+  ].includes(req.path);
+  if (metodoEscrita && !rotaSessao) {
+    return res.status(403).json({
+      erro: "Ambiente de testes em modo somente leitura. Alteracoes foram bloqueadas."
+    });
+  }
+  next();
+});
 
 // ── CACHE DE RESULTADOS (TTL 60 min) ─────────────────────────────────────────
 const _cache = new Map();
@@ -161,6 +246,13 @@ function verificarTokenAdmin(req, res, next) {
 function limparValor(valor) {
   if (valor === undefined || valor === null) return "";
   return String(valor).replace(/^﻿/, '').trim();
+}
+
+function limparTextoExibicao(valor) {
+  return String(valor ?? "")
+    .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF\uFFFD]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function parseBRNumber(val) {
@@ -304,6 +396,45 @@ function matchListaTexto(valor) {
   return valores.length === 1 ? valores[0] : { $in: valores };
 }
 
+function produtoNomeExpr() {
+  return {
+    $ifNull: [
+      { $getField: "Produto" },
+      { $ifNull: [
+        { $getField: "produto" },
+        { $ifNull: [
+          { $getField: "Descrição" },
+          { $getField: "DescriÃ§Ã£o" }
+        ] }
+      ] }
+    ]
+  };
+}
+
+function produtoDeParaExpr(fallbackExpr = produtoNomeExpr()) {
+  return {
+    $ifNull: [
+      { $arrayElemAt: ["$_c.Produto", 0] },
+      { $ifNull: [
+        { $arrayElemAt: ["$_c.PRODUTO", 0] },
+        { $ifNull: [
+          { $arrayElemAt: ["$_c.NOME PRODUTO", 0] },
+          { $ifNull: [
+            { $arrayElemAt: ["$_c.NOME_PRODUTO", 0] },
+            { $ifNull: [
+              { $arrayElemAt: ["$_c.Descrição", 0] },
+              { $ifNull: [
+                { $arrayElemAt: ["$_c.DESCRICAO", 0] },
+                fallbackExpr
+              ] }
+            ] }
+          ] }
+        ] }
+      ] }
+    ]
+  };
+}
+
 function aplicarFiltroMes(match, mes) {
   const meses = listaParam(mes)
     .map(normalizarMes)
@@ -349,14 +480,76 @@ function mesNumeroExpr() {
   };
 }
 
-function dataFallbackPorMesExpr() {
+function anoValidoOuFallbackExpr(anoFallback = null) {
+  const anoRaw = { $toString: { $ifNull: ["$Ano", ""] } };
+  const fallback = anoFallback ? String(anoFallback) : null;
   return {
-    $concat: [
-      { $toString: { $ifNull: ["$Ano", "0000"] } },
-      "-",
-      mesNumeroExpr(),
-      "-01"
+    $cond: [
+      { $regexMatch: { input: anoRaw, regex: /^(19|20)\d{2}$/ } },
+      anoRaw,
+      fallback
     ]
+  };
+}
+
+function dataFallbackPorMesExpr(anoFallback = null) {
+  return {
+    $let: {
+      vars: {
+        ano: anoValidoOuFallbackExpr(anoFallback),
+        mes: mesNumeroExpr()
+      },
+      in: {
+        $cond: [
+          {
+            $and: [
+              { $regexMatch: { input: "$$ano", regex: /^(19|20)\d{2}$/ } },
+              { $ne: ["$$mes", "00"] }
+            ]
+          },
+          { $concat: ["$$ano", "-", "$$mes", "-01"] },
+          null
+        ]
+      }
+    }
+  };
+}
+
+function dataIsoValidaExpr() {
+  const iso = { $toString: { $ifNull: ["$_data_iso", ""] } };
+  return {
+    $cond: [
+      { $regexMatch: { input: iso, regex: /^(19|20)\d{2}-\d{2}-\d{2}$/ } },
+      "$_data_iso",
+      null
+    ]
+  };
+}
+
+function dataValidaPorCampoDataExpr() {
+  const dataFormatada = {
+    $dateToString: {
+      format: "%Y-%m-%d",
+      date: {
+        $ifNull: [
+          { $dateFromString: { dateString: { $toString: { $ifNull: [{ $getField: "Data" }, ""] } }, format: "%d/%m/%Y", onError: null, onNull: null } },
+          { $dateFromString: { dateString: { $toString: { $ifNull: [{ $getField: "Data" }, ""] } }, format: "%Y-%m-%d", onError: null, onNull: null } }
+        ]
+      },
+      onNull: null
+    }
+  };
+  return {
+    $let: {
+      vars: { data: dataFormatada },
+      in: {
+        $cond: [
+          { $regexMatch: { input: { $toString: { $ifNull: ["$$data", ""] } }, regex: /^(19|20)\d{2}-\d{2}-\d{2}$/ } },
+          "$$data",
+          null
+        ]
+      }
+    }
   };
 }
 
@@ -386,7 +579,7 @@ function filtroMesDivergente() {
 async function iniciarServidor() {
   try {
     await client.connect();
-    const db = client.db(dbName);
+    const db = READ_ONLY ? criarDbSomenteLeitura(client.db(dbName)) : client.db(dbName);
 
     async function dadosVersion() {
       if (Date.now() - _dadosVersionCache.ts < 5000) return _dadosVersionCache.value;
@@ -405,6 +598,51 @@ async function iniciarServidor() {
 
     async function dashboardCacheKey(prefix, query) {
       return `${prefix}:${await dadosVersion()}:${JSON.stringify(query)}`;
+    }
+
+    async function mapaNomesLojas() {
+      const rows = await db.collection("lojas_depara")
+        .find({}, { projection: { Cod_Loja: 1, Nome_Fantasia: 1 } })
+        .toArray();
+      const map = new Map();
+      rows.forEach(r => {
+        const raw = String(r.Cod_Loja ?? "").trim();
+        const norm = normalizarCodigoLoja(raw);
+        const nome = limparTextoExibicao(r.Nome_Fantasia);
+        if (!raw || !nome) return;
+        map.set(raw, nome);
+        if (norm) {
+          map.set(norm, nome);
+          if (/^\d+$/.test(norm)) map.set(norm.padStart(2, "0"), nome);
+        }
+      });
+      return map;
+    }
+
+    function normalizarCodigoLoja(valor) {
+      const raw = String(valor ?? "").trim();
+      const num = parseInt(raw, 10);
+      return Number.isNaN(num) ? raw : String(num);
+    }
+
+    function nomeLojaPorCodigo(codigo, map) {
+      const raw = String(codigo ?? "").trim();
+      const norm = normalizarCodigoLoja(raw);
+      const padded = /^\d+$/.test(norm) ? norm.padStart(2, "0") : norm;
+      return map.get(raw) || map.get(norm) || map.get(padded) || `Filial ${norm || raw}`;
+    }
+
+    async function anoReferenciaMensal(anoParam = null) {
+      const anosParam = listaParam(anoParam)
+        .map(v => Number(String(v).trim()))
+        .filter(v => Number.isInteger(v) && v >= 1900 && v <= 2099);
+      if (anosParam.length === 1) return anosParam[0];
+
+      const anos = await db.collection("dados_brutos").distinct("Ano");
+      return anos
+        .map(v => Number(String(v ?? "").trim()))
+        .filter(v => Number.isInteger(v) && v >= 1900 && v <= 2099)
+        .sort((a, b) => b - a)[0] || null;
     }
 
     console.log("✅ Conectado ao MongoDB");
@@ -521,7 +759,7 @@ async function iniciarServidor() {
 
     await atualizarFlagsMigracao();
     // Migra campos de performance em background sem bloquear o startup
-    migrarCamposBackground();
+    if (!READ_ONLY) migrarCamposBackground();
     function aquecerCacheDashboard(motivo = "startup") {
       const { request } = require('http');
       const PORT_WU = process.env.PORT || 3000;
@@ -556,6 +794,7 @@ async function iniciarServidor() {
     }, 4000);
 
     // Seed usuário inicial de importação a partir das variáveis de ambiente
+    if (!READ_ONLY) {
     const totalUsuarios = await db.collection("usuarios_importacao").countDocuments();
     if (totalUsuarios === 0 && process.env.ADMIN_USER && process.env.ADMIN_PASSWORD) {
       await db.collection("usuarios_importacao").insertOne({
@@ -648,9 +887,17 @@ async function iniciarServidor() {
 
     // TTL automático para tokens de reset expirados (importação e admin)
     await db.collection("tokens_reset").createIndex({ expira: 1 }, { expireAfterSeconds: 0 });
+    }
 
     app.get("/", (req, res) => {
       res.sendFile(path.join(frontendPath, "index.html"));
+    });
+
+    app.get("/api/config", (req, res) => {
+      res.json({
+        readOnly: READ_ONLY,
+        ambiente: READ_ONLY ? "teste" : "producao"
+      });
     });
 
     app.get("/reset-senha", (req, res) => {
@@ -1354,11 +1601,11 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/agregados", async (req, res) => {
       try {
-        const cacheKey = await dashboardCacheKey('agre:v5', req.query);
+        const cacheKey = await dashboardCacheKey('agre:v10', req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
-        const { ano, mes, loja, cat, familia } = req.query;
+        const { ano, mes, loja, cat, familia, produto, produto_gtin } = req.query;
         const di       = req.query.di            || null; // data início YYYY-MM-DD
         const df       = req.query.df            || null; // data fim    YYYY-MM-DD
         const aLoja    = req.query.ativo_loja    || null;
@@ -1375,7 +1622,7 @@ async function iniciarServidor() {
         const joinCat = _migGtin
           ? [
               { $lookup: { from: "categorias_depara", localField: "_gtin", foreignField: "CODBARRAS", as: "_c" } },
-              { $addFields: { _cat: { $arrayElemAt: ["$_c.CATEGORIA", 0] }, _fam: { $arrayElemAt: ["$_c.FAMILIA", 0] } } }
+              { $addFields: { _cat: { $ifNull: [{ $arrayElemAt: ["$_c.CATEGORIA", 0] }, "$_cat"] }, _fam: { $ifNull: [{ $arrayElemAt: ["$_c.FAMILIA", 0] }, "$_fam"] }, _prod: produtoDeParaExpr() } }
             ]
           : [
               { $lookup: {
@@ -1384,7 +1631,7 @@ async function iniciarServidor() {
                   pipeline: [{ $match: { $expr: { $eq: ["$$gtin", { $toString: "$CODBARRAS" }] } } }],
                   as: "_c"
               }},
-              { $addFields: { _cat: { $arrayElemAt: ["$_c.CATEGORIA", 0] }, _fam: { $arrayElemAt: ["$_c.FAMILIA", 0] } } }
+              { $addFields: { _cat: { $ifNull: [{ $arrayElemAt: ["$_c.CATEGORIA", 0] }, "$_cat"] }, _fam: { $ifNull: [{ $arrayElemAt: ["$_c.FAMILIA", 0] }, "$_fam"] }, _prod: produtoDeParaExpr() } }
             ];
 
         // Usa campos numéricos pré-computados quando disponíveis
@@ -1403,6 +1650,7 @@ async function iniciarServidor() {
         if (ano)  aplicarFiltroAno(baseMatch, ano);
         if (mes)  aplicarFiltroMes(baseMatch, mes);
         if (loja) baseMatch["Loja"] = matchTextoOuNumeroLista(loja);
+        if (produto_gtin && _migGtin) baseMatch["_gtin"] = matchListaTexto(produto_gtin);
         if ((di || df) && _migData) {
           const dr = {};
           if (di) dr.$gte = di;
@@ -1423,33 +1671,37 @@ async function iniciarServidor() {
           preStages.push({ $match: { $expr: conds.length === 1 ? conds[0] : { $and: conds } } });
         }
 
-        // Join único (uma vez para todos os facets de cat/fam) — pulado quando _cat já está pré-computado
-        if (!_migCat) {
+        // Join único (uma vez para todos os facets de cat/fam/produto) — pulado quando _cat já está pré-computado
+        if (!_migCat || (produto && !produto_gtin)) {
           if (_catCountCache < 0) _catCountCache = await db.collection("categorias_depara").estimatedDocumentCount();
           if (_catCountCache > 0) preStages.push(...joinCat);
         }
+        if (produto_gtin && !_migGtin) {
+          const gtins = listaParam(produto_gtin);
+          if (gtins.length) {
+            preStages.push({ $match: { $expr: { $in: [{ $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } }, gtins] } } });
+          }
+        }
+        if (produto && !produto_gtin) {
+          preStages.push({ $addFields: { _prod: { $ifNull: ["$_prod", produtoNomeExpr()] } } });
+        }
 
-        // Filtros dropdown de cat/fam — comuns a todos os branches do facet
+        // Filtros dropdown de cat/fam/produto — comuns a todos os branches do facet
         if (cat)     preStages.push({ $match: { _cat: matchListaTexto(cat) } });
         if (familia) preStages.push({ $match: { _fam: matchListaTexto(familia) } });
+        if (produto && !produto_gtin) preStages.push({ $match: { _prod: matchListaTexto(produto) } });
 
         // Filtros ativos (clique no gráfico) — aplicados seletivamente por branch
         const mLoja    = aLoja    ? [{ $match: { "Loja": matchTextoOuNumero(aLoja) } }]   : [];
         const mCat     = aCat     ? [{ $match: { _cat: aCat } }]              : [];
         const mFamilia = aFamilia ? [{ $match: { _fam: aFamilia } }]          : [];
 
+        const anoRefMensal = await anoReferenciaMensal(ano);
         const dateGroupExpr = {
           $ifNull: [
-            _migData ? "$_data_iso" : null,
-            { $dateToString: {
-              format: "%Y-%m-%d",
-              date: { $ifNull: [
-                { $dateFromString: { dateString: { $toString: { $ifNull: [{ $getField: "Data" }, ""] } }, format: "%d/%m/%Y", onError: null, onNull: null } },
-                { $dateFromString: { dateString: { $toString: { $ifNull: [{ $getField: "Data" }, ""] } }, format: "%Y-%m-%d", onError: null, onNull: null } }
-              ]},
-              onNull: null
-            }},
-            dataFallbackPorMesExpr()
+            _migData ? dataIsoValidaExpr() : null,
+            dataValidaPorCampoDataExpr(),
+            dataFallbackPorMesExpr(anoRefMensal)
           ]
         };
 
@@ -1515,11 +1767,11 @@ async function iniciarServidor() {
 
     app.get("/api/dashboard/estoque-resumo", async (req, res) => {
       try {
-        const cacheKey = await dashboardCacheKey('est-resumo:v1', req.query);
+        const cacheKey = await dashboardCacheKey('est-resumo:v6', req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
-        const { ano, mes, loja, cat, familia } = req.query;
+        const { ano, mes, loja, cat, familia, produto, produto_gtin } = req.query;
         const di = req.query.di || null;
         const df = req.query.df || null;
 
@@ -1529,6 +1781,7 @@ async function iniciarServidor() {
         if (loja) baseMatch["Loja"] = matchTextoOuNumeroLista(loja);
         if (cat) baseMatch["_cat"] = matchListaTexto(cat);
         if (familia) baseMatch["_fam"] = matchListaTexto(familia);
+        if (produto_gtin && _migGtin) baseMatch["_gtin"] = matchListaTexto(produto_gtin);
         if ((di || df) && _migData) {
           const dr = {};
           if (di) dr.$gte = di;
@@ -1538,8 +1791,49 @@ async function iniciarServidor() {
 
         const estoqueExpr = { $ifNull: ["$_estoque_num", brToDouble({ $getField: "Estoque Diario" })] };
         const preStages = Object.keys(baseMatch).length ? [{ $match: baseMatch }] : [];
+        if (produto_gtin && !_migGtin) {
+          const gtins = listaParam(produto_gtin);
+          if (gtins.length) {
+            preStages.push({ $match: { $expr: { $in: [{ $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } }, gtins] } } });
+          }
+        }
+        if (produto && !produto_gtin) {
+          preStages.push(
+            { $addFields: { _gtin_prod_lookup: { $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } } } },
+            { $lookup: { from: "categorias_depara", localField: "_gtin_prod_lookup", foreignField: "CODBARRAS", as: "_c" } },
+            { $addFields: { _prod: produtoDeParaExpr() } },
+            { $unset: ["_c", "_gtin_prod_lookup"] },
+            { $match: { _prod: matchListaTexto(produto) } }
+          );
+        }
+        const latestMatch = { ...baseMatch };
+        if (cat && _migCat) latestMatch["_cat"] = matchListaTexto(cat);
+        if (familia && _migCat) latestMatch["_fam"] = matchListaTexto(familia);
+        const latestDoc = _migData && !(produto && !produto_gtin)
+          ? await db.collection("dados_brutos")
+              .find(latestMatch, { projection: { _data_iso: 1 } })
+              .sort({ _data_iso: -1 })
+              .limit(1)
+              .next()
+          : null;
+        let ultimaDataEstoque = latestDoc?._data_iso || null;
+        if (!ultimaDataEstoque) {
+          const [ultimaDataDoc] = await db.collection("dados_brutos").aggregate([
+            ...preStages,
+            { $group: { _id: null, data: { $max: dateGroupExpr } } }
+          ], { allowDiskUse: true }).toArray();
+          ultimaDataEstoque = ultimaDataDoc?.data || null;
+        }
+        const matchUltimaDataEstoque = ultimaDataEstoque
+          ? (_migData
+              ? [{ $match: { _data_iso: ultimaDataEstoque } }]
+              : [{ $match: { $expr: { $eq: [dateGroupExpr, ultimaDataEstoque] } } }])
+          : [];
+        const snapshotUltimoDia = req.query.snapshot === "1";
+        const facetPreStages = snapshotUltimoDia ? [...preStages, ...matchUltimaDataEstoque] : preStages;
+
         const [facet] = await db.collection("dados_brutos").aggregate([
-          ...preStages,
+          ...facetPreStages,
           { $facet: {
             total: [
               { $group: { _id: null, total: { $sum: estoqueExpr }, lojas: { $addToSet: "$Loja" } } },
@@ -1569,11 +1863,13 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/estoque", async (req, res) => {
       try {
-        const cacheKey = await dashboardCacheKey('est:v5', req.query);
+        const cacheKey = req.query.snapshot === "1"
+          ? `est:v15:snapshot:${JSON.stringify(req.query)}`
+          : await dashboardCacheKey('est:v19', req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
-        const { ano, mes, loja, cat, familia } = req.query;
+        const { ano, mes, loja, cat, familia, produto, produto_gtin } = req.query;
         const di = req.query.di || null;
         const df = req.query.df || null;
 
@@ -1581,6 +1877,7 @@ async function iniciarServidor() {
         if (ano)  aplicarFiltroAno(baseMatch, ano);
         if (mes)  aplicarFiltroMes(baseMatch, mes);
         if (loja) baseMatch["Loja"] = matchTextoOuNumeroLista(loja);
+        if (produto_gtin && _migGtin) baseMatch["_gtin"] = matchListaTexto(produto_gtin);
         if ((di || df) && _migData) {
           const dr = {};
           if (di) dr.$gte = di;
@@ -1612,24 +1909,74 @@ async function iniciarServidor() {
         const famCampo = _migCat ? "_fam" : "_fam_atual";
         if (cat)     preStages.push({ $match: { [catCampo]: matchListaTexto(cat) } });
         if (familia) preStages.push({ $match: { [famCampo]: matchListaTexto(familia) } });
-        const estoqueExpr = brToDouble({ $getField: "Estoque Diario" });
+        if (produto_gtin && !_migGtin) {
+          const gtins = listaParam(produto_gtin);
+          if (gtins.length) {
+            preStages.push({ $match: { $expr: { $in: [{ $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } }, gtins] } } });
+          }
+        }
+        if (produto && !produto_gtin) {
+          preStages.push(
+            { $addFields: { _gtin_prod_lookup: { $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } } } },
+            { $lookup: { from: "categorias_depara", localField: "_gtin_prod_lookup", foreignField: "CODBARRAS", as: "_c" } },
+            { $addFields: { _prod: produtoDeParaExpr() } },
+            { $unset: ["_c", "_gtin_prod_lookup"] },
+            { $match: { _prod: matchListaTexto(produto) } }
+          );
+        }
+        const estoqueExpr = { $ifNull: ["$_estoque_num", brToDouble({ $getField: "Estoque Diario" })] };
+        const anoRefMensal = await anoReferenciaMensal(ano);
         const dateGroupExpr = {
           $ifNull: [
-            _migData ? "$_data_iso" : null,
-            { $dateToString: {
-              format: "%Y-%m-%d",
-              date: { $ifNull: [
-                { $dateFromString: { dateString: { $toString: { $ifNull: [{ $getField: "Data" }, ""] } }, format: "%d/%m/%Y", onError: null, onNull: null } },
-                { $dateFromString: { dateString: { $toString: { $ifNull: [{ $getField: "Data" }, ""] } }, format: "%Y-%m-%d", onError: null, onNull: null } }
-              ]},
-              onNull: null
-            }},
-            dataFallbackPorMesExpr()
+            _migData ? dataIsoValidaExpr() : null,
+            dataValidaPorCampoDataExpr(),
+            dataFallbackPorMesExpr(anoRefMensal)
           ]
         };
 
+        if (req.query.historico === "1") {
+          const historico = await db.collection("dados_brutos").aggregate([
+            ...preStages,
+            { $group: { _id: { loja: "$Loja", data: dateGroupExpr }, qty: { $sum: estoqueExpr } } },
+            { $sort: { "_id.data": 1, qty: -1 } }
+          ], { allowDiskUse: true }).toArray();
+
+          const lojasNomeMap = await mapaNomesLojas();
+          const resultHistorico = {
+            por_loja_dia: historico.map(r => ({ loja: r._id.loja, nome: nomeLojaPorCodigo(r._id.loja, lojasNomeMap), data: r._id.data, qty: r.qty }))
+          };
+          cacheSet(cacheKey, resultHistorico);
+          return res.json(resultHistorico);
+        }
+
+        const latestMatch = { ...baseMatch };
+        if (cat && _migCat) latestMatch["_cat"] = matchListaTexto(cat);
+        if (familia && _migCat) latestMatch["_fam"] = matchListaTexto(familia);
+        const latestDoc = _migData && !(produto && !produto_gtin)
+          ? await db.collection("dados_brutos")
+              .find(latestMatch, { projection: { _data_iso: 1 } })
+              .sort({ _data_iso: -1 })
+              .limit(1)
+              .next()
+          : null;
+        let ultimaDataEstoque = latestDoc?._data_iso || null;
+        if (!ultimaDataEstoque) {
+          const [ultimaDataDoc] = await db.collection("dados_brutos").aggregate([
+            ...preStages,
+            { $group: { _id: null, data: { $max: dateGroupExpr } } }
+          ], { allowDiskUse: true }).toArray();
+          ultimaDataEstoque = ultimaDataDoc?.data || null;
+        }
+        const matchUltimaDataEstoque = ultimaDataEstoque
+          ? (_migData
+              ? [{ $match: { _data_iso: ultimaDataEstoque } }]
+              : [{ $match: { $expr: { $eq: [dateGroupExpr, ultimaDataEstoque] } } }])
+          : [];
+        const snapshotUltimoDia = req.query.snapshot === "1";
+        const facetPreStages = snapshotUltimoDia ? [...preStages, ...matchUltimaDataEstoque] : preStages;
+
         const [facet] = await db.collection("dados_brutos").aggregate([
-          ...preStages,
+          ...facetPreStages,
           { $facet: {
             total: [
               { $group: { _id: null, total: { $sum: estoqueExpr }, lojas: { $addToSet: "$Loja" } } },
@@ -1644,26 +1991,56 @@ async function iniciarServidor() {
               { $sort: { "_id.data": 1, qty: -1 } }
             ],
             por_produto: [
+              { $match: { _id: "__skip_acumulado__" } },
               { $group: { _id: { $ifNull: [
                 { $getField: "Produto" },
                 { $ifNull: [{ $getField: "produto" }, { $getField: "Descrição" }] }
               ]}, qty: { $sum: estoqueExpr } } },
               { $sort: { qty: -1 } }
             ],
+            por_produto_dia: [
+              ...matchUltimaDataEstoque,
+              { $group: { _id: { nome: { $ifNull: [
+                { $getField: "Produto" },
+                { $ifNull: [{ $getField: "produto" }, { $getField: "DescriÃ§Ã£o" }] }
+              ]}, data: dateGroupExpr }, qty: { $sum: estoqueExpr } } },
+              { $sort: { "_id.data": 1, qty: -1 } }
+            ],
             por_cat: [
+              { $match: { _id: "__skip_acumulado__" } },
               { $group: { _id: `$${catCampo}`, qty: { $sum: estoqueExpr } } },
               { $sort: { qty: -1 } }
+            ],
+            por_cat_dia: [
+              ...matchUltimaDataEstoque,
+              { $group: { _id: { cat: `$${catCampo}`, data: dateGroupExpr }, qty: { $sum: estoqueExpr } } },
+              { $sort: { "_id.data": 1, qty: -1 } }
+            ],
+            por_fam: [
+              { $match: { _id: "__skip_acumulado__" } },
+              { $group: { _id: `$${famCampo}`, qty: { $sum: estoqueExpr } } },
+              { $sort: { qty: -1 } }
+            ],
+            por_fam_dia: [
+              ...matchUltimaDataEstoque,
+              { $group: { _id: { fam: `$${famCampo}`, data: dateGroupExpr }, qty: { $sum: estoqueExpr } } },
+              { $sort: { "_id.data": 1, qty: -1 } }
             ]
           }}
         ], { allowDiskUse: true }).toArray();
 
+        const lojasNomeMap = await mapaNomesLojas();
         const result = {
           total:       facet?.total?.[0]?.total       || 0,
           total_lojas: facet?.total?.[0]?.total_lojas || 0,
-          por_loja:    (facet?.por_loja || []).map(r => ({ loja: r._id, qty: r.qty })),
-          por_loja_dia: (facet?.por_loja_dia || []).map(r => ({ loja: r._id.loja, data: r._id.data, qty: r.qty })),
-          por_produto: (facet?.por_produto || []).map(r => ({ nome: r._id || "SEM PRODUTO", qty: r.qty })),
-          por_cat: (facet?.por_cat || []).map(r => ({ cat: r._id || "SEM CATEGORIA", qty: r.qty }))
+          por_loja:    (facet?.por_loja || []).map(r => ({ loja: r._id, nome: nomeLojaPorCodigo(r._id, lojasNomeMap), qty: r.qty })),
+          por_loja_dia: (facet?.por_loja_dia || []).map(r => ({ loja: r._id.loja, nome: nomeLojaPorCodigo(r._id.loja, lojasNomeMap), data: r._id.data, qty: r.qty })),
+          por_produto: (facet?.por_produto || []).map(r => ({ nome: limparTextoExibicao(r._id) || "SEM PRODUTO", qty: r.qty })),
+          por_produto_dia: (facet?.por_produto_dia || []).map(r => ({ nome: limparTextoExibicao(r._id.nome) || "SEM PRODUTO", data: r._id.data, qty: r.qty })),
+          por_cat: (facet?.por_cat || []).map(r => ({ cat: r._id || "SEM CATEGORIA", qty: r.qty })),
+          por_cat_dia: (facet?.por_cat_dia || []).map(r => ({ cat: r._id.cat || "SEM CATEGORIA", data: r._id.data, qty: r.qty })),
+          por_fam: (facet?.por_fam || []).map(r => ({ fam: r._id || "SEM FAMÍLIA", qty: r.qty })),
+          por_fam_dia: (facet?.por_fam_dia || []).map(r => ({ fam: r._id.fam || "SEM FAMÍLIA", data: r._id.data, qty: r.qty }))
         };
 
         cacheSet(cacheKey, result);
@@ -1773,6 +2150,43 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
 
     // Helper: processa um arquivo CSV temporário e insere na coleção
+    function prepararRegistroDadosBrutos(registro, categoriasPorGtin = null) {
+      const qtdRaw = registro['Venda (Qtd)'] ?? registro['Venda Nf Quantidade'] ?? registro['Venda Pdv Quantidade'] ?? 0;
+      const valRaw = registro['Venda (R$)'] ?? 0;
+      const estRaw = registro['Estoque Diario'] ?? registro['Estoque DiÃ¡rio'] ?? registro['Estoque'] ?? 0;
+      const qtd = parseBRNumber(qtdRaw);
+      const val = parseBRNumber(valRaw);
+      const est = parseBRNumber(estRaw);
+      registro._qtd_num = typeof qtd === 'number' ? qtd : (parseFloat(String(qtd)) || 0);
+      registro._valor_num = typeof val === 'number' ? val : (parseFloat(String(val)) || 0);
+      registro._estoque_num = typeof est === 'number' ? est : (parseFloat(String(est)) || 0);
+      registro._gtin = String(registro['GTIN/PLU'] || '').trim() || null;
+      const categoria = categoriasPorGtin?.get(registro._gtin);
+      registro._cat = categoria?.CATEGORIA || null;
+      registro._fam = categoria?.FAMILIA || null;
+
+      const dataStr = String(registro['Data'] || '').trim();
+      const mesCanonico = mesDeData(dataStr) || normalizarMes(registro['MÃªs'] ?? registro['Mes']);
+      if (mesCanonico) {
+        registro['MÃªs'] = mesCanonico;
+        const mesNumero = MESES_ABREV.indexOf(mesCanonico) + 1;
+        if (mesNumero > 0 && (registro['Mes'] === undefined || registro['Mes'] === null || registro['Mes'] === "")) {
+          registro['Mes'] = mesNumero;
+        }
+      }
+
+      const brMatch = dataStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      const isoMatch = dataStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (brMatch) {
+        registro._data_iso = `${brMatch[3]}-${brMatch[2].padStart(2,'0')}-${brMatch[1].padStart(2,'0')}`;
+      } else if (isoMatch) {
+        registro._data_iso = dataStr;
+      } else {
+        registro._data_iso = null;
+      }
+      return registro;
+    }
+
     async function processarChunkCSV(req, colecao, limparColunas, opcoes = {}) {
       let categoriasPorGtin = null;
       if (colecao.collectionName === 'dados_brutos') {
@@ -1857,6 +2271,14 @@ async function iniciarServidor() {
 
     // Helper: processa XLSX (De/Para categorias e lojas) — preserva GTINs com precisão total
     async function processarXLSX(req, colecao, opcoes = {}) {
+      let categoriasPorGtin = null;
+      if (colecao.collectionName === 'dados_brutos') {
+        const categorias = await db.collection("categorias_depara")
+          .find({}, { projection: { CODBARRAS: 1, CATEGORIA: 1, FAMILIA: 1 } })
+          .toArray();
+        categoriasPorGtin = new Map(categorias.map(c => [String(c.CODBARRAS || '').trim(), c]));
+      }
+
       const workbook = XLSX.readFile(req.file.path, { type: 'file', raw: true });
       try { fs.unlinkSync(req.file.path); } catch (_) {}
 
@@ -1872,10 +2294,12 @@ async function iniciarServidor() {
           if (/^(codbarras|gtin|ean|plu)/i.test(k) || k === 'GTIN/PLU') {
             registro[k] = normalizarEAN(rawV);
           } else {
-            registro[k] = rawV === '' ? null : rawV;
+            const valor = colecao.collectionName === 'dados_brutos' ? parseBRNumber(rawV) : rawV;
+            registro[k] = valor === '' ? null : valor;
           }
         });
         if (opcoes.extraCampos) Object.assign(registro, opcoes.extraCampos);
+        if (colecao.collectionName === 'dados_brutos') prepararRegistroDadosBrutos(registro, categoriasPorGtin);
         return registro;
       });
 
@@ -1938,6 +2362,7 @@ async function iniciarServidor() {
       const totalRecords = parseInt(req.body.totalRecords ?? "0",  10);
       const nomeArquivo  = req.file.originalname || req.file.filename;
       const substituir   = req.body.substituir === 'true';
+      const extArquivo   = path.extname(nomeArquivo).toLowerCase();
 
       try {
         let retencao = null;
@@ -1949,11 +2374,12 @@ async function iniciarServidor() {
           _migNumericos = false; _migGtin = false; _migData = false; _migCat = false; _catCountCache = -1;
         }
 
-        const inserido = await processarChunkCSV(req, db.collection("dados_brutos"), false, {
-          extraCampos: { importado_em: new Date(), _import_id: importId }
-        });
+        const opcoesImportacao = { extraCampos: { importado_em: new Date(), _import_id: importId } };
+        const inserido = extArquivo === '.xls' || extArquivo === '.xlsx'
+          ? await processarXLSX(req, db.collection("dados_brutos"), opcoesImportacao)
+          : await processarChunkCSV(req, db.collection("dados_brutos"), false, opcoesImportacao);
 
-        const isUltimo = chunkIndex === totalChunks - 1;
+        const isUltimo = extArquivo === '.xls' || extArquivo === '.xlsx' || chunkIndex === totalChunks - 1;
         if (isUltimo) {
           await db.collection("logs_importacao").insertOne({
             importId, tipo: "dados_brutos", arquivo: nomeArquivo,
