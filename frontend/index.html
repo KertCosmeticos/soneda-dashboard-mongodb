@@ -2076,7 +2076,7 @@ async function enviarCSV(inputId, rota) {
     status.className = 'import-status ok';
     // Limpa cache de agregados para que o painel recarregue com dados novos
     limparCacheDashboard();
-    setTimeout(() => recarregarDados(), 900);
+    setTimeout(() => recarregarDados(), 1600);
 
   } catch (error) {
     console.error(error);
@@ -2124,6 +2124,56 @@ function htmlBarraImportacao(pct, msg) {
   `;
 }
 
+function postarFormDataComProgresso(url, formData, token, onUpload, onProcessamento) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let processamentoTimer = null;
+    let processamentoPct = 60;
+
+    const pararProcessamento = () => {
+      if (processamentoTimer) clearInterval(processamentoTimer);
+      processamentoTimer = null;
+    };
+
+    xhr.open('POST', url);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+    xhr.upload.onprogress = evt => {
+      if (!evt.lengthComputable) return;
+      const pct = 15 + (evt.loaded / evt.total) * 40;
+      onUpload(Math.min(55, pct));
+    };
+
+    xhr.upload.onload = () => {
+      processamentoPct = 60;
+      onProcessamento(processamentoPct);
+      processamentoTimer = setInterval(() => {
+        processamentoPct = Math.min(94, processamentoPct + 2);
+        onProcessamento(processamentoPct);
+      }, 1200);
+    };
+
+    xhr.onload = () => {
+      pararProcessamento();
+      let data = {};
+      try {
+        data = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+      } catch (_) {
+        reject(new Error(`Servidor retornou resposta invalida (${xhr.status}).`));
+        return;
+      }
+      resolve({ status: xhr.status, ok: xhr.status >= 200 && xhr.status < 300, data });
+    };
+
+    xhr.onerror = () => {
+      pararProcessamento();
+      reject(new Error('Falha de rede durante a importacao.'));
+    };
+
+    xhr.send(formData);
+  });
+}
+
 async function enviarXLSX(inputId, rota) {
   if (bloquearSomenteLeitura('Importacao')) return;
   const fileInput = document.getElementById(inputId);
@@ -2149,14 +2199,19 @@ async function enviarXLSX(inputId, rota) {
   try {
     const formData = new FormData();
     formData.append('file', arquivo);
-    status.innerHTML = htmlBarraImportacao(35, `Enviando ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`);
+    status.innerHTML = htmlBarraImportacao(20, `Enviando ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`);
 
-    const response = await fetch(`${API_BASE}${rota}`, {
-      method:  'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body:    formData
-    });
-    status.innerHTML = htmlBarraImportacao(85, 'Processando resposta do servidor...');
+    const response = await postarFormDataComProgresso(
+      `${API_BASE}${rota}`,
+      formData,
+      token,
+      pct => {
+        status.innerHTML = htmlBarraImportacao(pct, `Enviando ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`);
+      },
+      pct => {
+        status.innerHTML = htmlBarraImportacao(pct, 'Arquivo enviado. Processando no servidor...');
+      }
+    );
 
     if (response.status === 401) {
       sessionStorage.removeItem('adm_token');
@@ -2164,13 +2219,13 @@ async function enviarXLSX(inputId, rota) {
       throw new Error('Sessão expirada. Faça login novamente.');
     }
 
-    const data = await response.json();
+    const data = response.data;
     if (!response.ok) throw new Error(data.erro || data.detalhe || 'Erro desconhecido');
 
-    status.innerHTML = `✓ Importação concluída · <strong>${(data.inserido || 0).toLocaleString('pt-BR')}</strong> registros inseridos.`;
+    status.innerHTML = htmlBarraImportacao(100, `Importacao concluida. ${(data.inserido || 0).toLocaleString('pt-BR')} registros inseridos. Atualizando painel...`);
     status.className = 'import-status ok';
     limparCacheDashboard();
-    setTimeout(() => recarregarDados(), 900);
+    setTimeout(() => recarregarDados(), 1600);
     fileInput.value = '';
   } catch (error) {
     console.error(error);
@@ -6929,11 +6984,12 @@ function guAtualizarUI() {
   const resetEl  = document.getElementById('gu-reset');
   const painelEl = document.getElementById('gu-painel');
   if (!loginEl || !painelEl) return;
+  const abaGerirAtiva = document.getElementById('tab-gerir')?.classList.contains('active');
   if (token) {
     loginEl.style.display  = 'none';
     resetEl.style.display  = 'none';
     painelEl.style.display = 'block';
-    guCarregarUsuarios();
+    if (abaGerirAtiva) guCarregarUsuarios();
   } else {
     // so mostra o login se a tela de reset não estiver ativa
     if (resetEl.style.display !== 'flex') loginEl.style.display = 'flex';
