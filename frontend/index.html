@@ -3,10 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Soneda · Dashboard de Vendas</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Figtree:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script>
+  document.documentElement.dataset.theme = localStorage.getItem('soneda_theme') || 'dark';
+</script>
 <style>
   :root {
     --bg:       #0d0f14;
@@ -18,15 +24,32 @@
     --muted:    #5a6080;
     --text:     #e8ecf5;
     --text-dim: #8891aa;
+    color-scheme: dark;
+  }
+  html[data-theme="light"] {
+    --bg:       #f4f6fb;
+    --surface:  #ffffff;
+    --surface2: #e9edf5;
+    --border:   #cfd6e6;
+    --accent:   #5f8f00;
+    --accent2:  #007a5a;
+    --muted:    #6b7285;
+    --text:     #151923;
+    --text-dim: #505b72;
+    color-scheme: light;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'Figtree', sans-serif; font-weight: 300; min-height: 100vh; }
+  body { background: var(--bg); color: var(--text); font-family: 'Figtree', sans-serif; font-weight: 300; min-height: 100vh; transition: background .2s, color .2s; }
 
   header { display: flex; align-items: center; justify-content: space-between; padding: 24px 40px; border-bottom: 1px solid var(--border); background: var(--surface); }
   .logo { font-family: 'DM Serif Display', serif; font-size: 1.6rem; letter-spacing: -0.5px; }
   .logo span { color: var(--accent); }
   .badge { font-family: 'DM Mono', monospace; font-size: 0.72rem; color: var(--muted); background: var(--bg); border: 1px solid var(--border); padding: 4px 12px; border-radius: 20px; letter-spacing: 0.5px; }
   .header-right { display: flex; align-items: center; gap: 10px; }
+  .theme-toggle { display: inline-flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--border); color: var(--text-dim); padding: 7px 12px; border-radius: 8px; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 0.72rem; letter-spacing: .4px; transition: border-color .2s, color .2s, background .2s; }
+  .theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  .theme-toggle-icon { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; box-shadow: inset -4px -4px 0 currentColor; }
+  html[data-theme="light"] .theme-toggle-icon { box-shadow: inset 0 0 0 4px currentColor; }
   .env-badge { display: none; font-family: 'DM Mono', monospace; font-size: 0.7rem; color: var(--accent); background: rgba(200,241,53,0.08); border: 1px solid rgba(200,241,53,0.45); padding: 5px 12px; border-radius: 20px; letter-spacing: .6px; text-transform: uppercase; }
   .readonly-note { display: none; margin-bottom: 16px; padding: 12px 16px; background: rgba(255,159,67,0.08); border: 1px solid rgba(255,159,67,0.35); border-radius: 8px; color: #ffbf7a; font-family: 'DM Mono', monospace; font-size: 0.74rem; line-height: 1.5; }
   body.read-only .env-badge,
@@ -51,6 +74,7 @@
     background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px;
   }
   .filter-group input[type="date"] { background-image: none; padding-right: 14px; color-scheme: dark; }
+  html[data-theme="light"] .filter-group input[type="date"] { color-scheme: light; }
   .filter-group select:focus,
   .filter-group input[type="date"]:focus { outline: none; border-color: var(--accent); }
   .filter-group select[data-multi-filter="1"] { display: none; }
@@ -103,6 +127,7 @@
   .kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--accent), transparent); }
   .kpi-card:hover { border-color: var(--accent); }
   .kpi-label { font-family: 'DM Mono', monospace; font-size: 0.68rem; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+  .kpi-label.no-uppercase { text-transform: none; }
   .kpi-value { font-family: 'DM Serif Display', serif; font-size: 2rem; color: var(--accent); line-height: 1; }
   .kpi-sub { font-size: 0.75rem; color: var(--text-dim); margin-top: 4px; }
 
@@ -295,6 +320,11 @@
   .btn-modal-ok { flex: 2; background: var(--accent); border: none; color: var(--bg); padding: 10px; border-radius: 8px; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 0.78rem; font-weight: 500; transition: filter .2s; }
   .btn-modal-ok:hover { filter: brightness(1.1); }
   .modal-err { font-family: 'DM Mono', monospace; font-size: 0.73rem; color: #ff6b6b; min-height: 16px; margin-top: 10px; text-align: center; }
+  .report-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; margin: -10px 0 18px; }
+  .report-btn { background: transparent; border: 1px solid var(--border); color: var(--text-dim); padding: 8px 12px; border-radius: 8px; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 0.72rem; letter-spacing: .4px; transition: all .2s; }
+  .report-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .report-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 500; }
+  .report-btn.primary:hover { filter: brightness(1.08); color: var(--bg); }
 
 </style>
 </head>
@@ -303,6 +333,10 @@
 <header>
   <div class="logo">Soneda<span>.</span></div>
   <div class="header-right">
+    <button type="button" class="theme-toggle" id="theme-toggle" onclick="alternarTema()" title="Alternar tema claro/escuro">
+      <span class="theme-toggle-icon" aria-hidden="true"></span>
+      <span id="theme-toggle-label">Escuro</span>
+    </button>
     <div id="env-badge" class="env-badge">Teste - somente leitura</div>
   </div>
 </header>
@@ -340,6 +374,7 @@
     <div class="filter-group"><label>Loja</label><select id="f-loja" data-multi-filter="1" multiple><option value="">Todas</option></select></div>
     <div class="filter-group"><label>Categoria</label><select id="f-cat" data-multi-filter="1" multiple><option value="">Todas</option></select></div>
     <div class="filter-group"><label>Família</label><select id="f-familia" data-multi-filter="1" multiple><option value="">Todas</option></select></div>
+    <div class="filter-group"><label>Produto</label><select id="f-produto" data-multi-filter="1" multiple><option value="">Todos</option></select></div>
     <button class="btn-clear" onclick="limparFiltros()">↺ Limpar</button>
   </div>
   <div id="f-active-banner" class="active-banner" style="display:none"></div>
@@ -358,7 +393,7 @@
         <div id="loja-ativa" style="display:none;align-items:center;margin-top:10px;gap:6px"></div>
       </div>
       <div style="text-align:right;flex-shrink:0">
-        <div class="kpi-label">Total do per?odo</div>
+        <div class="kpi-label no-uppercase">Total do periodo</div>
         <div class="kpi-value" id="chart-total-val" style="font-size:2.2rem">—</div>
         <div class="kpi-sub">unidades vendidas</div>
       </div>
@@ -391,6 +426,7 @@
     <div class="filter-group"><label>Loja</label><select id="se-loja" data-multi-filter="1" multiple><option value="">Todas</option></select></div>
     <div class="filter-group"><label>Categoria</label><select id="se-cat" data-multi-filter="1" multiple><option value="">Todas</option></select></div>
     <div class="filter-group"><label>Família</label><select id="se-familia" data-multi-filter="1" multiple><option value="">Todas</option></select></div>
+    <div class="filter-group"><label>Produto</label><select id="se-produto" data-multi-filter="1" multiple><option value="">Todos</option></select></div>
     <button class="btn-clear" onclick="seLimparFiltros()">↺ Limpar</button>
   </div>
   <div id="se-active-banner" class="active-banner" style="display:none"></div>
@@ -400,26 +436,39 @@
     <div class="kpi-card"><div class="kpi-label">Estoque Total</div><div class="kpi-value" id="se-kpi-estoque">—</div><div class="kpi-sub">unidades em estoque</div></div>
   </div>
 
+
   <div class="chart-card">
     <div class="chart-header">
       <div>
-        <div class="chart-title">Sell Out x Estoque por Filial</div>
-        <div class="chart-subtitle" id="se-chart-sub">Todos os períodos</div>
+        <div class="chart-title">Consolidado Mensal Sell Out x Estoque</div>
+        <div class="chart-subtitle" id="se-month-chart-sub">Todos os periodos</div>
       </div>
-      <div style="display:flex;gap:24px;flex-shrink:0;justify-content:center">
-        <div style="text-align:center">
+      <div id="se-month-chart-legend" style="display:flex;align-items:center;justify-content:flex-end;gap:16px;flex-wrap:wrap;margin-left:auto;font-family:'DM Mono',monospace;font-size:.78rem;color:var(--text-dim)"></div>
+    </div>
+    <div class="chart-wrap" id="se-month-chart-wrap" style="height:420px"><div class="state-msg" id="se-month-chart-state"><div class="spinner"></div>Carregando dados...</div></div>
+  </div>
+
+  <div class="chart-card" style="margin-top:20px">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Sell Out x Estoque por Filial</div>
+        <div class="chart-subtitle" id="se-filial-chart-sub">Todos os periodos</div>
+      </div>
+      <div style="display:flex;align-items:flex-start;justify-content:flex-end;gap:28px;margin-left:auto;text-align:right;flex-wrap:wrap">
+        <div>
           <div class="kpi-label">Total Sell Out</div>
-          <div class="kpi-value" id="se-chart-sellout-val" style="font-size:2.2rem">—</div>
+          <div class="kpi-value" id="se-filial-total-sellout" style="font-size:2.2rem">—</div>
           <div class="kpi-sub">unidades vendidas</div>
         </div>
-        <div style="text-align:center">
-          <div class="kpi-label">Total do Dia</div>
-          <div class="kpi-value" id="se-chart-estoque-val" style="font-size:2.2rem;color:var(--accent2)">—</div>
+        <div>
+          <div class="kpi-label" id="se-filial-total-estoque-label">Total do Dia</div>
+          <div class="kpi-value" id="se-filial-total-estoque" style="font-size:2.2rem;color:var(--accent2)">—</div>
           <div class="kpi-sub">Estoque total</div>
         </div>
       </div>
     </div>
-    <div class="chart-wrap" id="se-chart-wrap" style="height:420px"><div class="state-msg" id="se-chart-state"><div class="spinner"></div>Carregando dados...</div></div>
+    <div id="se-filial-chart-legend" style="display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;margin:0 0 10px;font-family:'DM Mono',monospace;font-size:.78rem;color:var(--text-dim)"></div>
+    <div class="chart-wrap" id="se-filial-chart-wrap" style="height:420px"><div class="state-msg" id="se-filial-chart-state"><div class="spinner"></div>Carregando dados...</div></div>
   </div>
 
   <div class="table-card" style="margin-top:20px">
@@ -491,18 +540,18 @@
   <!-- PAINEL DE IMPORTAÇÃO (visível apenas após login) -->
   <div id="import-painel" style="display:none">
     <h1 class="section-title">Importar Arquivos</h1>
-    <p class="section-sub">Importe os arquivos CSV diretamente para o MongoDB. Use o modelo para garantir o formato correto.</p>
+    <p class="section-sub">Importe arquivos CSV, XLS ou XLSX diretamente para o MongoDB. Use o modelo para garantir o formato correto.</p>
     <div class="readonly-note">Painel de teste em modo somente leitura. Consultas e downloads continuam liberados, mas importacoes, uploads e exclusoes ficam bloqueados.</div>
 
     <div class="import-box">
       <div class="import-row">
         <div class="import-label">Dados Brutos</div>
-        <input class="import-file" type="file" id="csvDadosBrutos" accept=".csv,text/csv" />
+        <input class="import-file" type="file" id="csvDadosBrutos" accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
         <a class="btn-modelo" href="/api/templates/modelo_dados_brutos.csv" download="modelo_dados_brutos.csv">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Modelo
         </a>
-        <button class="btn-import" onclick="enviarCSV('csvDadosBrutos', '/api/importar/dados-brutos')">Importar</button>
+        <button class="btn-import" onclick="enviarDadosBrutos('csvDadosBrutos', '/api/importar/dados-brutos')">Importar</button>
       </div>
       <div class="import-row">
         <div class="import-label">De/Para Categorias</div>
@@ -538,7 +587,7 @@
         <p style="font-size:0.8rem;color:var(--text-dim);line-height:1.6;margin:0 0 12px">Planilha bruta exportada pelo sistema da Soneda, com todas as colunas originais. Cada importação <strong style="color:var(--text)">adiciona</strong> os novos registros sem apagar o histórico anterior.</p>
         <ol style="font-size:0.78rem;color:var(--text-dim);line-height:1.8;margin:0;padding-left:18px">
           <li>Exporte a planilha de vendas do sistema da Soneda</li>
-          <li>Salve como <strong style="color:var(--text)">.CSV</strong> sem alterar as colunas</li>
+          <li>Salve como <strong style="color:var(--text)">.CSV, .XLS ou .XLSX</strong> sem alterar as colunas</li>
           <li>Renomeie o arquivo com o período da importação,<br>ex: 01 a 31 de maio de 2026</li>
           <li>Selecione o arquivo e clique em <strong style="color:var(--text)">Importar</strong></li>
         </ol>
@@ -1001,6 +1050,10 @@
       <label>Família</label>
       <select id="v-familia" data-multi-filter="1" multiple><option value="">Todas</option></select>
     </div>
+    <div class="filter-group">
+      <label>Produto</label>
+      <select id="v-produto" data-multi-filter="1" multiple><option value="">Todos</option></select>
+    </div>
     <button class="btn-clear" onclick="vLimparFiltros()">↺ Limpar</button>
   </div>
   <div id="v-active-banner" class="active-banner" style="display:none"></div>
@@ -1138,6 +1191,10 @@
     <div class="filter-group">
       <label>Família</label>
       <select id="d2-familia" data-multi-filter="1" multiple><option value="">Todas</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Produto</label>
+      <select id="d2-produto" data-multi-filter="1" multiple><option value="">Todos</option></select>
     </div>
     <button class="btn-clear" onclick="d2LimparFiltros()">↺ Limpar</button>
   </div>
@@ -1282,6 +1339,10 @@
       <label>Família</label>
       <select id="d3-familia" data-multi-filter="1" multiple><option value="">Todas</option></select>
     </div>
+    <div class="filter-group">
+      <label>Produto</label>
+      <select id="d3-produto" data-multi-filter="1" multiple><option value="">Todos</option></select>
+    </div>
     <button class="btn-clear" onclick="d3LimparFiltros()">↺ Limpar</button>
   </div>
   <div id="d3-active-banner" class="active-banner" style="display:none"></div>
@@ -1316,11 +1377,6 @@
       <div>
         <div class="chart-title">Estoque Diário por Loja</div>
         <div class="chart-subtitle" id="d3-chart-sub">Todos os períodos · Todas as lojas</div>
-      </div>
-      <div style="text-align:right;flex-shrink:0">
-        <div class="kpi-label">Total do dia</div>
-        <div class="kpi-value" id="d3-chart-total-val" style="font-size:2.2rem">—</div>
-        <div class="kpi-sub">unidades em estoque</div>
       </div>
     </div>
     <div class="chart-wrap" id="d3-chart-wrap" style="height:420px">
@@ -1398,6 +1454,8 @@ let fam2Chart      = null;
 let d3BarChart     = null;
 let d3LineChart    = null;
 let seChart        = null;
+let seMonthChart   = null;
+let seFilialChart  = null;
 let f_active       = { dim: null, val: null };
 let v_active       = { dim: null, val: null };
 let d2_active      = { dim: null, val: null };
@@ -1411,6 +1469,39 @@ let d3_renderAbort = null;
 let d3_renderSeq   = 0;
 let d3_estoqueAg   = null;
 let se_renderAbort = null;
+
+function temaAtual() {
+  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+}
+
+function atualizarBotaoTema() {
+  const label = document.getElementById('theme-toggle-label');
+  const btn = document.getElementById('theme-toggle');
+  const claro = temaAtual() === 'light';
+  if (label) label.textContent = claro ? 'Claro' : 'Escuro';
+  if (btn) btn.title = claro ? 'Mudar para tema escuro' : 'Mudar para tema claro';
+}
+
+function rerenderAbaAtualAposTema() {
+  const active = document.querySelector('.tab-panel.active')?.id || '';
+  try {
+    if (active === 'tab-vendas' && typeof renderizar === 'function') renderizar();
+    else if (active === 'tab-valor' && typeof vRenderizar === 'function') vRenderizar();
+    else if (active === 'tab-dia' && typeof d2Renderizar === 'function') d2Renderizar();
+    else if (active === 'tab-estoque' && typeof d3Renderizar === 'function') d3Renderizar();
+    else if (active === 'tab-se' && typeof seRenderizar === 'function') seRenderizar();
+  } catch (e) {
+    console.warn('Nao foi possivel redesenhar a aba apos alterar o tema:', e.message);
+  }
+}
+
+function alternarTema() {
+  const novoTema = temaAtual() === 'light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = novoTema;
+  try { localStorage.setItem('soneda_theme', novoTema); } catch (_) {}
+  atualizarBotaoTema();
+  rerenderAbaAtualAposTema();
+}
 const _agreMemCache = new Map(); // cache em memória (mais rápido que JSON.parse do sessionStorage)
 let t1Sort         = { col: 'qty', dir: 'desc' };
 let cat1Sort       = { col: 'qty', dir: 'desc' };
@@ -1428,10 +1519,13 @@ let seSort         = { col: 'sellout', dir: 'desc' };
 let seRiskSort     = { col: 'sellout', dir: 'desc' };
 let seViewMode     = 'loja';
 let seDataSort     = { col: 'data', dir: 'asc' };
+let _prewarmStarted = false;
 const tabsRenderizadas = new Set();
 const filtrosConstruidos = new Set();
 const DASHBOARD_CACHE_BUST_KEY = 'soneda_dashboard_cache_bust';
-const AGRE_CACHE_PREFIX = 'agre_v5__';
+const AGRE_CACHE_PREFIX = 'agre_v8__';
+const DASHBOARD_CACHE_SCHEMA = 'monthly-main-v1';
+const DASHBOARD_CACHE_SCHEMA_KEY = 'soneda_dashboard_cache_schema';
 
 function agreCache(key, data) {
   const cacheKey = `${AGRE_CACHE_PREFIX}${key}`;
@@ -1479,6 +1573,13 @@ function limparCacheDashboard(notificarOutrasAbas = true) {
 window.addEventListener('storage', event => {
   if (event.key === DASHBOARD_CACHE_BUST_KEY) limparCacheDashboard(false);
 });
+
+try {
+  if (localStorage.getItem(DASHBOARD_CACHE_SCHEMA_KEY) !== DASHBOARD_CACHE_SCHEMA) {
+    limparCacheDashboard(false);
+    localStorage.setItem(DASHBOARD_CACHE_SCHEMA_KEY, DASHBOARD_CACHE_SCHEMA);
+  }
+} catch(e) {}
 
 // â”€â”€ HELPERS DE FILTRO INTERATIVO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function normalizeFilterValue(val) {
@@ -1535,11 +1636,228 @@ function d2FiltrarPorData(dataOriginal) {
 function d3LimparAtivo() { d3_active = {dim:null,val:null}; d3Renderizar();}
 
 const PALETTE = ['#c8f135','#4fffb0','#38bdf8','#f472b6','#fb923c','#a78bfa','#facc15','#34d399','#f87171','#60a5fa','#e879f9','#fbbf24'];
+const LIGHT_PALETTE = ['#83b000','#008f68','#087dbd','#d02a87','#d85c13','#7253d7','#c89600','#008f82','#d23b3b','#246ce6','#af26c4','#aa6200'];
+const MONTHLY_CHART_COLORS = {
+  sellout: { solid: '#c8f135', bg: 'rgba(200,241,53,0.82)', fill: 'rgba(200,241,53,0.10)' },
+  valor:   { solid: '#38bdf8', bg: 'rgba(56,189,248,0.78)', fill: 'rgba(56,189,248,0.10)' },
+  estoque: { solid: '#4fffb0', bg: 'rgba(79,255,176,0.72)', fill: 'rgba(79,255,176,0.10)' },
+};
+
+function chartPalette() {
+  return temaAtual() === 'light' ? LIGHT_PALETTE : PALETTE;
+}
+
+function chartColor(i) {
+  const palette = chartPalette();
+  return palette[i % palette.length];
+}
+
+function chartMonthlyColor(key) {
+  if (temaAtual() !== 'light') return MONTHLY_CHART_COLORS[key];
+  const colors = {
+    sellout: { solid: '#83b000', bg: 'rgba(131,176,0,0.92)', fill: 'rgba(131,176,0,0.16)' },
+    valor:   { solid: '#087dbd', bg: 'rgba(8,125,189,0.90)', fill: 'rgba(8,125,189,0.15)' },
+    estoque: { solid: '#008f68', bg: 'rgba(0,143,104,0.88)', fill: 'rgba(0,143,104,0.15)' },
+  };
+  return colors[key] || MONTHLY_CHART_COLORS[key];
+}
+
+function chartGridX() { return temaAtual() === 'light' ? 'rgba(37, 50, 75, 0.035)' : '#1c2030'; }
+function chartGridY() { return temaAtual() === 'light' ? 'rgba(37, 50, 75, 0.06)' : '#252a3a'; }
+function chartTickColor() { return temaAtual() === 'light' ? '#61708c' : '#8891aa'; }
+function chartInactiveBg() { return temaAtual() === 'light' ? 'rgba(97,112,140,0.16)' : 'rgba(37,42,58,0.45)'; }
+function chartInactiveBorder() { return temaAtual() === 'light' ? 'rgba(97,112,140,0.26)' : 'rgba(37,42,58,0.2)'; }
+function chartInactiveTick() { return temaAtual() === 'light' ? '#8a96ad' : '#3a4060'; }
+function chartTooltipBg() { return temaAtual() === 'light' ? '#ffffff' : '#1c2030'; }
+function chartTooltipBorder() { return temaAtual() === 'light' ? '#cfd6e6' : '#252a3a'; }
+function chartTooltipBody() { return temaAtual() === 'light' ? '#151923' : '#e8ecf5'; }
+const MONTH_ABBR = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+const MONTH_INDEX = {
+  jan: 1, janeiro: 1,
+  fev: 2, fevereiro: 2,
+  mar: 3, marco: 3, março: 3,
+  abr: 4, abril: 4,
+  mai: 5, maio: 5,
+  jun: 6, junho: 6,
+  jul: 7, julho: 7,
+  ago: 8, agosto: 8,
+  set: 9, setembro: 9,
+  out: 10, outubro: 10,
+  nov: 11, novembro: 11,
+  dez: 12, dezembro: 12,
+};
+
+function isMonthlyLabel(value) {
+  const s = String(value || '').trim();
+  return /^(Jan|Fev|Mar|Abr|Mai|Jun|Jul|Ago|Set|Out|Nov|Dez)\/\d{4}$/i.test(s)
+    || /^(Jan|Fev|Mar|Abr|Mai|Jun|Jul|Ago|Set|Out|Nov|Dez)(?:\/\d{2})?$/i.test(s)
+    || /^\d{4}-\d{2}-01$/.test(s)
+    || /^01\/\d{2}\/\d{4}$/.test(s);
+}
+
+function isMonthlyDataset(rows, getValue) {
+  return Array.isArray(rows) && rows.length > 0 && rows.every(r => isMonthlyLabel(getValue(r)));
+}
+
+function validYear(value) {
+  const y = Number(String(value || '').trim());
+  return Number.isInteger(y) && y >= 1900 && y <= 2099 ? y : null;
+}
+
+function shortYear(year) {
+  const y = validYear(year);
+  return y ? String(y).slice(-2) : '';
+}
+
+function monthNumberFromLabel(value) {
+  const raw = String(value || '').trim();
+  const key = raw.split('/')[0].normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return MONTH_INDEX[key] || null;
+}
+
+function yearFromMonthlyLabel(value) {
+  const s = String(value || '').trim();
+  let m = s.match(/^(\d{4})-\d{2}-\d{2}$/);
+  if (m) return validYear(m[1]);
+  m = s.match(/^\d{2}\/\d{2}\/(\d{4})$/);
+  if (m) return validYear(m[1]);
+  m = s.match(/\/(\d{4})$/);
+  if (m) return validYear(m[1]);
+  m = s.match(/\/(\d{2})$/);
+  if (m) return 2000 + Number(m[1]);
+  return null;
+}
+
+function inferMonthlyYear(values) {
+  const fromLabels = (values || []).map(yearFromMonthlyLabel).filter(Boolean);
+  if (fromLabels.length) return fromLabels.sort((a,b) => b - a)[0];
+  const selectedYears = ['f-ano','v-ano','d2-ano','d3-ano','se-ano']
+    .flatMap(id => selectedValues(id))
+    .map(validYear)
+    .filter(Boolean);
+  if (selectedYears.length) return selectedYears.sort((a,b) => b - a)[0];
+  const rawYears = rawData.map(r => validYear(col(r, 'Ano'))).filter(Boolean);
+  return rawYears.length ? rawYears.sort((a,b) => b - a)[0] : null;
+}
+
+function formatMonthlyAxisLabel(value, fallbackYear = null) {
+  const s = String(value || '').trim();
+  if (!s) return s;
+  let month = null;
+  let year = yearFromMonthlyLabel(s) || validYear(fallbackYear);
+
+  let m = s.match(/^(\d{4})-(\d{2})-01$/);
+  if (m) {
+    month = Number(m[2]);
+    year = validYear(m[1]) || validYear(fallbackYear);
+  } else if ((m = s.match(/^01\/(\d{2})\/(\d{4})$/))) {
+    month = Number(m[1]);
+    year = validYear(m[2]) || validYear(fallbackYear);
+  } else {
+    month = monthNumberFromLabel(s);
+  }
+
+  if (!month || month < 1 || month > 12) return s.replace('/0000', year ? `/${year}` : '');
+  const yy = shortYear(year);
+  return yy ? `${MONTH_ABBR[month - 1]}/${yy}` : MONTH_ABBR[month - 1];
+}
+
+function formatMonthlyAxisLabels(values) {
+  const year = inferMonthlyYear(values);
+  return values.map(v => formatMonthlyAxisLabel(v, year));
+}
+
+function monthKeyFromDate(value) {
+  const s = String(value || '').trim();
+  let m = s.match(/^(\d{4})-(\d{2})-\d{2}$/);
+  if (m && validYear(m[1])) return `${m[1]}-${m[2]}`;
+  m = s.match(/^\d{2}\/(\d{2})\/(\d{4})$/);
+  if (m && validYear(m[2])) return `${m[2]}-${m[1]}`;
+  return null;
+}
+
+function agruparAgPorMes(porDia, metricKey, outputKey) {
+  const map = new Map();
+  (porDia || []).forEach(r => {
+    const key = monthKeyFromDate(r.data);
+    if (!key) return;
+    map.set(key, (map.get(key) || 0) + Number(r[metricKey] || 0));
+  });
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => {
+      const label = `${key}-01`;
+      return { loja: label, nome: label, [outputKey]: value };
+    });
+}
+
+function agruparEstoqueUltimoDiaPorMes(porLojaDia, outputKey = 'qty') {
+  const rows = (porLojaDia || [])
+    .map(r => ({
+      data: String(r.data || '').trim(),
+      qty: Number(r.qty || 0)
+    }))
+    .filter(r => monthKeyFromDate(r.data));
+
+  const ultimaDataPorMes = new Map();
+  rows.forEach(r => {
+    const mes = monthKeyFromDate(r.data);
+    if (!ultimaDataPorMes.has(mes) || r.data > ultimaDataPorMes.get(mes)) {
+      ultimaDataPorMes.set(mes, r.data);
+    }
+  });
+
+  const totalPorMes = new Map();
+  rows.forEach(r => {
+    const mes = monthKeyFromDate(r.data);
+    if (r.data !== ultimaDataPorMes.get(mes)) return;
+    totalPorMes.set(mes, (totalPorMes.get(mes) || 0) + r.qty);
+  });
+
+  return Array.from(totalPorMes.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => {
+      const label = `${key}-01`;
+      return { loja: label, nome: label, [outputKey]: value };
+    });
+}
+
+function combinarSelloutEstoquePorMes(vendasPorDia, estoquePorLojaDia) {
+  const sellout = agruparAgPorMes(vendasPorDia, 'qty', 'sellout');
+  const estoque = agruparEstoqueUltimoDiaPorMes(estoquePorLojaDia, 'estoque');
+  const map = new Map();
+  sellout.forEach(r => map.set(r.nome, { loja: r.nome, nome: r.nome, sellout: r.sellout || 0, estoque: 0, risco: '' }));
+  estoque.forEach(r => {
+    if (!map.has(r.nome)) map.set(r.nome, { loja: r.nome, nome: r.nome, sellout: 0, estoque: 0, risco: '' });
+    map.get(r.nome).estoque = r.estoque || 0;
+  });
+  return Array.from(map.values()).sort((a,b) => String(a.nome).localeCompare(String(b.nome)));
+}
+
+function shouldUseMonthlyMainChart(prefix, active) {
+  const lojaSelecionada = selectedValues(`${prefix}-loja`).length > 0;
+  return active.dim !== 'loja' && !lojaSelecionada;
+}
+
+function setFirstChartTitle(tabId, title) {
+  const el = document.querySelector(`#${tabId} .chart-card .chart-title`);
+  if (el) el.textContent = title;
+}
 
 function d2SetCatDropdown(val) {
   const el = document.getElementById('d2-cat');
   el.value = (el.value === val) ? '' : val;
   d2Renderizar();
+}
+
+function corrigirLabelsPeriodo() {
+  document.querySelectorAll('.kpi-label').forEach(el => {
+    const texto = (el.textContent || '').trim();
+    if (/^total do per.odo$/i.test(texto)) {
+      el.textContent = 'Total do periodo';
+      el.classList.add('no-uppercase');
+    }
+  });
 }
 
 
@@ -1774,6 +2092,23 @@ async function enviarCSV(inputId, rota) {
   }
 }
 
+async function enviarDadosBrutos(inputId, rota) {
+  const fileInput = document.getElementById(inputId);
+  const status = document.getElementById('import-status');
+  if (!fileInput || !fileInput.files.length) {
+    status.textContent = 'Selecione um arquivo CSV, XLS ou XLSX antes de importar.';
+    status.className = 'import-status err';
+    return;
+  }
+
+  const nome = fileInput.files[0].name.toLowerCase();
+  if (nome.endsWith('.csv')) return enviarCSV(inputId, rota);
+  if (nome.endsWith('.xls') || nome.endsWith('.xlsx')) return enviarXLSX(inputId, rota);
+
+  status.textContent = 'Formato inválido. Use CSV, XLS ou XLSX.';
+  status.className = 'import-status err';
+}
+
 function recarregarDados() {
   limparCacheDashboard();
   window.location.reload();
@@ -1786,7 +2121,7 @@ async function enviarXLSX(inputId, rota) {
   const token     = admGetToken();
 
   if (!fileInput || !fileInput.files.length) {
-    status.textContent = 'Selecione um arquivo XLSX antes de importar.';
+    status.textContent = 'Selecione um arquivo XLS ou XLSX antes de importar.';
     status.className = 'import-status err';
     return;
   }
@@ -1835,12 +2170,15 @@ async function enviarXLSX(inputId, rota) {
 // â”€â”€ INICIALIZAÇÃO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function init() {
   try {
+    atualizarBotaoTema();
     await carregarConfigApp();
+    corrigirLabelsPeriodo();
+    configurarExportacaoRelatorios();
     
     const [brutosRes, deParaRes, catRes, resumoRes, catsRes, famsRes, filtrosRes] = await Promise.allSettled([
       Promise.resolve([]),
       fetchJSON('/api/lojas-depara'),
-      Promise.resolve([]),
+      fetchJSON('/api/categorias-depara'),
       fetchJSON('/api/dashboard/resumo'),
       fetchJSON('/api/dashboard/categorias'),
       fetchJSON('/api/dashboard/familias'),
@@ -1894,7 +2232,7 @@ async function init() {
             if (valido(vProd)) produtoMap[ean]  = vProd;
           });
         }
-        console.log(`[Categorias] ${Object.keys(catMap).length} EANs com categoria, ${Object.keys(familiaMap).length} EANs com família carregados`);
+        console.log(`[Categorias] ${Object.keys(catMap).length} EANs com categoria, ${Object.keys(familiaMap).length} EANs com família e ${Object.keys(produtoMap).length} EANs com produto carregados`);
       } catch(e) { console.warn('Categorias não carregadas:', e.message); }
     } else { console.warn('Categorias não carregadas:', catRes.reason?.message); }
 
@@ -1967,8 +2305,6 @@ async function init() {
     garantirFiltrosAba('f');
     renderizar();
     tabsRenderizadas.add('vendas');
-    prepararAbasOcultas();
-    preaquecerAbasDashboard();
 
   } catch(err) {
     console.error(err);
@@ -2008,6 +2344,12 @@ function nomeLojaDePara(loja) {
   const norm = normCodLoja(raw);
   const padded = /^\d+$/.test(norm) ? norm.padStart(2, '0') : norm;
   return deParaMap[raw] || deParaMap[norm] || deParaMap[padded] || `Filial ${norm || raw}`;
+}
+
+function nomeLojaRegistro(r) {
+  const nome = limparTextoExibicao(r?.nome);
+  if (nome) return nome;
+  return nomeLojaDePara(r?.loja);
 }
 
 function normalizarCodigoBarras(valor) {
@@ -2150,6 +2492,13 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+function limparTextoExibicao(value) {
+  return String(value ?? '')
+    .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF\uFFFD]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function normalizarBusca(value) {
   return String(value ?? '')
     .normalize('NFD')
@@ -2164,7 +2513,7 @@ function periodoLabel(prefix) {
   return [
     formatSelection(anos, 'ano', 'anos'),
     formatSelection(meses, 'meses', 'meses')
-  ].filter(Boolean).join(' ? ') || 'Todos os períodos';
+  ].filter(Boolean).join(` ${String.fromCharCode(183)} `) || 'Todos os períodos';
 }
 
 function filtroLabel(id, vazio, plural) {
@@ -2172,6 +2521,200 @@ function filtroLabel(id, vazio, plural) {
   if (!labels.length) return vazio;
   if (labels.length <= 2) return labels.join(', ');
   return `${labels.length} ${plural}`;
+}
+
+function subtituloGrafico(prefix, extras = []) {
+  return [
+    periodoLabel(prefix),
+    filtroLabel(`${prefix}-loja`, 'Todas as lojas', 'lojas'),
+    ...extras.filter(Boolean)
+  ].join(` ${String.fromCharCode(183)} `);
+}
+
+const REPORT_TABS = [
+  { id: 'vendas',  nome: 'Vendas Sell Out' },
+  { id: 'valor',   nome: 'Venda Valor' },
+  { id: 'dia',     nome: 'Venda por Dia' },
+  { id: 'estoque', nome: 'Estoque' },
+  { id: 'se',      nome: 'Sell Out x Estoque' }
+];
+
+function configurarExportacaoRelatorios() {
+  REPORT_TABS.forEach(tabInfo => {
+    const tab = document.getElementById(`tab-${tabInfo.id}`);
+    const main = tab?.querySelector('main');
+    const sub = main?.querySelector('.section-sub');
+    if (!main || !sub || main.querySelector('.report-actions')) return;
+    const actions = document.createElement('div');
+    actions.className = 'report-actions';
+    actions.innerHTML = `
+      <button class="report-btn primary" onclick="exportarRelatorioExcel('${tabInfo.id}')">Exportar Excel</button>
+      <button class="report-btn" onclick="exportarRelatorioPDF('${tabInfo.id}')">Exportar PDF</button>
+    `;
+    sub.insertAdjacentElement('afterend', actions);
+  });
+}
+
+function textoLimpo(el) {
+  return limparTextoExibicao(el?.textContent || '');
+}
+
+function nomeArquivoSeguro(valor) {
+  return String(valor || 'relatorio')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase() || 'relatorio';
+}
+
+function elementoVisivel(el) {
+  if (!el) return false;
+  const style = window.getComputedStyle(el);
+  if (style.display === 'none' || style.visibility === 'hidden') return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+function filtrosRelatorio(tab) {
+  return [...(tab?.querySelectorAll('.filter-group') || [])].map(group => {
+    const label = textoLimpo(group.querySelector('label'));
+    const select = group.querySelector('select');
+    const input = group.querySelector('input');
+    let valor = 'Todos';
+    if (select) {
+      const selecionados = [...select.selectedOptions]
+        .filter(opt => opt.value !== '')
+        .map(opt => limparTextoExibicao(opt.textContent));
+      valor = selecionados.length ? selecionados.join(', ') : 'Todos';
+    } else if (input) {
+      valor = input.value || 'Todos';
+    }
+    return { label, valor };
+  }).filter(item => item.label);
+}
+
+function kpisRelatorio(tab) {
+  return [...(tab?.querySelectorAll('.kpi-card') || [])].map(card => ({
+    label: textoLimpo(card.querySelector('.kpi-label')),
+    valor: textoLimpo(card.querySelector('.kpi-value')),
+    sub: textoLimpo(card.querySelector('.kpi-sub'))
+  })).filter(item => item.label || item.valor);
+}
+
+function tituloTabela(table) {
+  const tableCard = table.closest('.table-card');
+  if (tableCard) return textoLimpo(tableCard.querySelector('.table-head-title')) || 'Tabela';
+  const rotPanel = table.closest('.rot-panel');
+  if (rotPanel) {
+    const rotTitle = textoLimpo(rotPanel.closest('.rot-card')?.querySelector('.rot-card-title'));
+    const activeBtn = textoLimpo(rotPanel.closest('.rot-card')?.querySelector('.rot-subtab-btn.active'));
+    return [rotTitle, activeBtn].filter(Boolean).join(' - ') || 'Tabela';
+  }
+  return 'Tabela';
+}
+
+function tabelasRelatorio(tab) {
+  return [...(tab?.querySelectorAll('table') || [])]
+    .filter(elementoVisivel)
+    .map(table => ({ titulo: tituloTabela(table), html: table.outerHTML }));
+}
+
+function graficosRelatorio(tab) {
+  return [...(tab?.querySelectorAll('canvas') || [])]
+    .filter(elementoVisivel)
+    .map(canvas => {
+      const card = canvas.closest('.chart-card');
+      return {
+        titulo: textoLimpo(card?.querySelector('.chart-title')) || 'Grafico',
+        imagem: canvas.toDataURL('image/png')
+      };
+    });
+}
+
+function dadosRelatorio(tabId) {
+  const tab = document.getElementById(`tab-${tabId}`);
+  const info = REPORT_TABS.find(t => t.id === tabId) || { id: tabId, nome: tabId };
+  return {
+    nome: textoLimpo(tab?.querySelector('.section-title')) || info.nome,
+    status: textoLimpo(tab?.querySelector('.section-sub')),
+    geradoEm: new Date().toLocaleString('pt-BR'),
+    filtros: filtrosRelatorio(tab),
+    kpis: kpisRelatorio(tab),
+    tabelas: tabelasRelatorio(tab),
+    graficos: graficosRelatorio(tab)
+  };
+}
+
+function blocoFiltrosHTML(relatorio) {
+  if (!relatorio.filtros.length) return '';
+  return `<h2>Filtros aplicados</h2><table><tbody>${relatorio.filtros.map(f => `<tr><th>${escapeHtml(f.label)}</th><td>${escapeHtml(f.valor)}</td></tr>`).join('')}</tbody></table>`;
+}
+
+function blocoKpisHTML(relatorio) {
+  if (!relatorio.kpis.length) return '';
+  return `<h2>Indicadores</h2><table><thead><tr><th>Indicador</th><th>Valor</th><th>Detalhe</th></tr></thead><tbody>${relatorio.kpis.map(k => `<tr><td>${escapeHtml(k.label)}</td><td>${escapeHtml(k.valor)}</td><td>${escapeHtml(k.sub)}</td></tr>`).join('')}</tbody></table>`;
+}
+
+function htmlRelatorioBase(relatorio, incluirGraficos = true) {
+  const graficos = incluirGraficos && relatorio.graficos.length
+    ? `<h2>Graficos</h2>${relatorio.graficos.map(g => `<section class="chart-section"><h3>${escapeHtml(g.titulo)}</h3><img src="${g.imagem}" alt="${escapeHtml(g.titulo)}" /></section>`).join('')}`
+    : '';
+  const tabelas = relatorio.tabelas.length
+    ? `<h2>Tabelas</h2>${relatorio.tabelas.map(t => `<section><h3>${escapeHtml(t.titulo)}</h3>${t.html}</section>`).join('')}`
+    : '<p>Nenhum dado para os filtros selecionados.</p>';
+
+  return `
+    <h1>${escapeHtml(relatorio.nome)}</h1>
+    <p class="meta">${escapeHtml(relatorio.status || '')}</p>
+    <p class="meta">Gerado em ${escapeHtml(relatorio.geradoEm)}</p>
+    ${blocoFiltrosHTML(relatorio)}
+    ${blocoKpisHTML(relatorio)}
+    ${graficos}
+    ${tabelas}
+  `;
+}
+
+function exportarRelatorioExcel(tabId) {
+  const relatorio = dadosRelatorio(tabId);
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+    body { font-family: Arial, sans-serif; color:#111; }
+    h1 { font-size: 22px; } h2 { margin-top: 24px; font-size: 16px; } h3 { margin-top: 16px; font-size: 14px; }
+    .meta { color:#555; font-size: 12px; }
+    table { border-collapse: collapse; margin-bottom: 18px; width: 100%; }
+    th, td { border: 1px solid #999; padding: 6px 8px; font-size: 12px; text-align: left; }
+    th { background: #e8edf7; }
+  </style></head><body>${htmlRelatorioBase(relatorio, false)}</body></html>`;
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${nomeArquivoSeguro(relatorio.nome)}-${new Date().toISOString().slice(0,10)}.xls`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportarRelatorioPDF(tabId) {
+  const relatorio = dadosRelatorio(tabId);
+  const win = window.open('', '_blank');
+  if (!win) {
+    alert('Permita pop-ups para gerar o PDF.');
+    return;
+  }
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${escapeHtml(relatorio.nome)}</title><style>
+    @page { size: A4; margin: 14mm; }
+    body { font-family: Arial, sans-serif; color:#111; }
+    h1 { font-size: 22px; margin: 0 0 8px; } h2 { font-size: 16px; margin: 22px 0 8px; page-break-after: avoid; } h3 { font-size: 13px; margin: 14px 0 8px; page-break-after: avoid; }
+    .meta { color:#555; font-size: 12px; margin: 3px 0; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 16px; page-break-inside: auto; }
+    th, td { border: 1px solid #bbb; padding: 6px 7px; font-size: 11px; text-align: left; }
+    th { background: #eef2f7; } tr { page-break-inside: avoid; }
+    .chart-section { page-break-inside: avoid; margin-bottom: 18px; }
+    img { display:block; max-width:100%; height:auto; border:1px solid #ddd; }
+  </style></head><body>${htmlRelatorioBase(relatorio, true)}<script>window.onload = () => setTimeout(() => window.print(), 300);<\/script></body></html>`);
+  win.document.close();
 }
 
 function prepararMultiSelect(select) {
@@ -2188,6 +2731,7 @@ function prepararMultiSelect(select) {
       document.querySelectorAll('.multi-select.open').forEach(el => { if (el !== wrap) el.classList.remove('open'); });
       wrap.classList.toggle('open');
       if (wrap.classList.contains('open')) {
+        updateMultiSelect(select, true);
         setTimeout(() => wrap.querySelector('.multi-select-search-input')?.focus(), 0);
       }
     });
@@ -2195,7 +2739,7 @@ function prepararMultiSelect(select) {
   updateMultiSelect(select);
 }
 
-function updateMultiSelect(selectOrId) {
+function updateMultiSelect(selectOrId, renderMenu = false) {
   const select = typeof selectOrId === 'string' ? document.getElementById(selectOrId) : selectOrId;
   if (!select || select.dataset.multiFilter !== '1') return;
   const wrap = select.nextElementSibling;
@@ -2205,6 +2749,10 @@ function updateMultiSelect(selectOrId) {
   const emptyLabel = select.options[0]?.textContent?.trim() || 'Todos';
   wrap.querySelector('.multi-select-label').textContent = formatSelection(labels, '', '') || emptyLabel;
   const menu = wrap.querySelector('.multi-select-menu');
+  if (!renderMenu && !wrap.classList.contains('open')) {
+    menu.innerHTML = '';
+    return;
+  }
   const searchInputAtual = menu.querySelector('.multi-select-search-input');
   const manterFocoBusca = document.activeElement === searchInputAtual;
   const cursorBusca = manterFocoBusca ? searchInputAtual.selectionStart : null;
@@ -2223,12 +2771,12 @@ function updateMultiSelect(selectOrId) {
   const searchInput = menu.querySelector('.multi-select-search-input');
   searchInput.addEventListener('input', () => {
     wrap.dataset.search = searchInput.value;
-    updateMultiSelect(select);
+    updateMultiSelect(select, true);
   });
   searchInput.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       wrap.dataset.search = '';
-      updateMultiSelect(select);
+      updateMultiSelect(select, true);
     }
   });
   if (manterFocoBusca) {
@@ -2245,7 +2793,7 @@ function updateMultiSelect(selectOrId) {
         const opt = [...select.options].find(o => o.value === input.value);
         if (opt) opt.selected = input.checked;
       }
-      updateMultiSelect(select);
+      updateMultiSelect(select, true);
       select.dispatchEvent(new Event('change', { bubbles: true }));
     });
   });
@@ -2271,6 +2819,15 @@ function filtroLojas(apenasComDePara = false) {
     .sort((a,b) => +a - +b);
 }
 
+function filtroProdutos() {
+  return [...new Set([
+    ...Object.values(produtoMap || {}),
+    ...rawData.map(r => getProduto(r))
+  ].map(v => String(v || '').trim()).filter(Boolean))]
+    .filter(v => v !== '-' && v !== '?')
+    .sort((a,b) => a.localeCompare(b, 'pt-BR'));
+}
+
 function preencherAnoMesTodasAbas() {
   const anos = filtroAnos();
   const meses = filtroMeses();
@@ -2294,12 +2851,14 @@ function construirFiltros() {
   const lojas = filtroLojas(true);
   const cats    = catList.length    ? catList    : [...new Set(rawData.map(r => getCat(r)).filter(Boolean))].sort();
   const familias = familiaList.length ? familiaList : [...new Set(rawData.map(r => getFamilia(r)).filter(Boolean))].sort();
+  const produtos = filtroProdutos();
 
   const sA = document.getElementById('f-ano');
   const sM = document.getElementById('f-mes');
   const sL = document.getElementById('f-loja');
   const sC = document.getElementById('f-cat');
   const sF = document.getElementById('f-familia');
+  const sP = document.getElementById('f-produto');
 
   sA.innerHTML = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
   sM.innerHTML = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
@@ -2309,9 +2868,10 @@ function construirFiltros() {
   }).join('');
   sC.innerHTML = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   sF.innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
+  sP.innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   prepararTodosMultiSelect();
 
-  ['f-ano','f-mes','f-di','f-df','f-loja','f-cat','f-familia'].forEach(id =>
+  ['f-ano','f-mes','f-di','f-df','f-loja','f-cat','f-familia','f-produto'].forEach(id =>
     document.getElementById(id).addEventListener('change', renderizar)
   );
 }
@@ -2337,7 +2897,7 @@ function prepararAbasOcultas() {
 }
 
 function limparFiltros() {
-  ['f-ano','f-mes','f-di','f-df','f-loja','f-cat','f-familia'].forEach(id => clearSelect(id));
+  ['f-ano','f-mes','f-di','f-df','f-loja','f-cat','f-familia','f-produto'].forEach(id => clearSelect(id));
   f_active = { dim: null, val: null };
   renderizar();
 }
@@ -2350,6 +2910,7 @@ function filtrar(excl) {
   const lojas   = selectedValues('f-loja');
   const cats    = selectedValues('f-cat');
   const familias = selectedValues('f-familia');
+  const produtos = selectedValues('f-produto');
 
   return rawData.filter(r => {
     if (!hasSelectedValue(anos, col(r,'Ano'))) return false;
@@ -2357,6 +2918,7 @@ function filtrar(excl) {
     if (!hasSelectedValue(lojas, col(r,'Loja','loja'))) return false;
     if (!hasSelectedValue(cats, getCat(r))) return false;
     if (!hasSelectedValue(familias, getFamilia(r))) return false;
+    if (!hasSelectedValue(produtos, getProduto(r))) return false;
     if (f_active.val && f_active.dim !== excl) {
       if (f_active.dim === 'loja'    && col(r,'Loja','loja') !== f_active.val) return false;
       if (f_active.dim === 'cat'     && getCat(r) !== f_active.val) return false;
@@ -2401,11 +2963,26 @@ function buildAgreParams(prefix, activeObj) {
     const values = selectedValues(id);
     values.forEach(value => params.append(queryName, value));
   };
+  const addProdutos = id => {
+    const nomes = selectedValues(id);
+    if (!nomes.length) return;
+    const nomesNorm = new Set(nomes.map(normalizeFilterValue));
+    const gtins = Object.entries(produtoMap || {})
+      .filter(([, nome]) => nomesNorm.has(normalizeFilterValue(nome)))
+      .map(([gtin]) => gtin)
+      .filter(Boolean);
+    if (gtins.length) {
+      [...new Set(gtins)].forEach(gtin => params.append('produto_gtin', gtin));
+    } else {
+      nomes.forEach(nome => params.append('produto', nome));
+    }
+  };
   addMulti('ano', `${prefix}-ano`);
   addMulti('mes', `${prefix}-mes`);
   addMulti('loja', `${prefix}-loja`);
   addMulti('cat', `${prefix}-cat`);
   addMulti('familia', `${prefix}-familia`);
+  addProdutos(`${prefix}-produto`);
   const di  = g(`${prefix}-di`),  df  = g(`${prefix}-df`);
   if (di)     params.set('di', di);
   if (df)     params.set('df', df);
@@ -2435,7 +3012,7 @@ function setChartLoading(ids, isLoading) {
 }
 
 const D3_LOADING_IDS = ['d3-kpi-row','d3-chart-wrap','d3-line-wrap','d3-table-body','d3-rot-produtos-body','d3-rot-categorias-body'];
-const SE_LOADING_IDS = ['se-kpi-row','se-chart-wrap','se-table-body'];
+const SE_LOADING_IDS = ['se-kpi-row','se-month-chart-wrap','se-filial-chart-wrap','se-table-body'];
 
 // â”€â”€ PRÉ-AQUECIMENTO DE CACHE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Chama silenciosamente os proximos filtros mais provaveis para eles j - estarem em cache
@@ -2470,7 +3047,6 @@ function prefetchFiltros(ag) {
   }, 900);
 }
 
-let _prewarmStarted = false;
 function preaquecerAbasDashboard() {
   if (_prewarmStarted) return;
   _prewarmStarted = true;
@@ -2498,10 +3074,11 @@ function preaquecerAbasDashboard() {
 }
 
 async function renderizar() {
+  corrigirLabelsPeriodo();
   mostrarBanner('f-active-banner', f_active,
     {loja:'FILIAL', cat:'CATEGORIA', familia:'FAMÃLIA'}, 'fLimparAtivo');
 
-  document.getElementById('chart-sub').textContent = periodoLabel('f');
+  document.getElementById('chart-sub').textContent = subtituloGrafico('f');
   document.getElementById('loja-ativa').style.display = 'none';
 
   const cacheKey = buildAgreParams('f', f_active).toString();
@@ -2516,6 +3093,19 @@ async function renderizar() {
   const totalFiltrado = (ag, byLoja) => ag && ag.por_dia
     ? ag.por_dia.reduce((s, r) => s + (r.qty || 0), 0)
     : byLoja.reduce((s, r) => s + r.qty, 0);
+  const chartRowsFromAg = (ag, byLoja) => {
+    if (shouldUseMonthlyMainChart('f', f_active)) {
+      const mensal = agruparAgPorMes(ag && ag.por_dia, 'qty', 'qty');
+      if (mensal.length > 0) return mensal;
+    }
+    return byLoja;
+  };
+  const updateMainChartTitle = () => {
+    setFirstChartTitle('tab-vendas', shouldUseMonthlyMainChart('f', f_active)
+      ? 'Quantidade Vendida Total por Mês'
+      : 'Quantidade Vendida por Filial');
+  };
+  updateMainChartTitle();
 
   if (cached) {
     const byLoja = toByLoja(cached);
@@ -2524,7 +3114,7 @@ async function renderizar() {
       return;
     }
     renderKPIs(byLoja, cached);
-    renderGrafico(byLoja, cached);
+    renderGrafico(chartRowsFromAg(cached, byLoja), cached);
     renderTabela(byLoja);
     if (cached.por_cat.length > 0) renderCat1(null, cached.por_cat, cached); else renderCat1(filtrar('cat'));
     if (cached.por_fam.length > 0) renderFam1(null, cached.por_fam, cached); else renderFam1(filtrar('familia'));
@@ -2554,7 +3144,7 @@ async function renderizar() {
       return;
     }
     renderKPIs(byLoja, agFast);
-    renderGrafico(byLoja, agFast);
+    renderGrafico(chartRowsFromAg(agFast, byLoja), agFast);
     renderTabela(byLoja);
     setChartLoading(['cat1-wrap','fam1-wrap','cat1-table-body','fam1-table-body'], true);
 
@@ -2652,22 +3242,29 @@ function renderGrafico(byLoja, ag) {
     document.getElementById('chart-wrap').appendChild(canvas);
   }
 
-  const labels = byLoja.map(r => r.nome);
+  const rawLabels = byLoja.map(r => r.nome);
   const values = byLoja.map(r => r.qty);
   const n      = byLoja.length;
   const sel    = f_active.dim === 'loja' ? f_active.val : null;
+  const monthlyByLabel = isMonthlyDataset(byLoja, r => r.nome);
+  const labels = monthlyByLabel ? formatMonthlyAxisLabels(rawLabels) : rawLabels;
+  const monthlySellout = chartMonthlyColor('sellout');
   const bgColors     = byLoja.map((r, i) => {
-    if (sel) return r.loja === sel ? 'rgba(200,241,53,0.95)' : 'rgba(37,42,58,0.45)';
+    if (monthlyByLabel) return monthlySellout.bg;
+    if (sel) return r.loja === sel ? (temaAtual() === 'light' ? 'rgba(122,166,0,0.86)' : 'rgba(200,241,53,0.95)') : chartInactiveBg();
+    if (temaAtual() === 'light') return chartColor(i) + 'cc';
     const t = n > 1 ? i/(n-1) : 0;
     return `rgba(${Math.round(200-t*80)},${Math.round(241-t*100)},${Math.round(53+t*100)},0.85)`;
   });
   const borderColors = byLoja.map((r, i) => {
-    if (sel) return r.loja === sel ? 'rgba(200,241,53,1)' : 'rgba(37,42,58,0.2)';
+    if (monthlyByLabel) return monthlySellout.solid;
+    if (sel) return r.loja === sel ? (temaAtual() === 'light' ? '#7aa600' : 'rgba(200,241,53,1)') : chartInactiveBorder();
+    if (temaAtual() === 'light') return chartColor(i);
     const t = n > 1 ? i/(n-1) : 0;
     return `rgba(${Math.round(200-t*80)},${Math.round(241-t*100)},${Math.round(53+t*100)},1)`;
   });
-  const tickColor = ctx => !sel ? '#8891aa' : byLoja[ctx.index]?.loja === sel ? '#c8f135' : '#3a4060';
-  const onClickLoja = (evt, elements) => { if (elements.length > 0) fSetFilter('loja', byLoja[elements[0].index].loja); };
+  const tickColor = ctx => !sel || monthlyByLabel ? chartTickColor() : byLoja[ctx.index]?.loja === sel ? chartMonthlyColor('sellout').solid : chartInactiveTick();
+  const onClickLoja = monthlyByLabel ? null : (evt, elements) => { if (elements.length > 0) fSetFilter('loja', byLoja[elements[0].index].loja); };
 
   // Atualiza gráfico existente no lugar (sem destruir/recriar â†’ sem animação de entrada)
   if (chartInst) {
@@ -2678,7 +3275,7 @@ function renderGrafico(byLoja, ag) {
     chartInst.options.scales.x.ticks.color = tickColor;
     chartInst.options.onClick = onClickLoja;
     chartInst.update('none');
-    canvas.style.cursor = 'pointer';
+    canvas.style.cursor = monthlyByLabel ? 'default' : 'pointer';
     return;
   }
 
@@ -2703,8 +3300,8 @@ function renderGrafico(byLoja, ag) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: '#1c2030', borderColor: '#252a3a', borderWidth: 1,
-          titleColor: '#c8f135', bodyColor: '#e8ecf5',
+          backgroundColor: chartTooltipBg(), borderColor: chartTooltipBorder(), borderWidth: 1,
+          titleColor: '#c8f135', bodyColor: chartTooltipBody(),
           titleFont: { family: 'DM Mono', size: 11 },
           bodyFont: { family: 'Figtree', size: 13 },
           padding: 14,
@@ -2717,17 +3314,17 @@ function renderGrafico(byLoja, ag) {
       scales: {
         x: {
           ticks: { color: tickColor, font: { family: 'DM Mono', size: 9 }, maxRotation: 45, minRotation: 45, autoSkip: false },
-          grid: { color: '#1c2030' }
+          grid: { color: chartGridX() }
         },
         y: {
-          ticks: { color: '#8891aa', font: { family: 'DM Mono', size: 11 }, callback: v => v.toLocaleString('pt-BR') },
-          grid: { color: '#252a3a' }
+          ticks: { color: chartTickColor(), font: { family: 'DM Mono', size: 11 }, callback: v => v.toLocaleString('pt-BR') },
+          grid: { color: chartGridY() }
         }
       }
     }
   });
 
-  canvas.style.cursor = 'pointer';
+  canvas.style.cursor = monthlyByLabel ? 'default' : 'pointer';
 }
 
 function agruparPorCategoria(data) {
@@ -2754,7 +3351,7 @@ function renderCat1(data, preAg, ag) {
   const cat1TotalEl = document.getElementById('cat1-total-val');
   if (cat1TotalEl) cat1TotalEl.textContent = displayTotal > 0 ? displayTotal.toLocaleString('pt-BR') : '?';
 
-  document.getElementById('cat1-sub').textContent = periodoLabel('f');
+  document.getElementById('cat1-sub').textContent = subtituloGrafico('f');
 
   const state = document.getElementById('cat1-state');
   const semDepara = Object.keys(catMap).length === 0 && !preAg;
@@ -2789,9 +3386,9 @@ function renderCat1(data, preAg, ag) {
   }
 
   const selCat    = f_active.dim === 'cat' ? f_active.val : null;
-  const bgCat     = byCatSorted.map((r,i) => selCat ? (r.cat===selCat ? PALETTE[i%PALETTE.length]+'ee' : 'rgba(37,42,58,0.45)') : PALETTE[i%PALETTE.length]+'cc');
-  const brdCat    = byCatSorted.map((r,i) => selCat ? (r.cat===selCat ? PALETTE[i%PALETTE.length] : 'rgba(37,42,58,0.2)') : PALETTE[i%PALETTE.length]);
-  const tickCat   = ctx => selCat ? (byCatSorted[ctx.index]?.cat===selCat ? '#c8f135':'#3a4060') : '#8891aa';
+  const bgCat     = byCatSorted.map((r,i) => selCat ? (r.cat===selCat ? chartColor(i)+'ee' : chartInactiveBg()) : chartColor(i)+'cc');
+  const brdCat    = byCatSorted.map((r,i) => selCat ? (r.cat===selCat ? chartColor(i) : chartInactiveBorder()) : chartColor(i));
+  const tickCat   = ctx => selCat ? (byCatSorted[ctx.index]?.cat===selCat ? chartMonthlyColor('sellout').solid : chartInactiveTick()) : chartTickColor();
   const clickCat  = (evt, elements) => { if (elements.length > 0) fSetFilter('cat', byCatSorted[elements[0].index].cat); };
 
   if (cat1Chart) {
@@ -2820,15 +3417,15 @@ function renderCat1(data, preAg, ag) {
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1,
-            titleColor:'#c8f135', bodyColor:'#e8ecf5',
+            backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1,
+            titleColor:'#c8f135', bodyColor:chartTooltipBody(),
             titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
             callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades` }
           }
         },
         scales: {
-          x: { ticks:{ color: tickCat, font:{family:'DM Mono',size:9}, maxRotation:35, autoSkip:false }, grid:{color:'#1c2030'} },
-          y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+          x: { ticks:{ color: tickCat, font:{family:'DM Mono',size:9}, maxRotation:35, autoSkip:false }, grid:{color:chartGridX()} },
+          y: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:chartGridY()} }
         }
       }
     });
@@ -2906,7 +3503,7 @@ function renderFam1(data, preAg, ag) {
   const fam1TotalEl = document.getElementById('fam1-total-val');
   if (fam1TotalEl) fam1TotalEl.textContent = displayTotal > 0 ? displayTotal.toLocaleString('pt-BR') : '?';
 
-  document.getElementById('fam1-sub').textContent = periodoLabel('f');
+  document.getElementById('fam1-sub').textContent = subtituloGrafico('f');
 
   const state = document.getElementById('fam1-state');
   const semDepara = Object.keys(familiaMap).length === 0 && !preAg;
@@ -2941,9 +3538,9 @@ function renderFam1(data, preAg, ag) {
   }
 
   const selFam   = f_active.dim === 'familia' ? f_active.val : null;
-  const bgFam    = byFamSorted.map((r,i) => selFam ? (r.fam===selFam ? PALETTE[i%PALETTE.length]+'ee' : 'rgba(37,42,58,0.45)') : PALETTE[i%PALETTE.length]+'cc');
-  const brdFam   = byFamSorted.map((r,i) => selFam ? (r.fam===selFam ? PALETTE[i%PALETTE.length] : 'rgba(37,42,58,0.2)') : PALETTE[i%PALETTE.length]);
-  const tickFam  = ctx => selFam ? (byFamSorted[ctx.index]?.fam===selFam ? '#c8f135':'#3a4060') : '#8891aa';
+  const bgFam    = byFamSorted.map((r,i) => selFam ? (r.fam===selFam ? chartColor(i)+'ee' : chartInactiveBg()) : chartColor(i)+'cc');
+  const brdFam   = byFamSorted.map((r,i) => selFam ? (r.fam===selFam ? chartColor(i) : chartInactiveBorder()) : chartColor(i));
+  const tickFam  = ctx => selFam ? (byFamSorted[ctx.index]?.fam===selFam ? chartMonthlyColor('sellout').solid : chartInactiveTick()) : chartTickColor();
   const clickFam = (evt, elements) => { if (elements.length > 0) fSetFilter('familia', byFamSorted[elements[0].index].fam); };
 
   if (fam1Chart) {
@@ -2972,15 +3569,15 @@ function renderFam1(data, preAg, ag) {
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1,
-            titleColor:'#c8f135', bodyColor:'#e8ecf5',
+            backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1,
+            titleColor:'#c8f135', bodyColor:chartTooltipBody(),
             titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
             callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades` }
           }
         },
         scales: {
-          x: { ticks:{ color: tickFam, font:{family:'DM Mono',size:9}, maxRotation:35, autoSkip:false }, grid:{color:'#1c2030'} },
-          y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+          x: { ticks:{ color: tickFam, font:{family:'DM Mono',size:9}, maxRotation:35, autoSkip:false }, grid:{color:chartGridX()} },
+          y: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:chartGridY()} }
         }
       }
     });
@@ -3107,6 +3704,7 @@ function d2ConstruirFiltros() {
   const cats  = catList.length ? catList : [...new Set(rawData.map(r => getCat(r)).filter(Boolean))].sort();
 
   const familias = familiaList.length ? familiaList : [...new Set(rawData.map(r => getFamilia(r)).filter(Boolean))].sort();
+  const produtos = filtroProdutos();
 
   document.getElementById('d2-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
   document.getElementById('d2-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
@@ -3116,9 +3714,10 @@ function d2ConstruirFiltros() {
   }).join('');
   document.getElementById('d2-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   document.getElementById('d2-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
+  document.getElementById('d2-produto').innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   prepararTodosMultiSelect();
 
-  ['d2-ano','d2-mes','d2-di','d2-df','d2-loja','d2-cat','d2-familia'].forEach(id =>
+  ['d2-ano','d2-mes','d2-di','d2-df','d2-loja','d2-cat','d2-familia','d2-produto'].forEach(id =>
     document.getElementById(id).addEventListener('change', d2Renderizar)
   );
 
@@ -3127,7 +3726,7 @@ function d2ConstruirFiltros() {
 }
 
 function d2LimparFiltros() {
-  ['d2-ano','d2-mes','d2-di','d2-df','d2-loja','d2-cat','d2-familia'].forEach(id => clearSelect(id));
+  ['d2-ano','d2-mes','d2-di','d2-df','d2-loja','d2-cat','d2-familia','d2-produto'].forEach(id => clearSelect(id));
   d2_active = { dim: null, val: null };
   d2Renderizar();
 }
@@ -3140,6 +3739,7 @@ function d2Filtrar(excl) {
   const lojas   = selectedValues('d2-loja');
   const cats    = selectedValues('d2-cat');
   const familias = selectedValues('d2-familia');
+  const produtos = selectedValues('d2-produto');
 
   return rawData.filter(r => {
     if (!hasSelectedValue(anos, col(r,'Ano'))) return false;
@@ -3147,6 +3747,7 @@ function d2Filtrar(excl) {
     if (!hasSelectedValue(lojas, col(r,'Loja','loja'))) return false;
     if (!hasSelectedValue(cats, getCat(r))) return false;
     if (!hasSelectedValue(familias, getFamilia(r))) return false;
+    if (!hasSelectedValue(produtos, getProduto(r))) return false;
     if (d2_active.val && d2_active.dim !== excl) {
       if (d2_active.dim === 'cat' && getCat(r) !== d2_active.val) return false;
       if (d2_active.dim === 'data') {
@@ -3197,11 +3798,10 @@ function d2AgruparPorDia(data) {
 function d2FormatarData(valor) {
   if (!valor) return valor;
   const s = String(valor).trim();
-  const MESES_BR = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   // ISO YYYY-MM-DD: dia 01 â†’ "Mar/2026" (dado mensal); senão â†’ "15/03/2026"
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
     const [y, m, d] = s.split('-');
-    if (d === '01') return `${MESES_BR[parseInt(m,10)-1]}/${y}`;
+    if (d === '01') return formatMonthlyAxisLabel(s);
     return `${d}/${m}/${y}`;
   }
   // Qualquer outro formato (M/D/AAAA do Google Sheets, etc.): parseia e formata
@@ -3209,10 +3809,10 @@ function d2FormatarData(valor) {
   if (dt && !isNaN(dt)) {
     const day = dt.getDate();
     const m   = dt.getMonth() + 1;
-    if (day === 1) return `${MESES_BR[m-1]}/${dt.getFullYear()}`;
+    if (day === 1) return `${MONTH_ABBR[m-1]}/${shortYear(dt.getFullYear())}`;
     return `${String(day).padStart(2,'0')}/${String(m).padStart(2,'0')}/${dt.getFullYear()}`;
   }
-  return s;
+  return isMonthlyLabel(s) ? formatMonthlyAxisLabel(s, inferMonthlyYear([s])) : s;
 }
 
 function d2DiaSemana(valor) {
@@ -3262,10 +3862,7 @@ function d2RenderSemDados() {
 async function d2Renderizar() {
   mostrarBanner('d2-active-banner', d2_active, {cat:'CATEGORIA', data:'DATA'}, 'd2LimparAtivo');
 
-  const nomeLoja = filtroLabel('d2-loja', 'Todas as lojas', 'lojas');
-
-  document.getElementById('d2-chart-sub').textContent =
-    periodoLabel('d2') + ' \u00B7 ' + nomeLoja;
+  document.getElementById('d2-chart-sub').textContent = subtituloGrafico('d2');
 
   const toDia = r => {
     const dt = parseDataBR(String(r.data || ''));
@@ -3349,6 +3946,8 @@ function d2AtualizarGrafico(porDia, porDiaTabela, ag) {
     document.getElementById('d2-chart-wrap').appendChild(canvas);
   }
   if (d2Chart) { d2Chart.destroy(); d2Chart = null; }
+  const d2Monthly = isMonthlyDataset(porDia, r => r.data);
+  const d2Color = d2Monthly ? chartMonthlyColor('sellout') : null;
 
   d2Chart = new Chart(canvas, {
     type: 'line',
@@ -3357,12 +3956,12 @@ function d2AtualizarGrafico(porDia, porDiaTabela, ag) {
       datasets: [{
         label: 'Qtd Vendida',
         data: porDia.map(r => r.qty),
-        borderColor: 'rgba(200,241,53,0.9)',
-        backgroundColor: 'rgba(200,241,53,0.08)',
+        borderColor: d2Color ? d2Color.solid : chartMonthlyColor('sellout').solid,
+        backgroundColor: d2Color ? d2Color.fill : chartMonthlyColor('sellout').fill,
         borderWidth: 2,
         pointRadius: porDia.length <= 60 ? 3 : 0,
         pointHoverRadius: 5,
-        pointBackgroundColor: 'rgba(200,241,53,1)',
+        pointBackgroundColor: d2Color ? d2Color.solid : chartMonthlyColor('sellout').solid,
         fill: true,
         tension: 0.3,
       }]
@@ -3374,8 +3973,8 @@ function d2AtualizarGrafico(porDia, porDiaTabela, ag) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: '#1c2030', borderColor: '#252a3a', borderWidth: 1,
-          titleColor: '#c8f135', bodyColor: '#e8ecf5',
+          backgroundColor: chartTooltipBg(), borderColor: chartTooltipBorder(), borderWidth: 1,
+          titleColor: '#c8f135', bodyColor: chartTooltipBody(),
           titleFont: { family: 'DM Mono', size: 11 },
           bodyFont: { family: 'Figtree', size: 13 },
           padding: 14,
@@ -3387,16 +3986,16 @@ function d2AtualizarGrafico(porDia, porDiaTabela, ag) {
       scales: {
         x: {
           ticks: {
-            color: '#8891aa',
+            color: chartTickColor(),
             font: { family: 'DM Mono', size: 9 },
             maxRotation: 45, minRotation: 45,
             autoSkip: true, maxTicksLimit: 40,
           },
-          grid: { color: '#1c2030' }
+          grid: { color: chartGridX() }
         },
         y: {
-          ticks: { color: '#8891aa', font: { family: 'DM Mono', size: 11 }, callback: v => v.toLocaleString('pt-BR') },
-          grid: { color: '#252a3a' }
+          ticks: { color: chartTickColor(), font: { family: 'DM Mono', size: 11 }, callback: v => v.toLocaleString('pt-BR') },
+          grid: { color: chartGridY() }
         }
       }
     }
@@ -3455,8 +4054,7 @@ function d2AtualizarGrafico(porDia, porDiaTabela, ag) {
 }
 
 function renderCat2(data, preAg) {
-  const nomeLoja = filtroLabel('d2-loja', 'Todas as lojas', 'lojas');
-  document.getElementById('cat2-sub').textContent = periodoLabel('d2') + ' \u00B7 ' + nomeLoja;
+  document.getElementById('cat2-sub').textContent = subtituloGrafico('d2');
 
   const agRows = preAg
     ? preAg.filter(r =>
@@ -3530,7 +4128,7 @@ function renderCat2(data, preAg) {
       entries = cats.map((c,i) => ({
         cat: c,
         val: mapCatDia[c]?.[dias[dataIndex]] || 0,
-        cor: PALETTE[i % PALETTE.length]
+        cor: chartColor(i)
       })).filter(e => e.val > 0).sort((a,b) => b.val - a.val);
     } else {
       entries = [...cats]
@@ -3538,7 +4136,7 @@ function renderCat2(data, preAg) {
         .map(c => ({
           cat: c,
           val: totCatMap[c],
-          cor: PALETTE[cats.indexOf(c) % PALETTE.length]
+          cor: chartColor(cats.indexOf(c))
         }));
     }
 
@@ -3561,8 +4159,8 @@ function renderCat2(data, preAg) {
       datasets: cats.map((c, i) => ({
         label: c,
         data: dias.map(d => mapCatDia[c]?.[d] || 0),
-        borderColor:     d2SelC ? (c===d2SelC ? PALETTE[i%PALETTE.length] : 'rgba(90,96,128,0.25)') : PALETTE[i%PALETTE.length],
-        backgroundColor: d2SelC ? (c===d2SelC ? PALETTE[i%PALETTE.length]+'22' : 'transparent') : PALETTE[i%PALETTE.length]+'22',
+        borderColor:     d2SelC ? (c===d2SelC ? chartColor(i) : chartInactiveBorder()) : chartColor(i),
+        backgroundColor: d2SelC ? (c===d2SelC ? chartColor(i)+'22' : 'transparent') : chartColor(i)+'22',
         borderWidth: d2SelC ? (c===d2SelC ? 2.5 : 1) : 2,
         pointRadius: dias.length <= 60 ? 2 : 0, pointHoverRadius: 4, tension: 0.3, fill: false,
       }))
@@ -3580,8 +4178,8 @@ function renderCat2(data, preAg) {
         tooltip: { enabled: false }
       },
       scales: {
-        x: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:true, maxTicksLimit:30 }, grid:{color:'#1c2030'} },
-        y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+        x: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:true, maxTicksLimit:30 }, grid:{color:chartGridX()} },
+        y: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:chartGridY()} }
       }
     }
   });
@@ -3644,8 +4242,7 @@ function cat2OrdenarPor(coluna) {
 }
 
 function renderFam2(data, preAg) {
-  const nomeLoja = filtroLabel('d2-loja', 'Todas as lojas', 'lojas');
-  document.getElementById('fam2-sub').textContent = periodoLabel('d2') + ' \u00B7 ' + nomeLoja;
+  document.getElementById('fam2-sub').textContent = subtituloGrafico('d2');
   const familiasSelecionadas = selectedValues('d2-familia');
   const d2SelF = d2_active.dim === 'familia'
     ? d2_active.val
@@ -3717,8 +4314,8 @@ function renderFam2(data, preAg) {
       datasets: famsGrafico.map((f, i) => ({
         label: f,
         data: dias.map(d => mapFamDia[f]?.[d] || 0),
-        borderColor:     PALETTE[i%PALETTE.length],
-        backgroundColor: PALETTE[i%PALETTE.length]+'22',
+        borderColor:     chartColor(i),
+        backgroundColor: chartColor(i)+'22',
         borderWidth: 2,
         pointRadius: dias.length <= 60 ? 2 : 0, pointHoverRadius: 4, tension: 0.3, fill: false,
       }))
@@ -3728,17 +4325,17 @@ function renderFam2(data, preAg) {
       interaction: { mode:'index', intersect:false },
       plugins: {
         legend: {
-          labels:{ color:'#8891aa', font:{family:'DM Mono',size:10}, boxWidth:10 },
+          labels:{ color:chartTickColor(), font:{family:'DM Mono',size:10}, boxWidth:10 },
         },
         tooltip: {
-          backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1,
-          titleColor:'#c8f135', bodyColor:'#e8ecf5',
+          backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1,
+          titleColor:'#c8f135', bodyColor:chartTooltipBody(),
           titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:12}, padding:12,
         }
       },
       scales: {
-        x: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:true, maxTicksLimit:30 }, grid:{color:'#1c2030'} },
-        y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+        x: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:true, maxTicksLimit:30 }, grid:{color:chartGridX()} },
+        y: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:chartGridY()} }
       }
     }
   });
@@ -3820,10 +4417,11 @@ function t2OrdenarPor(coluna) {
 function d3ConstruirFiltros() {
   const anos  = filtroAnos();
   const meses = filtroMeses();
-  const lojas = filtroLojas(true);
+  const lojas = filtroLojas(false);
   const cats  = catList.length ? catList : [...new Set(rawData.map(r => getCat(r)).filter(Boolean))].sort();
 
   const familias = familiaList.length ? familiaList : [...new Set(rawData.map(r => getFamilia(r)).filter(Boolean))].sort();
+  const produtos = filtroProdutos();
 
   document.getElementById('d3-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
   document.getElementById('d3-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
@@ -3833,16 +4431,62 @@ function d3ConstruirFiltros() {
   }).join('');
   document.getElementById('d3-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   document.getElementById('d3-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
+  document.getElementById('d3-produto').innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   prepararTodosMultiSelect();
 
-  ['d3-ano','d3-mes','d3-di','d3-df','d3-loja','d3-cat','d3-familia'].forEach(id =>
+  ['d3-ano','d3-mes','d3-di','d3-df','d3-loja','d3-cat','d3-familia','d3-produto'].forEach(id =>
     document.getElementById(id).addEventListener('change', d3Renderizar)
   );
   document.getElementById('d3-status-msg').textContent = document.getElementById('status-msg').textContent;
 }
 
+function d3ListaUnicaOrdenada(values) {
+  return [...new Set(values.map(v => limparTextoExibicao(v)).filter(Boolean))]
+    .filter(v => v !== '-' && v !== '?')
+    .sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }));
+}
+
+function d3AtualizarSelectFiltro(id, emptyLabel, values, labelFn = v => v) {
+  const el = document.getElementById(id);
+  const opcoes = d3ListaUnicaOrdenada(values);
+  if (!el || opcoes.length === 0) return;
+  const selecionados = new Set(selectedValues(id));
+  el.innerHTML = `<option value="">${emptyLabel}</option>` + opcoes.map(v => {
+    const selected = selecionados.has(v) ? ' selected' : '';
+    return `<option value="${escapeHtml(v)}"${selected}>${escapeHtml(labelFn(v))}</option>`;
+  }).join('');
+  prepararMultiSelect(el);
+}
+
+function d3AtualizarFiltrosEstoqueAgregado(ag) {
+  const lojasAg = [
+    ...(ag?.por_loja || []).map(r => r.loja),
+    ...(ag?.por_loja_dia || []).map(r => r.loja)
+  ];
+  const catsAg = [
+    ...catList,
+    ...(ag?.por_cat || []).map(r => r.cat),
+    ...(ag?.por_cat_dia || []).map(r => r.cat)
+  ];
+  const famsAg = [
+    ...familiaList,
+    ...(ag?.por_fam || []).map(r => r.fam),
+    ...(ag?.por_fam_dia || []).map(r => r.fam)
+  ];
+  const produtosAg = [
+    ...filtroProdutos(),
+    ...(ag?.por_produto || []).map(r => r.nome),
+    ...(ag?.por_produto_dia || []).map(r => r.nome)
+  ];
+
+  d3AtualizarSelectFiltro('d3-loja', 'Todas', lojasAg, l => `#${l} - ${nomeLojaDePara(l)}`);
+  d3AtualizarSelectFiltro('d3-cat', 'Todas', catsAg);
+  d3AtualizarSelectFiltro('d3-familia', 'Todas', famsAg);
+  d3AtualizarSelectFiltro('d3-produto', 'Todos', produtosAg, d3FormatarNomeProdutoEstoque);
+}
+
 function d3LimparFiltros() {
-  ['d3-ano','d3-mes','d3-di','d3-df','d3-loja','d3-cat','d3-familia'].forEach(id => clearSelect(id));
+  ['d3-ano','d3-mes','d3-di','d3-df','d3-loja','d3-cat','d3-familia','d3-produto'].forEach(id => clearSelect(id));
   d3_active = { dim: null, val: null };
   d3Renderizar();
 }
@@ -3855,6 +4499,7 @@ function d3Filtrar(excl) {
   const lojas   = selectedValues('d3-loja');
   const cats    = selectedValues('d3-cat');
   const familias = selectedValues('d3-familia');
+  const produtos = selectedValues('d3-produto');
 
   return rawData.filter(r => {
     if (!hasSelectedValue(anos, col(r,'Ano'))) return false;
@@ -3862,6 +4507,7 @@ function d3Filtrar(excl) {
     if (!hasSelectedValue(lojas, col(r,'Loja','loja'))) return false;
     if (!hasSelectedValue(cats, getCat(r))) return false;
     if (!hasSelectedValue(familias, getFamilia(r))) return false;
+    if (!hasSelectedValue(produtos, getProduto(r))) return false;
     if (d3_active.val && d3_active.dim !== excl) {
       if (d3_active.dim === 'loja' && col(r,'Loja','loja') !== d3_active.val) return false;
     }
@@ -3888,8 +4534,7 @@ function d3Renderizar() {
   mostrarBanner('d3-active-banner', d3_active, {loja:'FILIAL'}, 'd3LimparAtivo');
   const dados = d3Filtrar();
   const dadosTabela = d3Filtrar('loja');
-  const nomeLoja = filtroLabel('d3-loja', 'Todas as lojas', 'lojas');
-  const periodo  = periodoLabel('d3') + ' ? ' + nomeLoja;
+  const periodo  = subtituloGrafico('d3');
   document.getElementById('d3-chart-sub').textContent = periodo;
   document.getElementById('d3-line-sub').textContent  = periodo;
 
@@ -3959,14 +4604,17 @@ function d3Renderizar() {
     if (d3BarChart) { d3BarChart.destroy(); d3BarChart = null; }
     const n = byLoja.length;
     const d3Sel = d3_active.dim === 'loja' ? d3_active.val : null;
+    const monthlyByLabel = isMonthlyDataset(byLoja, r => r.nome);
+    const chartLabels = monthlyByLabel ? formatMonthlyAxisLabels(byLoja.map(r => r.nome)) : byLoja.map(r => r.nome);
+    const monthlyEstoque = chartMonthlyColor('estoque');
     d3BarChart = new Chart(c1, {
       type: 'bar',
       data: {
-        labels: byLoja.map(r => r.nome),
+        labels: chartLabels,
         datasets: [{
           data: byLoja.map(r => r.qty),
-          backgroundColor: byLoja.map((r,i) => { if(d3Sel) return r.loja===d3Sel?'rgba(79,255,176,0.95)':'rgba(37,42,58,0.45)'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},0.85)`; }),
-          borderColor:     byLoja.map((r,i) => { if(d3Sel) return r.loja===d3Sel?'rgba(79,255,176,1)':'rgba(37,42,58,0.2)'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},1)`; }),
+          backgroundColor: byLoja.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.bg; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'rgba(0,143,104,0.78)':'rgba(79,255,176,0.95)'):chartInactiveBg(); if(temaAtual()==='light') return chartColor(i)+'cc'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},0.85)`; }),
+          borderColor:     byLoja.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.solid; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'#008f68':'rgba(79,255,176,1)'):chartInactiveBorder(); if(temaAtual()==='light') return chartColor(i); const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},1)`; }),
           borderWidth: 1.5, borderRadius: 6,
         }]
       },
@@ -3977,13 +4625,13 @@ function d3Renderizar() {
         },
         plugins: {
           legend: { display: false },
-          tooltip: { backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1, titleColor:'#4fffb0', bodyColor:'#e8ecf5', titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+          tooltip: { backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1, titleColor:'#4fffb0', bodyColor:chartTooltipBody(), titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
             callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades em estoque` }
           }
         },
         scales: {
-          x: { ticks:{ color: ctx => d3Sel?(byLoja[ctx.index]?.loja===d3Sel?'#4fffb0':'#3a4060'):'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false }, grid:{color:'#1c2030'} },
-          y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+          x: { ticks:{ color: ctx => d3Sel?(byLoja[ctx.index]?.loja===d3Sel?'#4fffb0':chartInactiveTick()):chartTickColor(), font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false }, grid:{color:chartGridX()} },
+          y: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:chartGridY()} }
         }
       }
     });
@@ -4029,13 +4677,13 @@ function d3Renderizar() {
         entries = lojas.map((l,i) => ({
           nome: nomeLojaDePara(l),
           val:  mapLD[l]?.[dias[dataIndex]] || 0,
-          cor:  PALETTE[i % PALETTE.length]
+          cor:  chartColor(i)
         })).filter(e => e.val > 0).sort((a,b) => b.val - a.val);
       } else {
         entries = lojas.map((l,i) => ({
           nome: nomeLojaDePara(l),
           val:  Object.values(mapLD[l] || {}).reduce((s,v) => s+v, 0),
-          cor:  PALETTE[i % PALETTE.length]
+          cor:  chartColor(i)
         })).sort((a,b) => b.val - a.val);
       }
       legend.innerHTML = `<div class="horizontal-legend-title">${dataLabel || 'Legenda'}</div>`
@@ -4055,6 +4703,7 @@ function d3Renderizar() {
       document.getElementById('d3-line-wrap').appendChild(c2);
     }
     if (d3LineChart) { d3LineChart.destroy(); d3LineChart = null; }
+    const d3MonthlyLine = lojas.length === 1 && isMonthlyDataset(dias, d => d);
 
     d3LineChart = new Chart(c2, {
       type: 'line',
@@ -4063,8 +4712,8 @@ function d3Renderizar() {
         datasets: lojas.map((l,i) => ({
           label: nomeLojaDePara(l),
           data: dias.map(d => mapLD[l]?.[d] ?? null),
-          borderColor:     PALETTE[i%PALETTE.length],
-          backgroundColor: PALETTE[i%PALETTE.length]+'22',
+          borderColor:     d3MonthlyLine ? chartMonthlyColor('estoque').solid : chartColor(i),
+          backgroundColor: d3MonthlyLine ? chartMonthlyColor('estoque').fill : chartColor(i)+'22',
           borderWidth: 2,
           pointRadius: dias.length <= 60 ? 2 : 0,
           pointHoverRadius: 4, tension: 0.3, fill: false, spanGaps: true,
@@ -4081,8 +4730,8 @@ function d3Renderizar() {
           tooltip: { enabled: false }
         },
         scales: {
-          x: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:true, maxTicksLimit:30 }, grid:{color:'#1c2030'} },
-          y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+          x: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:true, maxTicksLimit:30 }, grid:{color:chartGridX()} },
+          y: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:chartGridY()} }
         }
       }
     });
@@ -4143,8 +4792,17 @@ async function d3FetchTotalEstoque(renderSeq = d3_renderSeq, signal = null) {
     if (renderSeq !== d3_renderSeq) return;
 
     d3_estoqueAg = agDetalhado;
+    d3AtualizarFiltrosEstoqueAgregado(agDetalhado);
     d3AtualizarKpiEstoqueUltimoDia(agDetalhado);
-    d3RenderGraficoEstoqueUltimoDia(agDetalhado);
+    if (shouldUseMonthlyMainChart('d3', d3_active)) {
+      const histParams = buildAgreParams('d3', d3_active);
+      histParams.set('historico', '1');
+      const agHistorico = await fetchJSON(`${API_BASE}/api/dashboard/estoque?${histParams}`, signal);
+      if (renderSeq !== d3_renderSeq) return;
+      d3RenderGraficoEstoqueUltimoDia(agHistorico);
+    } else {
+      d3RenderGraficoEstoqueUltimoDia(agDetalhado);
+    }
     d3RenderTabelaFilialUltimoDia(agDetalhado);
     d3RenderRotatividadeAgregada(agDetalhado);
     setChartLoading(D3_LOADING_IDS, false);
@@ -4176,6 +4834,7 @@ function d3AtualizarKpiEstoqueUltimoDia(ag) {
   const rows = (ag?.por_loja_dia || [])
     .map(r => ({
       loja: String(r.loja || '').trim(),
+      nome: nomeLojaRegistro(r),
       data: String(r.data || '').trim(),
       qty: Number(r.qty || 0)
     }))
@@ -4186,7 +4845,7 @@ function d3AtualizarKpiEstoqueUltimoDia(ag) {
   const dataLabel = d3FormatarDataKpi(ultimaData);
   const rowsUltimoDia = rows
     .filter(r => r.data === ultimaData)
-    .map(r => ({ loja: r.loja, nome: nomeLojaDePara(r.loja), qty: r.qty }));
+    .map(r => ({ loja: r.loja, nome: r.nome || nomeLojaDePara(r.loja), qty: r.qty }));
   const totalKpi = rowsUltimoDia.reduce((s, r) => s + r.qty, 0);
   const rowsPositivos = rowsUltimoDia.filter(r => r.qty > 0).sort((a,b) => b.qty - a.qty);
   const top = rowsPositivos[0];
@@ -4229,10 +4888,11 @@ function d3RenderGraficoEstoqueUltimoDia(ag) {
   const rowsBase = (ag?.por_loja_dia || [])
     .map(r => ({
       loja: String(r.loja || '').trim(),
+      nome: nomeLojaRegistro(r),
       data: String(r.data || '').trim(),
       qty: Number(r.qty || 0)
     }))
-    .filter(r => r.loja && r.data && deParaMap[r.loja]);
+    .filter(r => r.loja && r.data);
   const barState = document.getElementById('d3-chart-state');
   if (!rowsBase.length) {
     if (barState) { barState.style.display = 'flex'; barState.innerHTML = 'Nenhum dado.'; }
@@ -4241,23 +4901,29 @@ function d3RenderGraficoEstoqueUltimoDia(ag) {
   }
 
   const ultimaData = rowsBase.reduce((max, r) => !max || r.data > max ? r.data : max, '');
-  const rows = rowsBase
+  const rowsUltimoDia = rowsBase
     .filter(r => r.data === ultimaData)
-    .map(r => ({ loja: r.loja, nome: nomeLojaDePara(r.loja), qty: r.qty }))
+    .map(r => ({ loja: r.loja, nome: r.nome || nomeLojaDePara(r.loja), qty: r.qty }))
     .sort((a,b) => b.qty - a.qty);
+  const monthlyMain = shouldUseMonthlyMainChart('d3', d3_active);
+  const rows = monthlyMain
+    ? agruparEstoqueUltimoDiaPorMes(rowsBase, 'qty')
+    : rowsUltimoDia;
   const totalDia = rows.reduce((s, r) => s + r.qty, 0);
 
   const totalEl = document.getElementById('d3-chart-total-val');
   if (totalEl) totalEl.textContent = totalDia.toLocaleString('pt-BR');
   const totalLabel = totalEl?.previousElementSibling;
-  if (totalLabel) totalLabel.textContent = `Total do dia - ${d3FormatarDataKpi(ultimaData)}`;
+  if (totalLabel) totalLabel.textContent = monthlyMain ? 'Total consolidado' : `Total do dia - ${d3FormatarDataKpi(ultimaData)}`;
   const totalSub = totalEl?.nextElementSibling;
-  if (totalSub) totalSub.textContent = 'Estoque total';
+  if (totalSub) totalSub.textContent = monthlyMain ? 'último dia de cada mês' : 'Estoque total';
   const subEl = document.getElementById('d3-chart-sub');
   if (subEl) {
-    const nomeLoja = filtroLabel('d3-loja', 'Todas as lojas', 'lojas');
-    subEl.textContent = `${d3FormatarDataKpi(ultimaData)} ? ${nomeLoja}`;
+    subEl.textContent = monthlyMain
+      ? subtituloGrafico('d3', ['ultimo dia de cada mes'])
+      : subtituloGrafico('d3', [d3FormatarDataKpi(ultimaData)]);
   }
+  setFirstChartTitle('tab-estoque', monthlyMain ? 'Estoque Total por Mês' : 'Estoque Diário por Loja');
 
   if (barState) barState.style.display = 'none';
   let c1 = document.getElementById('d3-bar-canvas');
@@ -4270,35 +4936,38 @@ function d3RenderGraficoEstoqueUltimoDia(ag) {
 
   const n = rows.length;
   const d3Sel = d3_active.dim === 'loja' ? d3_active.val : null;
+  const monthlyByLabel = isMonthlyDataset(rows, r => r.nome);
+  const chartLabels = monthlyByLabel ? formatMonthlyAxisLabels(rows.map(r => r.nome)) : rows.map(r => r.nome);
+  const monthlyEstoque = chartMonthlyColor('estoque');
   d3BarChart = new Chart(c1, {
     type: 'bar',
     data: {
-      labels: rows.map(r => r.nome),
+      labels: chartLabels,
       datasets: [{
         data: rows.map(r => r.qty),
-        backgroundColor: rows.map((r,i) => { if(d3Sel) return r.loja===d3Sel?'rgba(79,255,176,0.95)':'rgba(37,42,58,0.45)'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},0.85)`; }),
-        borderColor:     rows.map((r,i) => { if(d3Sel) return r.loja===d3Sel?'rgba(79,255,176,1)':'rgba(37,42,58,0.2)'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},1)`; }),
+        backgroundColor: rows.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.bg; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'rgba(0,143,104,0.78)':'rgba(79,255,176,0.95)'):chartInactiveBg(); if(temaAtual()==='light') return chartColor(i)+'cc'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},0.85)`; }),
+        borderColor:     rows.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.solid; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'#008f68':'rgba(79,255,176,1)'):chartInactiveBorder(); if(temaAtual()==='light') return chartColor(i); const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},1)`; }),
         borderWidth: 1.5, borderRadius: 6,
       }]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      onClick: (evt, elements) => {
+      onClick: monthlyByLabel ? null : (evt, elements) => {
         if (elements.length > 0) setTimeout(() => d3SetFilter('loja', rows[elements[0].index].loja), 0);
       },
       plugins: {
         legend: { display: false },
-        tooltip: { backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1, titleColor:'#4fffb0', bodyColor:'#e8ecf5', titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+        tooltip: { backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1, titleColor:'#4fffb0', bodyColor:chartTooltipBody(), titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
           callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades em estoque` }
         }
       },
       scales: {
-        x: { ticks:{ color: ctx => d3Sel?(rows[ctx.index]?.loja===d3Sel?'#4fffb0':'#3a4060'):'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false }, grid:{color:'#1c2030'} },
-        y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+        x: { ticks:{ color: ctx => d3Sel && !monthlyByLabel ? (rows[ctx.index]?.loja===d3Sel?'#4fffb0':chartInactiveTick()) : '#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false }, grid:{color:chartGridX()} },
+        y: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:chartGridY()} }
       }
     }
   });
-  c1.style.cursor = 'pointer';
+  c1.style.cursor = monthlyByLabel ? 'default' : 'pointer';
 }
 
 function d3SetEstoqueLoading() {
@@ -4340,9 +5009,9 @@ function d3RenderResumoEstoqueAgregado(ag) {
   const rows = (ag?.por_loja || [])
     .map(r => {
       const loja = String(r.loja || '').trim();
-      return { loja, nome: nomeLojaDePara(loja), qty: Number(r.qty || 0) };
+      return { loja, nome: nomeLojaRegistro({ ...r, loja }), qty: Number(r.qty || 0) };
     })
-    .filter(r => r.loja && deParaMap[r.loja])
+    .filter(r => r.loja)
     .sort((a,b) => b.qty - a.qty);
   const ativas = Number(ag?.total_lojas || rows.filter(r => r.qty > 0).length);
   const top = rows[0];
@@ -4376,14 +5045,17 @@ function d3RenderResumoEstoqueAgregado(ag) {
   if (d3BarChart) { d3BarChart.destroy(); d3BarChart = null; }
   const n = rows.length;
   const d3Sel = d3_active.dim === 'loja' ? d3_active.val : null;
+  const monthlyByLabel = isMonthlyDataset(rows, r => r.nome);
+  const chartLabels = monthlyByLabel ? formatMonthlyAxisLabels(rows.map(r => r.nome)) : rows.map(r => r.nome);
+  const monthlyEstoque = chartMonthlyColor('estoque');
   d3BarChart = new Chart(c1, {
     type: 'bar',
     data: {
-      labels: rows.map(r => r.nome),
+      labels: chartLabels,
       datasets: [{
         data: rows.map(r => r.qty),
-        backgroundColor: rows.map((r,i) => { if(d3Sel) return r.loja===d3Sel?'rgba(79,255,176,0.95)':'rgba(37,42,58,0.45)'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},0.85)`; }),
-        borderColor:     rows.map((r,i) => { if(d3Sel) return r.loja===d3Sel?'rgba(79,255,176,1)':'rgba(37,42,58,0.2)'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},1)`; }),
+        backgroundColor: rows.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.bg; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'rgba(0,143,104,0.78)':'rgba(79,255,176,0.95)'):chartInactiveBg(); if(temaAtual()==='light') return chartColor(i)+'cc'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},0.85)`; }),
+        borderColor:     rows.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.solid; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'#008f68':'rgba(79,255,176,1)'):chartInactiveBorder(); if(temaAtual()==='light') return chartColor(i); const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},1)`; }),
         borderWidth: 1.5, borderRadius: 6,
       }]
     },
@@ -4394,13 +5066,13 @@ function d3RenderResumoEstoqueAgregado(ag) {
       },
       plugins: {
         legend: { display: false },
-        tooltip: { backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1, titleColor:'#4fffb0', bodyColor:'#e8ecf5', titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+        tooltip: { backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1, titleColor:'#4fffb0', bodyColor:chartTooltipBody(), titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
           callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades em estoque` }
         }
       },
       scales: {
-        x: { ticks:{ color: ctx => d3Sel?(rows[ctx.index]?.loja===d3Sel?'#4fffb0':'#3a4060'):'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false }, grid:{color:'#1c2030'} },
-        y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+        x: { ticks:{ color: ctx => d3Sel?(rows[ctx.index]?.loja===d3Sel?'#4fffb0':chartInactiveTick()):chartTickColor(), font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false }, grid:{color:chartGridX()} },
+        y: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:chartGridY()} }
       }
     }
   });
@@ -4424,8 +5096,8 @@ function d3FetchLineHistorico(renderSeq = d3_renderSeq, signal = null) {
 
 function d3RenderLineAgregado(ag) {
   const rows = (ag?.por_loja_dia || [])
-    .map(r => ({ loja: String(r.loja || '').trim(), data: r.data, qty: Number(r.qty || 0) }))
-    .filter(r => r.loja && r.data && deParaMap[r.loja]);
+    .map(r => ({ loja: String(r.loja || '').trim(), nome: nomeLojaRegistro(r), data: r.data, qty: Number(r.qty || 0) }))
+    .filter(r => r.loja && r.data);
   const lineState = document.getElementById('d3-line-state');
   const d3LineLegendEl = document.getElementById('d3-line-legend');
 
@@ -4445,8 +5117,10 @@ function d3RenderLineAgregado(ag) {
   })();
 
   const mapLD = {};
+  const nomePorLoja = {};
   rows.forEach(r => {
     if (!lojas.includes(r.loja)) return;
+    if (!nomePorLoja[r.loja]) nomePorLoja[r.loja] = r.nome || nomeLojaDePara(r.loja);
     if (!mapLD[r.loja]) mapLD[r.loja] = {};
     mapLD[r.loja][r.data] = (mapLD[r.loja][r.data] || 0) + r.qty;
   });
@@ -4460,15 +5134,15 @@ function d3RenderLineAgregado(ag) {
     let entries;
     if (dataIndex != null && dias[dataIndex]) {
       entries = lojas.map((l,i) => ({
-        nome: nomeLojaDePara(l),
+        nome: nomePorLoja[l] || nomeLojaDePara(l),
         val:  mapLD[l]?.[dias[dataIndex]] || 0,
-        cor:  PALETTE[i % PALETTE.length]
+        cor:  chartColor(i)
       })).filter(e => e.val > 0).sort((a,b) => b.val - a.val);
     } else {
       entries = lojas.map((l,i) => ({
-        nome: nomeLojaDePara(l),
+        nome: nomePorLoja[l] || nomeLojaDePara(l),
         val:  Object.values(mapLD[l] || {}).reduce((s,v) => s+v, 0),
-        cor:  PALETTE[i % PALETTE.length]
+        cor:  chartColor(i)
       })).sort((a,b) => b.val - a.val);
     }
     legend.innerHTML = `<div class="horizontal-legend-title">${dataLabel || 'Legenda'}</div>`
@@ -4488,6 +5162,7 @@ function d3RenderLineAgregado(ag) {
     document.getElementById('d3-line-wrap').appendChild(c2);
   }
   if (d3LineChart) { d3LineChart.destroy(); d3LineChart = null; }
+  const d3MonthlyLine = lojas.length === 1 && isMonthlyDataset(dias, d => d);
 
   d3LineChart = new Chart(c2, {
     type: 'line',
@@ -4496,8 +5171,8 @@ function d3RenderLineAgregado(ag) {
       datasets: lojas.map((l,i) => ({
         label: nomeLojaDePara(l),
         data: dias.map(d => mapLD[l]?.[d] ?? null),
-        borderColor:     PALETTE[i%PALETTE.length],
-        backgroundColor: PALETTE[i%PALETTE.length]+'22',
+        borderColor:     d3MonthlyLine ? chartMonthlyColor('estoque').solid : chartColor(i),
+        backgroundColor: d3MonthlyLine ? chartMonthlyColor('estoque').fill : chartColor(i)+'22',
         borderWidth: 2,
         pointRadius: dias.length <= 60 ? 2 : 0,
         pointHoverRadius: 4, tension: 0.3, fill: false, spanGaps: true,
@@ -4514,8 +5189,8 @@ function d3RenderLineAgregado(ag) {
         tooltip: { enabled: false }
       },
       scales: {
-        x: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:true, maxTicksLimit:30 }, grid:{color:'#1c2030'} },
-        y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+        x: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:true, maxTicksLimit:30 }, grid:{color:chartGridX()} },
+        y: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:chartGridY()} }
       }
     }
   });
@@ -4577,6 +5252,7 @@ function d3RenderTabelaFilialUltimoDia(ag) {
   const rowsBase = (ag?.por_loja_dia || [])
     .map(r => ({
       loja: String(r.loja || '').trim(),
+      nome: nomeLojaRegistro(r),
       data: String(r.data || '').trim(),
       qty: Number(r.qty || 0)
     }))
@@ -4597,7 +5273,7 @@ function d3RenderTabelaFilialUltimoDia(ag) {
 
   const rows = rowsBase
     .filter(r => r.data === ultimaData)
-    .map(r => ({ loja: r.loja, nome: nomeLojaDePara(r.loja), qty: r.qty }));
+    .map(r => ({ loja: r.loja, nome: r.nome || nomeLojaDePara(r.loja), qty: r.qty }));
 
   const sorted = [...rows].sort((a,b) => {
     let va, vb;
@@ -4817,10 +5493,10 @@ function d3RenderRotatividade(dados) {
 
 // â”€â”€ ABA SELL OUT X ESTOQUE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function d3FormatarNomeProdutoEstoque(nome) {
-  return String(nome || '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/([A-Za-zÀ-ÿ.])(\d{2,})$/g, '$1 $2');
+  return escapeHtml(
+    limparTextoExibicao(nome)
+      .replace(/([A-Za-zÀ-ÿ.])(\d{2,})$/g, '$1 $2')
+  );
 }
 
 function d3RenderRotatividadeTabela(byProdInput, byCatInput, dataLabel = '') {
@@ -4935,15 +5611,17 @@ function seConstruirFiltros() {
   const lojas = seOpcoesLojas();
   const cats  = seOpcoesCategorias();
   const familias = seOpcoesFamilias();
+  const produtos = filtroProdutos();
 
   document.getElementById('se-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
   document.getElementById('se-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
   document.getElementById('se-loja').innerHTML    = '<option value="">Todas</option>' + lojas.map(l => `<option value="${l}">#${l} - ${nomeLojaDePara(l)}</option>`).join('');
   document.getElementById('se-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   document.getElementById('se-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
-  ['se-ano','se-mes','se-loja','se-cat','se-familia'].forEach(id => prepararMultiSelect(document.getElementById(id)));
+  document.getElementById('se-produto').innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+  ['se-ano','se-mes','se-loja','se-cat','se-familia','se-produto'].forEach(id => prepararMultiSelect(document.getElementById(id)));
 
-  ['se-ano','se-mes','se-di','se-df','se-loja','se-cat','se-familia'].forEach(id =>
+  ['se-ano','se-mes','se-di','se-df','se-loja','se-cat','se-familia','se-produto'].forEach(id =>
     document.getElementById(id).addEventListener('change', seRenderizar)
   );
 
@@ -4952,7 +5630,7 @@ function seConstruirFiltros() {
 }
 
 function seLimparFiltros() {
-  ['se-ano','se-mes','se-di','se-df','se-loja','se-cat','se-familia'].forEach(id => clearSelect(id));
+  ['se-ano','se-mes','se-di','se-df','se-loja','se-cat','se-familia','se-produto'].forEach(id => clearSelect(id));
   se_active = { dim: null, val: null };
   seRenderizar();
 }
@@ -4970,6 +5648,7 @@ function seFiltrar(excl) {
   const lojas   = selectedValues('se-loja');
   const cats    = selectedValues('se-cat');
   const familias = selectedValues('se-familia');
+  const produtos = selectedValues('se-produto');
 
   return rawData.filter(r => {
     const lojaRaw = col(r,'Loja','loja');
@@ -4983,6 +5662,7 @@ function seFiltrar(excl) {
     if (!hasSelectedValue(lojas, lojaKey)) return false;
     if (!hasSelectedValue(cats, getCat(r))) return false;
     if (!hasSelectedValue(familias, getFamilia(r))) return false;
+    if (!hasSelectedValue(produtos, getProduto(r))) return false;
 
     if (se_active.val && se_active.dim !== excl) {
       if (se_active.dim === 'loja' && lojaKey !== se_active.val) return false;
@@ -5071,7 +5751,11 @@ function seAplicarSort(data, sortState) {
 
 function seRenderizar() {
   mostrarBanner('se-active-banner', se_active, {loja:'FILIAL'}, 'seLimparFiltros');
-  document.getElementById('se-chart-sub').textContent = periodoLabel('se');
+  const sePeriodo = subtituloGrafico('se');
+  const seMonthSub = document.getElementById('se-month-chart-sub');
+  const seFilialSub = document.getElementById('se-filial-chart-sub');
+  if (seMonthSub) seMonthSub.textContent = sePeriodo;
+  if (seFilialSub) seFilialSub.textContent = sePeriodo;
   seRenderizarAgregado();
   return;
 
@@ -5085,7 +5769,7 @@ function seRenderizar() {
   seRenderizarAgregado();
   return;
   document.getElementById('se-chart-sub').textContent =
-    [ano, mes].filter(Boolean).join(' ? ') || 'Todos os períodos';
+    [ano, mes].filter(Boolean).join(` ${String.fromCharCode(183)} `) || 'Todos os períodos';
 
   // Total de sell out de TODOS os registros (não apenas lojas no de/para)
   const totalSellout = dados.reduce((s,r) =>
@@ -5182,34 +5866,39 @@ async function seRenderizarAgregado() {
   if (se_renderAbort) se_renderAbort.abort();
   se_renderAbort = new AbortController();
 
+  const paramsGrafico = buildAgreParams('se', se_active);
   const paramsMain = seParams(true);
   const paramsTabela = seParams(false);
   const estoqueEndpoint = seViewMode === 'data' ? 'estoque' : 'estoque-resumo';
-  const paramsEstoqueUltimoDia = seParams(true);
+  const paramsEstoqueUltimoDia = new URLSearchParams(paramsGrafico);
   paramsEstoqueUltimoDia.set('snapshot', '1');
   const paramsEstoqueUltimoDiaTabela = seParams(false);
   paramsEstoqueUltimoDiaTabela.set('snapshot', '1');
+  const paramsEstoqueHistorico = new URLSearchParams(paramsGrafico);
+  paramsEstoqueHistorico.delete('escopo');
+  paramsEstoqueHistorico.delete('detalhe');
+  paramsEstoqueHistorico.set('historico', '1');
 
   try {
-    const [vMain, eMain, vTabela, eTabela, eUltimoDia, eUltimoDiaTabela] = await Promise.all([
-      fetchJSON(`${API_BASE}/api/dashboard/agregados?${paramsMain}`, se_renderAbort.signal),
-      fetchJSON(`${API_BASE}/api/dashboard/${estoqueEndpoint}?${paramsMain}`, se_renderAbort.signal),
-      paramsTabela.toString() === paramsMain.toString()
+    const [vMain, eUltimoDia, eHistorico, vTabela, eTabela, eUltimoDiaTabela] = await Promise.all([
+      fetchJSON(`${API_BASE}/api/dashboard/agregados?${paramsGrafico}`, se_renderAbort.signal),
+      fetchJSON(`${API_BASE}/api/dashboard/estoque?${paramsEstoqueUltimoDia}`, se_renderAbort.signal),
+      fetchJSON(`${API_BASE}/api/dashboard/estoque?${paramsEstoqueHistorico}`, se_renderAbort.signal),
+      seViewMode !== 'data' && paramsTabela.toString() === paramsMain.toString()
         ? Promise.resolve(null)
         : fetchJSON(`${API_BASE}/api/dashboard/agregados?${paramsTabela}`, se_renderAbort.signal),
-      paramsTabela.toString() === paramsMain.toString()
+      seViewMode !== 'data' && paramsTabela.toString() === paramsMain.toString()
         ? Promise.resolve(null)
         : fetchJSON(`${API_BASE}/api/dashboard/${estoqueEndpoint}?${paramsTabela}`, se_renderAbort.signal),
-      fetchJSON(`${API_BASE}/api/dashboard/estoque?${paramsEstoqueUltimoDia}`, se_renderAbort.signal),
       seViewMode === 'data' || paramsEstoqueUltimoDiaTabela.toString() === paramsEstoqueUltimoDia.toString()
         ? Promise.resolve(null)
         : fetchJSON(`${API_BASE}/api/dashboard/estoque?${paramsEstoqueUltimoDiaTabela}`, se_renderAbort.signal),
     ]);
     const vendaTabela = vTabela || vMain;
-    const estoqueTabela = eTabela || eMain;
+    const estoqueTabela = eTabela || eUltimoDia;
     const estoqueTabelaUltimoDia = eUltimoDiaTabela || eUltimoDia;
 
-    const byLoja = seCombinarPorLoja(vMain.por_loja, eMain.por_loja);
+    const byLoja = seCombinarPorLoja(vMain.por_loja, eUltimoDia.por_loja);
     const byLojaTabela = seCombinarPorLoja(vendaTabela.por_loja, estoqueTabelaUltimoDia.por_loja);
     const totalSellout = (vMain.por_dia || []).reduce((s,r) => s + Number(r.qty || 0), 0);
     const estoqueUltimoDia = seResumoEstoqueUltimoDia(eUltimoDia);
@@ -5217,6 +5906,14 @@ async function seRenderizarAgregado() {
 
     document.getElementById('se-kpi-sellout').textContent = totalSellout.toLocaleString('pt-BR');
     document.getElementById('se-kpi-estoque').textContent = totalEstoque.toLocaleString('pt-BR');
+    const seFilialTotalSellout = document.getElementById('se-filial-total-sellout');
+    const seFilialTotalEstoque = document.getElementById('se-filial-total-estoque');
+    const seFilialTotalEstoqueLabel = document.getElementById('se-filial-total-estoque-label');
+    if (seFilialTotalSellout) seFilialTotalSellout.textContent = totalSellout.toLocaleString('pt-BR');
+    if (seFilialTotalEstoque) seFilialTotalEstoque.textContent = totalEstoque.toLocaleString('pt-BR');
+    if (seFilialTotalEstoqueLabel) seFilialTotalEstoqueLabel.textContent = estoqueUltimoDia.data
+      ? `Total do Dia - ${d3FormatarDataKpi(estoqueUltimoDia.data)}`
+      : 'Total do Dia';
     const seKpiEstoqueLabel = document.getElementById('se-kpi-estoque')?.previousElementSibling;
     if (seKpiEstoqueLabel) seKpiEstoqueLabel.textContent = estoqueUltimoDia.data
       ? `Estoque Total - ${d3FormatarDataKpi(estoqueUltimoDia.data)}`
@@ -5238,9 +5935,11 @@ async function seRenderizarAgregado() {
     if (seStatusEl) seStatusEl.textContent =
       `${totalSellout.toLocaleString('pt-BR')} unidades vendidas · ${totalEstoque.toLocaleString('pt-BR')} em estoque${estoqueUltimoDia.data ? ` - ${d3FormatarDataKpi(estoqueUltimoDia.data)}` : ''}`;
 
-    seRenderGrafico(byLoja);
+    const dadosGraficoMensal = combinarSelloutEstoquePorMes(vMain.por_dia, eHistorico?.por_loja_dia);
+    seRenderGrafico(dadosGraficoMensal, true, 'month');
+    seRenderGrafico(byLoja, false, 'filial');
     if (seViewMode === 'data') {
-      seRenderTabelaDataAgregada(seCombinarPorData(vMain.por_dia, eMain.por_loja_dia));
+      seRenderTabelaDataAgregada(seCombinarPorData(vendaTabela.por_dia, estoqueTabela.por_loja_dia));
     } else {
       seRenderTabela(byLojaTabela, estoqueUltimoDia.data);
     }
@@ -5250,53 +5949,71 @@ async function seRenderizarAgregado() {
     if (e.name === 'AbortError') return;
     setChartLoading(SE_LOADING_IDS, false);
     console.warn('Sell out x estoque agregado indisponivel:', e.message);
-    const state = document.getElementById('se-chart-state');
-    if (state) { state.style.display = 'flex'; state.innerHTML = 'Erro ao carregar dados.'; }
+    ['se-month-chart-state', 'se-filial-chart-state'].forEach(id => {
+      const state = document.getElementById(id);
+      if (state) { state.style.display = 'flex'; state.innerHTML = 'Erro ao carregar dados.'; }
+    });
     document.getElementById('se-table-body').innerHTML = '<div class="no-data">Erro ao carregar dados</div>';
   }
 }
 
-function seRenderGrafico(byLoja) {
-  const state = document.getElementById('se-chart-state');
+function seRenderGrafico(byLoja, mensal = false, target = 'filial') {
+  const isMonth = target === 'month';
+  const state = document.getElementById(isMonth ? 'se-month-chart-state' : 'se-filial-chart-state');
+  const customLegend = document.getElementById(isMonth ? 'se-month-chart-legend' : 'se-filial-chart-legend');
+  const wrap = document.getElementById(isMonth ? 'se-month-chart-wrap' : 'se-filial-chart-wrap');
+  const seSelloutColor = chartMonthlyColor('sellout');
+  const seEstoqueColor = chartMonthlyColor('estoque');
+  if (customLegend) {
+    customLegend.innerHTML = `
+      <span style="display:inline-flex;align-items:center;gap:6px"><i style="width:12px;height:12px;display:inline-block;border-radius:2px;background:${seSelloutColor.bg};border:2px solid ${seSelloutColor.solid}"></i>${mensal ? 'Sell Out Total Mês' : 'Sell Out'}</span>
+      <span style="display:inline-flex;align-items:center;gap:6px"><i style="width:12px;height:12px;display:inline-block;border-radius:2px;background:${seEstoqueColor.bg};border:2px solid ${seEstoqueColor.solid}"></i>${mensal ? 'Estoque Último Dia do Mês' : 'Estoque'}</span>
+    `;
+  }
 
   if (byLoja.length === 0) {
     if (state) { state.style.display = 'flex'; state.innerHTML = 'Nenhum dado para os filtros selecionados.'; }
-    if (seChart) { seChart.destroy(); seChart = null; }
+    if (isMonth && seMonthChart) { seMonthChart.destroy(); seMonthChart = null; }
+    if (!isMonth && seFilialChart) { seFilialChart.destroy(); seFilialChart = null; }
     return;
   }
 
   if (state) state.style.display = 'none';
 
-  const dadosGrafico = [...byLoja]
-    .sort((a,b) => b.sellout - a.sellout)
-    .slice(0, 30);
+  const monthlyInput = isMonthlyDataset(byLoja, r => r.nome);
+  const dadosGrafico = monthlyInput
+    ? [...byLoja].sort((a,b) => String(a.nome).localeCompare(String(b.nome)))
+    : [...byLoja].sort((a,b) => b.sellout - a.sellout).slice(0, 30);
+  const monthlyByLabel = isMonthlyDataset(dadosGrafico, r => r.nome);
+  const chartLabels = monthlyByLabel ? formatMonthlyAxisLabels(dadosGrafico.map(r => r.nome)) : dadosGrafico.map(r => r.nome);
 
-  let canvas = document.getElementById('se-chart-canvas');
+  let canvas = document.getElementById(isMonth ? 'se-month-chart-canvas' : 'se-filial-chart-canvas');
   if (!canvas) {
     canvas = document.createElement('canvas');
-    canvas.id = 'se-chart-canvas';
-    document.getElementById('se-chart-wrap').appendChild(canvas);
+    canvas.id = isMonth ? 'se-month-chart-canvas' : 'se-filial-chart-canvas';
+    wrap?.appendChild(canvas);
   }
-  if (seChart) { seChart.destroy(); seChart = null; }
+  if (isMonth && seMonthChart) { seMonthChart.destroy(); seMonthChart = null; }
+  if (!isMonth && seFilialChart) { seFilialChart.destroy(); seFilialChart = null; }
 
-  seChart = new Chart(canvas, {
+  const chart = new Chart(canvas, {
     type: 'bar',
     data: {
-      labels: dadosGrafico.map(r => r.nome),
+      labels: chartLabels,
       datasets: [
         {
-          label: 'Sell Out',
+          label: mensal ? 'Sell Out Total Mês' : 'Sell Out',
           data: dadosGrafico.map(r => r.sellout),
-          backgroundColor: 'rgba(200,241,53,0.75)',
-          borderColor: 'rgba(200,241,53,1)',
+          backgroundColor: seSelloutColor.bg,
+          borderColor: seSelloutColor.solid,
           borderWidth: 1.5,
           borderRadius: 6,
         },
         {
-          label: 'Estoque',
+          label: mensal ? 'Estoque Último Dia do Mês' : 'Estoque',
           data: dadosGrafico.map(r => r.estoque),
-          backgroundColor: 'rgba(79,255,176,0.55)',
-          borderColor: 'rgba(79,255,176,1)',
+          backgroundColor: seEstoqueColor.bg,
+          borderColor: seEstoqueColor.solid,
           borderWidth: 1.5,
           borderRadius: 6,
         }
@@ -5306,19 +6023,19 @@ function seRenderGrafico(byLoja) {
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
-      onClick: (evt, elements) => {
+      onClick: monthlyByLabel ? null : (evt, elements) => {
         if (elements.length > 0) setTimeout(() => seFiltrarPorLoja(dadosGrafico[elements[0].index].loja), 0);
       },
       plugins: {
         legend: {
-          labels: { color:'#8891aa', font:{family:'DM Mono',size:10}, boxWidth:10 }
+          display: false
         },
         tooltip: {
-          backgroundColor:'#1c2030',
-          borderColor:'#252a3a',
+          backgroundColor:chartTooltipBg(),
+          borderColor:chartTooltipBorder(),
           borderWidth:1,
           titleColor:'#c8f135',
-          bodyColor:'#e8ecf5',
+          bodyColor:chartTooltipBody(),
           titleFont:{family:'DM Mono',size:11},
           bodyFont:{family:'Figtree',size:13},
           padding:14,
@@ -5329,16 +6046,18 @@ function seRenderGrafico(byLoja) {
       },
       scales: {
         x: {
-          ticks:{ color:'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false },
-          grid:{color:'#1c2030'}
+          ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false },
+          grid:{color:chartGridX()}
         },
         y: {
-          ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') },
-          grid:{color:'#252a3a'}
+          ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') },
+          grid:{color:chartGridY()}
         }
       }
     }
   });
+  if (isMonth) seMonthChart = chart;
+  else seFilialChart = chart;
 }
 
 function seRenderTabela(byLoja, estoqueData = '') {
@@ -5524,6 +6243,7 @@ function vConstruirFiltros() {
   const lojas    = filtroLojas(false);
   const cats     = catList.length ? catList : [...new Set(rawData.map(r => getCat(r)).filter(Boolean))].sort();
   const familias = familiaList.length ? familiaList : [...new Set(rawData.map(r => getFamilia(r)).filter(Boolean))].sort();
+  const produtos = filtroProdutos();
 
   document.getElementById('v-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
   document.getElementById('v-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
@@ -5533,16 +6253,17 @@ function vConstruirFiltros() {
   }).join('');
   document.getElementById('v-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   document.getElementById('v-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
+  document.getElementById('v-produto').innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   prepararTodosMultiSelect();
 
-  ['v-ano','v-mes','v-di','v-df','v-loja','v-cat','v-familia'].forEach(id =>
+  ['v-ano','v-mes','v-di','v-df','v-loja','v-cat','v-familia','v-produto'].forEach(id =>
     document.getElementById(id).addEventListener('change', vRenderizar)
   );
   document.getElementById('v-status-msg').textContent = document.getElementById('status-msg').textContent;
 }
 
 function vLimparFiltros() {
-  ['v-ano','v-mes','v-di','v-df','v-loja','v-cat','v-familia'].forEach(id => clearSelect(id));
+  ['v-ano','v-mes','v-di','v-df','v-loja','v-cat','v-familia','v-produto'].forEach(id => clearSelect(id));
   v_active = { dim: null, val: null };
   vRenderizar();
 }
@@ -5555,6 +6276,7 @@ function vFiltrar(excl) {
   const lojas   = selectedValues('v-loja');
   const cats    = selectedValues('v-cat');
   const familias = selectedValues('v-familia');
+  const produtos = selectedValues('v-produto');
 
   return rawData.filter(r => {
     if (!hasSelectedValue(anos, col(r,'Ano'))) return false;
@@ -5562,6 +6284,7 @@ function vFiltrar(excl) {
     if (!hasSelectedValue(lojas, col(r,'Loja','loja'))) return false;
     if (!hasSelectedValue(cats, getCat(r))) return false;
     if (!hasSelectedValue(familias, getFamilia(r))) return false;
+    if (!hasSelectedValue(produtos, getProduto(r))) return false;
     if (v_active.val && v_active.dim !== excl) {
       if (v_active.dim === 'loja' && col(r,'Loja','loja') !== v_active.val) return false;
       if (v_active.dim === 'cat'  && getCat(r) !== v_active.val) return false;
@@ -5668,37 +6391,47 @@ function vRenderGrafico(byLoja, ag) {
 
   const n = byLoja.length;
   const vSel = v_active.dim === 'loja' ? v_active.val : null;
+  const monthlyByLabel = isMonthlyDataset(byLoja, r => r.nome);
+  const chartLabels = monthlyByLabel ? formatMonthlyAxisLabels(byLoja.map(r => r.nome)) : byLoja.map(r => r.nome);
+  const monthlyValor = chartMonthlyColor('valor');
   const bgColors = byLoja.map((r, i) => {
-    if (vSel) return r.loja === vSel ? 'rgba(79,255,176,0.95)' : 'rgba(37,42,58,0.45)';
+    if (monthlyByLabel) return monthlyValor.bg;
+    if (vSel) return r.loja === vSel ? (temaAtual() === 'light' ? 'rgba(0,143,104,0.78)' : 'rgba(79,255,176,0.95)') : chartInactiveBg();
+    if (temaAtual() === 'light') return chartColor(i) + 'cc';
     const t = n > 1 ? i/(n-1) : 0;
     return `rgba(${Math.round(79+t*121)},${Math.round(255-t*100)},${Math.round(176-t*50)},0.85)`;
   });
   const borderColors = byLoja.map((r, i) => {
-    if (vSel) return r.loja === vSel ? 'rgba(79,255,176,1)' : 'rgba(37,42,58,0.2)';
+    if (monthlyByLabel) return monthlyValor.solid;
+    if (vSel) return r.loja === vSel ? (temaAtual() === 'light' ? '#008f68' : 'rgba(79,255,176,1)') : chartInactiveBorder();
+    if (temaAtual() === 'light') return chartColor(i);
     const t = n > 1 ? i/(n-1) : 0;
     return `rgba(${Math.round(79+t*121)},${Math.round(255-t*100)},${Math.round(176-t*50)},1)`;
   });
-  const onClickLoja = (evt, elements) => {
+  const onClickLoja = monthlyByLabel ? null : (evt, elements) => {
     if (elements.length > 0) setTimeout(() => vSetFilter('loja', byLoja[elements[0].index].loja), 0);
   };
-  const tickColor = ctx => { if (!vSel) return '#8891aa'; return byLoja[ctx.index]?.loja === vSel ? '#4fffb0' : '#3a4060'; };
+  const tickColor = ctx => { if (!vSel || monthlyByLabel) return chartTickColor(); return byLoja[ctx.index]?.loja === vSel ? chartMonthlyColor('estoque').solid : chartInactiveTick(); };
 
   if (vChartInst) {
-    vChartInst.data.labels = byLoja.map(r => r.nome);
+    vChartInst.data.labels = chartLabels;
     vChartInst.data.datasets[0].data = byLoja.map(r => r.val);
     vChartInst.data.datasets[0].backgroundColor = bgColors;
     vChartInst.data.datasets[0].borderColor = borderColors;
     vChartInst.options.scales.x.ticks.color = tickColor;
+    vChartInst.options.scales.x.grid.color = chartGridX();
+    vChartInst.options.scales.y.ticks.color = chartTickColor();
+    vChartInst.options.scales.y.grid.color = chartGridY();
     vChartInst.options.onClick = onClickLoja;
     vChartInst.update('none');
-    canvas.style.cursor = 'pointer';
+    canvas.style.cursor = monthlyByLabel ? 'default' : 'pointer';
     return;
   }
 
   vChartInst = new Chart(canvas, {
     type: 'bar',
     data: {
-      labels: byLoja.map(r => r.nome),
+      labels: chartLabels,
       datasets: [{ label: 'Valor Vendido (R$)', data: byLoja.map(r => r.val), backgroundColor: bgColors, borderColor: borderColors, borderWidth: 1.5, borderRadius: 6 }]
     },
     options: {
@@ -5708,8 +6441,8 @@ function vRenderGrafico(byLoja, ag) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1,
-          titleColor:'#4fffb0', bodyColor:'#e8ecf5',
+          backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1,
+          titleColor:'#4fffb0', bodyColor:chartTooltipBody(),
           titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
           callbacks: { title: ctx => ctx[0].label, label: ctx => ' ' + vFmtR(ctx.parsed.y) }
         }
@@ -5717,16 +6450,16 @@ function vRenderGrafico(byLoja, ag) {
       scales: {
         x: {
           ticks: { color: tickColor, font: { family: 'DM Mono', size: 9 }, maxRotation: 45, minRotation: 45, autoSkip: false },
-          grid: { color: '#1c2030' }
+          grid: { color: chartGridX() }
         },
         y: {
-          ticks: { color: '#8891aa', font: { family: 'DM Mono', size: 11 }, callback: v => 'R$ ' + v.toLocaleString('pt-BR') },
-          grid: { color: '#252a3a' }
+          ticks: { color: chartTickColor(), font: { family: 'DM Mono', size: 11 }, callback: v => 'R$ ' + v.toLocaleString('pt-BR') },
+          grid: { color: chartGridY() }
         }
       }
     }
   });
-  canvas.style.cursor = 'pointer';
+  canvas.style.cursor = monthlyByLabel ? 'default' : 'pointer';
 }
 
 function vRenderTabela(byLoja) {
@@ -5802,7 +6535,7 @@ function vRenderCat1(data, preAg, ag) {
   const vCat1TotalEl = document.getElementById('v-cat1-total-val');
   if (vCat1TotalEl) vCat1TotalEl.textContent = displayTotal > 0 ? vFmtR(displayTotal) : '?';
 
-  document.getElementById('v-cat1-sub').textContent = periodoLabel('v');
+  document.getElementById('v-cat1-sub').textContent = subtituloGrafico('v');
 
   const state = document.getElementById('v-cat1-state');
   const semDepara = Object.keys(catMap).length === 0 && !preAg;
@@ -5843,8 +6576,8 @@ function vRenderCat1(data, preAg, ag) {
     data: {
       labels: byCat.map(r => r.cat),
       datasets: [{ data: byCat.map(r => r.val),
-        backgroundColor: byCat.map((r,i) => vSelC ? (r.cat===vSelC ? PALETTE[i%PALETTE.length]+'ee':'rgba(37,42,58,0.45)') : PALETTE[i%PALETTE.length]+'cc'),
-        borderColor:     byCat.map((r,i) => vSelC ? (r.cat===vSelC ? PALETTE[i%PALETTE.length]:'rgba(37,42,58,0.2)') : PALETTE[i%PALETTE.length]),
+        backgroundColor: byCat.map((r,i) => vSelC ? (r.cat===vSelC ? chartColor(i)+'ee':chartInactiveBg()) : chartColor(i)+'cc'),
+        borderColor:     byCat.map((r,i) => vSelC ? (r.cat===vSelC ? chartColor(i):chartInactiveBorder()) : chartColor(i)),
         borderWidth:1.5, borderRadius:6 }]
     },
     options: {
@@ -5854,13 +6587,13 @@ function vRenderCat1(data, preAg, ag) {
       },
       plugins: {
         legend: { display: false },
-        tooltip: { backgroundColor:'#1c2030', borderColor:'#252a3a', borderWidth:1, titleColor:'#4fffb0', bodyColor:'#e8ecf5', titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+        tooltip: { backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1, titleColor:'#4fffb0', bodyColor:chartTooltipBody(), titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
           callbacks: { label: ctx => ' ' + vFmtR(ctx.parsed.y) }
         }
       },
       scales: {
-        x: { ticks:{ color: ctx => vSelC?(byCat[ctx.index]?.cat===vSelC?'#4fffb0':'#3a4060'):'#8891aa', font:{family:'DM Mono',size:9}, maxRotation:35, autoSkip:false }, grid:{color:'#1c2030'} },
-        y: { ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback: v => 'R$ '+v.toLocaleString('pt-BR') }, grid:{color:'#252a3a'} }
+        x: { ticks:{ color: ctx => vSelC?(byCat[ctx.index]?.cat===vSelC?'#4fffb0':chartInactiveTick()):chartTickColor(), font:{family:'DM Mono',size:9}, maxRotation:35, autoSkip:false }, grid:{color:chartGridX()} },
+        y: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:11}, callback: v => 'R$ '+v.toLocaleString('pt-BR') }, grid:{color:chartGridY()} }
       }
     }
   });
@@ -5926,7 +6659,7 @@ function vRenderFam1(data, preAg, ag) {
   const vFam1TotalEl = document.getElementById('v-fam1-total-val');
   if (vFam1TotalEl) vFam1TotalEl.textContent = displayTotalFam > 0 ? vFmtR(displayTotalFam) : '?';
 
-  document.getElementById('v-fam1-sub').textContent = periodoLabel('v');
+  document.getElementById('v-fam1-sub').textContent = subtituloGrafico('v');
 
   const state = document.getElementById('v-fam1-state');
   const semDepara = Object.keys(familiaMap).length === 0 && !preAg;
@@ -5971,8 +6704,8 @@ function vRenderFam1(data, preAg, ag) {
       labels: byFamChart.map(r => r.fam),
       datasets: [{
         data: byFamChart.map(r => r.val),
-        backgroundColor: byFamChart.map((r,i) => vSelF ? (r.fam === vSelF ? PALETTE[i % PALETTE.length] + 'ee' : 'rgba(37,42,58,0.45)') : PALETTE[i % PALETTE.length] + 'cc'),
-        borderColor: byFamChart.map((r,i) => vSelF ? (r.fam === vSelF ? PALETTE[i % PALETTE.length] : 'rgba(37,42,58,0.2)') : PALETTE[i % PALETTE.length]),
+        backgroundColor: byFamChart.map((r,i) => vSelF ? (r.fam === vSelF ? chartColor(i) + 'ee' : chartInactiveBg()) : chartColor(i) + 'cc'),
+        borderColor: byFamChart.map((r,i) => vSelF ? (r.fam === vSelF ? chartColor(i) : chartInactiveBorder()) : chartColor(i)),
         borderWidth: 1.5,
         borderRadius: 6
       }]
@@ -5986,11 +6719,11 @@ function vRenderFam1(data, preAg, ag) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor:'#1c2030',
-          borderColor:'#252a3a',
+          backgroundColor:chartTooltipBg(),
+          borderColor:chartTooltipBorder(),
           borderWidth:1,
           titleColor:'#4fffb0',
-          bodyColor:'#e8ecf5',
+          bodyColor:chartTooltipBody(),
           titleFont:{family:'DM Mono',size:11},
           bodyFont:{family:'Figtree',size:13},
           padding:14,
@@ -6000,16 +6733,16 @@ function vRenderFam1(data, preAg, ag) {
       scales: {
         x: {
           ticks: {
-            color: ctx => vSelF ? (byFamChart[ctx.index]?.fam === vSelF ? '#4fffb0' : '#3a4060') : '#8891aa',
+            color: ctx => vSelF ? (byFamChart[ctx.index]?.fam === vSelF ? chartMonthlyColor('estoque').solid : chartInactiveTick()) : chartTickColor(),
             font:{family:'DM Mono',size:9},
             maxRotation:35,
             autoSkip:false
           },
-          grid:{color:'#1c2030'}
+          grid:{color:chartGridX()}
         },
         y: {
-          ticks:{ color:'#8891aa', font:{family:'DM Mono',size:11}, callback: v => 'R$ ' + v.toLocaleString('pt-BR') },
-          grid:{color:'#252a3a'}
+          ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:11}, callback: v => 'R$ ' + v.toLocaleString('pt-BR') },
+          grid:{color:chartGridY()}
         }
       }
     }
@@ -6066,7 +6799,7 @@ function vFam1OrdenarPor(coluna) {
 async function vRenderizar() {
   mostrarBanner('v-active-banner', v_active, {loja:'FILIAL', cat:'CATEGORIA', familia:'FAMÃLIA'}, 'vLimparAtivo');
 
-  document.getElementById('v-chart-sub').textContent = periodoLabel('v');
+  document.getElementById('v-chart-sub').textContent = subtituloGrafico('v');
   document.getElementById('v-loja-ativa').style.display = 'none';
 
   const cacheKey = buildAgreParams('v', v_active).toString();
@@ -6077,6 +6810,19 @@ async function vRenderizar() {
       return { loja, nome: nomeLojaDePara(loja), val: r.valor };
     })
     .filter(r => r.loja);
+  const chartRowsFromAg = (ag, byLoja) => {
+    if (shouldUseMonthlyMainChart('v', v_active)) {
+      const mensal = agruparAgPorMes(ag && ag.por_dia, 'valor', 'val');
+      if (mensal.length > 0) return mensal;
+    }
+    return byLoja;
+  };
+  const updateMainChartTitle = () => {
+    setFirstChartTitle('tab-valor', shouldUseMonthlyMainChart('v', v_active)
+      ? 'Valor Vendido Total por Mês'
+      : 'Valor Vendido por Filial (R$)');
+  };
+  updateMainChartTitle();
   const renderFromAg = (ag, byLoja) => {
     const totalFiltrado = ag && ag.por_dia
       ? ag.por_dia.reduce((s, r) => s + (r.valor || 0), 0)
@@ -6086,7 +6832,7 @@ async function vRenderizar() {
       return;
     }
     vRenderKPIs(byLoja, ag);
-    vRenderGrafico(byLoja, ag);
+    vRenderGrafico(chartRowsFromAg(ag, byLoja), ag);
     vRenderTabela(byLoja);
     if (ag.por_cat.length > 0) vRenderCat1(null, ag.por_cat, ag); else vRenderCat1(vFiltrar('cat'));
     if (ag.por_fam.length > 0) vRenderFam1(null, ag.por_fam, ag); else vRenderFam1(vFiltrar('familia'));
