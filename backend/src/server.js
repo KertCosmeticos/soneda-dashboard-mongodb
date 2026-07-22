@@ -2246,9 +2246,6 @@ async function iniciarServidor() {
           retencao = await aplicarRetencaoDadosBrutos(13);
           cacheClear();
           await atualizarFlagsMigracao();
-          // Re-migra _cat/_fam para novos registros (em background)
-          migrarCamposBackground();
-          setTimeout(() => aquecerCacheDashboard("importacao"), 1500);
         }
 
         res.json({
