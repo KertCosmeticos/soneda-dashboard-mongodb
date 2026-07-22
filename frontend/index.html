@@ -2405,6 +2405,8 @@ async function init() {
 
     preencherAnoMesTodasAbas();
     garantirFiltrosAba('f');
+    prepararAbasOcultas();
+    ['f','v','d2','d3','se'].forEach(aplicarFiltroAtual);
     renderizar();
     tabsRenderizadas.add('vendas');
 

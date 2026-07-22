@@ -765,7 +765,6 @@ async function iniciarServidor() {
       const PORT_WU = process.env.PORT || 3000;
       const anoAtual = new Date().getFullYear();
       const paths = [
-        '/api/dashboard/agregados',
         `/api/dashboard/agregados?ano=${anoAtual}&escopo=loja`,
         `/api/dashboard/agregados?ano=${anoAtual}`,
         `/api/dashboard/estoque-resumo?ano=${anoAtual}`
@@ -1546,7 +1545,8 @@ async function iniciarServidor() {
         }
 
         // Join único (uma vez para todos os facets de cat/fam/produto) — pulado quando _cat já está pré-computado
-        if (!_migCat || (produto && !produto_gtin)) {
+        const precisaCategoria = !apenasLoja || !!(cat || familia || produto || aCat || aFamilia || incluirDiaDetalhado);
+        if (precisaCategoria && (!_migCat || (produto && !produto_gtin))) {
           if (_catCountCache < 0) _catCountCache = await db.collection("categorias_depara").estimatedDocumentCount();
           if (_catCountCache > 0) preStages.push(...joinCat);
         }
@@ -1585,15 +1585,15 @@ async function iniciarServidor() {
             ...mCat, ...mFamilia,
             { $group: { _id: "$Loja", ...grp } },
             { $sort: { qty: -1 } }
-          ],
-          por_dia: [
-            ...mLoja, ...mCat, ...mFamilia,
-            { $group: { _id: dateGroupExpr, ...grp } },
-            { $sort: { _id: 1 } }
           ]
         };
 
         if (!apenasLoja) {
+          facets.por_dia = [
+            ...mLoja, ...mCat, ...mFamilia,
+            { $group: { _id: dateGroupExpr, ...grp } },
+            { $sort: { _id: 1 } }
+          ];
           facets.por_cat = [
             ...mLoja, ...mFamilia,
             { $group: { _id: "$_cat", ...grp } },
