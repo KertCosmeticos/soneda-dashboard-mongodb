@@ -3876,8 +3876,10 @@ async function d2Renderizar() {
       : [all, all];
   };
 
-  const d2Params = buildAgreParams('d2', d2_active);
+  const d2BaseParams = buildAgreParams('d2', d2_active);
+  const d2Params = new URLSearchParams(d2BaseParams);
   d2Params.set('detalhe_dia', '1');
+  const baseCacheKey = d2BaseParams.toString();
   const cacheKey = 'd2v2:' + d2Params.toString();
   const cached   = agreCache(cacheKey);
 
@@ -3899,13 +3901,28 @@ async function d2Renderizar() {
 
   if (d2_renderAbort) d2_renderAbort.abort();
   d2_renderAbort = new AbortController();
+  const d2Signal = d2_renderAbort.signal;
 
   try {
-    const ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${d2Params}`, d2_renderAbort.signal);
-    agreCache(cacheKey, ag);
+    let ag = agreCache(baseCacheKey);
+    if (!ag) {
+      ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${d2BaseParams}`, d2Signal);
+      agreCache(baseCacheKey, ag);
+    }
     setChartLoading(D2_IDS, false);
     const [pd, all] = agToDia(ag);
-    d2AtualizarGrafico(pd, all, ag);
+    d2AtualizarGrafico(pd, all, ag, false);
+
+    fetchJSON(`${API_BASE}/api/dashboard/agregados?${d2Params}`, d2Signal)
+      .then(agDetalhado => {
+        agreCache(cacheKey, agDetalhado);
+        if (d2Signal.aborted) return;
+        const [pdDetalhado, allDetalhado] = agToDia(agDetalhado);
+        d2AtualizarGrafico(pdDetalhado, allDetalhado, agDetalhado, true);
+      })
+      .catch(e => {
+        if (e.name !== 'AbortError') console.warn('Detalhamento por dia indisponivel:', e.message);
+      });
   } catch(e) {
     if (e.name === 'AbortError') return;
     setChartLoading(D2_IDS, false);
@@ -3913,7 +3930,7 @@ async function d2Renderizar() {
   }
 }
 
-function d2AtualizarGrafico(porDia, porDiaTabela, ag) {
+function d2AtualizarGrafico(porDia, porDiaTabela, ag, detalhamentoCompleto = true) {
   const total = porDia.reduce((s,r) => s + r.qty, 0);
   const dias  = porDia.filter(r => r.qty > 0).length;
   const media = dias > 0 ? (total / dias) : 0;
@@ -4049,8 +4066,18 @@ function d2AtualizarGrafico(porDia, porDiaTabela, ag) {
     <tbody>${linhas2}${totalLinha2}</tbody>
   </table>`;
 
-  renderCat2(ag?.por_cat_dia ? null : d2Filtrar('cat'), ag?.por_cat_dia);
-  renderFam2(ag?.por_fam_dia ? null : d2Filtrar('familia'), ag?.por_fam_dia);
+  if (detalhamentoCompleto) {
+    renderCat2(ag?.por_cat_dia ? null : d2Filtrar('cat'), ag?.por_cat_dia);
+    renderFam2(ag?.por_fam_dia ? null : d2Filtrar('familia'), ag?.por_fam_dia);
+  } else {
+    const loading = '<div class="no-data">Carregando detalhamento...</div>';
+    const catState = document.getElementById('cat2-state');
+    const famState = document.getElementById('fam2-state');
+    if (catState) { catState.style.display = 'flex'; catState.innerHTML = 'Carregando detalhamento...'; }
+    if (famState) { famState.style.display = 'flex'; famState.innerHTML = 'Carregando detalhamento...'; }
+    document.getElementById('cat2-table-body').innerHTML = loading;
+    document.getElementById('fam2-table-body').innerHTML = loading;
+  }
 }
 
 function renderCat2(data, preAg) {
@@ -4786,6 +4813,14 @@ function d3Renderizar() {
 
 async function d3FetchTotalEstoque(renderSeq = d3_renderSeq, signal = null) {
   try {
+    const resumoParams = buildAgreParams('d3', d3_active);
+    resumoParams.set('escopo', 'loja');
+    const agResumo = await fetchJSON(`${API_BASE}/api/dashboard/estoque-resumo?${resumoParams}`, signal);
+    if (renderSeq !== d3_renderSeq) return;
+    d3_estoqueAg = agResumo;
+    d3RenderResumoEstoqueAgregado(agResumo);
+    setChartLoading(['d3-kpi-row','d3-chart-wrap'], false);
+
     const detalhesParams = buildAgreParams('d3', d3_active);
     detalhesParams.set('snapshot', '1');
     const agDetalhado = await fetchJSON(`${API_BASE}/api/dashboard/estoque?${detalhesParams}`, signal);
