@@ -1482,6 +1482,14 @@ function atualizarBotaoTema() {
   if (btn) btn.title = claro ? 'Mudar para tema escuro' : 'Mudar para tema claro';
 }
 
+function sincronizarDefaultsGraficos() {
+  if (!window.Chart) return;
+  Chart.defaults.color = chartTickColor();
+  Chart.defaults.borderColor = chartGridY();
+  if (Chart.defaults.scale?.grid) Chart.defaults.scale.grid.color = chartGridY();
+  if (Chart.defaults.scale?.ticks) Chart.defaults.scale.ticks.color = chartTickColor();
+}
+
 function rerenderAbaAtualAposTema() {
   const active = document.querySelector('.tab-panel.active')?.id || '';
   try {
@@ -1500,6 +1508,7 @@ function alternarTema() {
   document.documentElement.dataset.theme = novoTema;
   try { localStorage.setItem('soneda_theme', novoTema); } catch (_) {}
   atualizarBotaoTema();
+  sincronizarDefaultsGraficos();
   rerenderAbaAtualAposTema();
 }
 const _agreMemCache = new Map(); // cache em memória (mais rápido que JSON.parse do sessionStorage)
@@ -1652,6 +1661,10 @@ function chartColor(i) {
   return palette[i % palette.length];
 }
 
+function chartBarBgColor(i) {
+  return chartColor(i) + (temaAtual() === 'light' ? 'ee' : 'cc');
+}
+
 function chartMonthlyColor(key) {
   if (temaAtual() !== 'light') return MONTHLY_CHART_COLORS[key];
   const colors = {
@@ -1671,6 +1684,7 @@ function chartInactiveTick() { return temaAtual() === 'light' ? '#8a96ad' : '#3a
 function chartTooltipBg() { return temaAtual() === 'light' ? '#ffffff' : '#1c2030'; }
 function chartTooltipBorder() { return temaAtual() === 'light' ? '#cfd6e6' : '#252a3a'; }
 function chartTooltipBody() { return temaAtual() === 'light' ? '#151923' : '#e8ecf5'; }
+function chartTooltipTitle() { return temaAtual() === 'light' ? '#007a59' : '#4fffb0'; }
 const MONTH_ABBR = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 const MONTH_INDEX = {
   jan: 1, janeiro: 1,
@@ -2171,6 +2185,7 @@ async function enviarXLSX(inputId, rota) {
 async function init() {
   try {
     atualizarBotaoTema();
+    sincronizarDefaultsGraficos();
     await carregarConfigApp();
     corrigirLabelsPeriodo();
     configurarExportacaoRelatorios();
@@ -3252,7 +3267,7 @@ function renderGrafico(byLoja, ag) {
   const bgColors     = byLoja.map((r, i) => {
     if (monthlyByLabel) return monthlySellout.bg;
     if (sel) return r.loja === sel ? (temaAtual() === 'light' ? 'rgba(111,153,0,0.96)' : 'rgba(200,241,53,0.95)') : chartInactiveBg();
-    if (temaAtual() === 'light') return chartColor(i) + 'ee';
+    if (temaAtual() === 'light') return chartBarBgColor(i);
     const t = n > 1 ? i/(n-1) : 0;
     return `rgba(${Math.round(200-t*80)},${Math.round(241-t*100)},${Math.round(53+t*100)},0.85)`;
   });
@@ -3273,6 +3288,9 @@ function renderGrafico(byLoja, ag) {
     chartInst.data.datasets[0].backgroundColor = bgColors;
     chartInst.data.datasets[0].borderColor = borderColors;
     chartInst.options.scales.x.ticks.color = tickColor;
+    chartInst.options.scales.x.grid.color = chartGridX();
+    chartInst.options.scales.y.ticks.color = chartTickColor();
+    chartInst.options.scales.y.grid.color = chartGridY();
     chartInst.options.onClick = onClickLoja;
     chartInst.update('none');
     canvas.style.cursor = monthlyByLabel ? 'default' : 'pointer';
@@ -3386,7 +3404,7 @@ function renderCat1(data, preAg, ag) {
   }
 
   const selCat    = f_active.dim === 'cat' ? f_active.val : null;
-  const bgCat     = byCatSorted.map((r,i) => selCat ? (r.cat===selCat ? chartColor(i)+'ee' : chartInactiveBg()) : chartColor(i)+'cc');
+  const bgCat     = byCatSorted.map((r,i) => selCat ? (r.cat===selCat ? chartBarBgColor(i) : chartInactiveBg()) : chartBarBgColor(i));
   const brdCat    = byCatSorted.map((r,i) => selCat ? (r.cat===selCat ? chartColor(i) : chartInactiveBorder()) : chartColor(i));
   const tickCat   = ctx => selCat ? (byCatSorted[ctx.index]?.cat===selCat ? chartMonthlyColor('sellout').solid : chartInactiveTick()) : chartTickColor();
   const clickCat  = (evt, elements) => { if (elements.length > 0) fSetFilter('cat', byCatSorted[elements[0].index].cat); };
@@ -3397,6 +3415,9 @@ function renderCat1(data, preAg, ag) {
     cat1Chart.data.datasets[0].backgroundColor = bgCat;
     cat1Chart.data.datasets[0].borderColor = brdCat;
     cat1Chart.options.scales.x.ticks.color = tickCat;
+    cat1Chart.options.scales.x.grid.color = chartGridX();
+    cat1Chart.options.scales.y.ticks.color = chartTickColor();
+    cat1Chart.options.scales.y.grid.color = chartGridY();
     cat1Chart.options.onClick = clickCat;
     cat1Chart.update('none');
   } else {
@@ -3538,7 +3559,7 @@ function renderFam1(data, preAg, ag) {
   }
 
   const selFam   = f_active.dim === 'familia' ? f_active.val : null;
-  const bgFam    = byFamSorted.map((r,i) => selFam ? (r.fam===selFam ? chartColor(i)+'ee' : chartInactiveBg()) : chartColor(i)+'cc');
+  const bgFam    = byFamSorted.map((r,i) => selFam ? (r.fam===selFam ? chartBarBgColor(i) : chartInactiveBg()) : chartBarBgColor(i));
   const brdFam   = byFamSorted.map((r,i) => selFam ? (r.fam===selFam ? chartColor(i) : chartInactiveBorder()) : chartColor(i));
   const tickFam  = ctx => selFam ? (byFamSorted[ctx.index]?.fam===selFam ? chartMonthlyColor('sellout').solid : chartInactiveTick()) : chartTickColor();
   const clickFam = (evt, elements) => { if (elements.length > 0) fSetFilter('familia', byFamSorted[elements[0].index].fam); };
@@ -3549,6 +3570,9 @@ function renderFam1(data, preAg, ag) {
     fam1Chart.data.datasets[0].backgroundColor = bgFam;
     fam1Chart.data.datasets[0].borderColor = brdFam;
     fam1Chart.options.scales.x.ticks.color = tickFam;
+    fam1Chart.options.scales.x.grid.color = chartGridX();
+    fam1Chart.options.scales.y.ticks.color = chartTickColor();
+    fam1Chart.options.scales.y.grid.color = chartGridY();
     fam1Chart.options.onClick = clickFam;
     fam1Chart.update('none');
   } else {
@@ -4652,12 +4676,12 @@ function d3Renderizar() {
         },
         plugins: {
           legend: { display: false },
-          tooltip: { backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1, titleColor:'#4fffb0', bodyColor:chartTooltipBody(), titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+          tooltip: { backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1, titleColor:chartTooltipTitle(), bodyColor:chartTooltipBody(), titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
             callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades em estoque` }
           }
         },
         scales: {
-          x: { ticks:{ color: ctx => d3Sel?(byLoja[ctx.index]?.loja===d3Sel?'#4fffb0':chartInactiveTick()):chartTickColor(), font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false }, grid:{color:chartGridX()} },
+          x: { ticks:{ color: ctx => d3Sel?(byLoja[ctx.index]?.loja===d3Sel?chartMonthlyColor('estoque').solid:chartInactiveTick()):chartTickColor(), font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false }, grid:{color:chartGridX()} },
           y: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:chartGridY()} }
         }
       }
@@ -4992,12 +5016,12 @@ function d3RenderGraficoEstoqueUltimoDia(ag) {
       },
       plugins: {
         legend: { display: false },
-        tooltip: { backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1, titleColor:'#4fffb0', bodyColor:chartTooltipBody(), titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+        tooltip: { backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1, titleColor:chartTooltipTitle(), bodyColor:chartTooltipBody(), titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
           callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades em estoque` }
         }
       },
       scales: {
-        x: { ticks:{ color: ctx => d3Sel && !monthlyByLabel ? (rows[ctx.index]?.loja===d3Sel?'#4fffb0':chartInactiveTick()) : '#8891aa', font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false }, grid:{color:chartGridX()} },
+        x: { ticks:{ color: ctx => d3Sel && !monthlyByLabel ? (rows[ctx.index]?.loja===d3Sel?chartMonthlyColor('estoque').solid:chartInactiveTick()) : chartTickColor(), font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false }, grid:{color:chartGridX()} },
         y: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:chartGridY()} }
       }
     }
@@ -5101,12 +5125,12 @@ function d3RenderResumoEstoqueAgregado(ag) {
       },
       plugins: {
         legend: { display: false },
-        tooltip: { backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1, titleColor:'#4fffb0', bodyColor:chartTooltipBody(), titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+        tooltip: { backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1, titleColor:chartTooltipTitle(), bodyColor:chartTooltipBody(), titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
           callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString('pt-BR')} unidades em estoque` }
         }
       },
       scales: {
-        x: { ticks:{ color: ctx => d3Sel?(rows[ctx.index]?.loja===d3Sel?'#4fffb0':chartInactiveTick()):chartTickColor(), font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false }, grid:{color:chartGridX()} },
+        x: { ticks:{ color: ctx => d3Sel?(rows[ctx.index]?.loja===d3Sel?chartMonthlyColor('estoque').solid:chartInactiveTick()):chartTickColor(), font:{family:'DM Mono',size:9}, maxRotation:45, minRotation:45, autoSkip:false }, grid:{color:chartGridX()} },
         y: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:11}, callback:v=>v.toLocaleString('pt-BR') }, grid:{color:chartGridY()} }
       }
     }
@@ -6478,7 +6502,7 @@ function vRenderGrafico(byLoja, ag) {
         legend: { display: false },
         tooltip: {
           backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1,
-          titleColor:'#4fffb0', bodyColor:chartTooltipBody(),
+          titleColor:chartTooltipTitle(), bodyColor:chartTooltipBody(),
           titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
           callbacks: { title: ctx => ctx[0].label, label: ctx => ' ' + vFmtR(ctx.parsed.y) }
         }
@@ -6612,7 +6636,7 @@ function vRenderCat1(data, preAg, ag) {
     data: {
       labels: byCat.map(r => r.cat),
       datasets: [{ data: byCat.map(r => r.val),
-        backgroundColor: byCat.map((r,i) => vSelC ? (r.cat===vSelC ? chartColor(i)+'ee':chartInactiveBg()) : chartColor(i)+'cc'),
+        backgroundColor: byCat.map((r,i) => vSelC ? (r.cat===vSelC ? chartBarBgColor(i):chartInactiveBg()) : chartBarBgColor(i)),
         borderColor:     byCat.map((r,i) => vSelC ? (r.cat===vSelC ? chartColor(i):chartInactiveBorder()) : chartColor(i)),
         borderWidth:1.5, borderRadius:6 }]
     },
@@ -6623,12 +6647,12 @@ function vRenderCat1(data, preAg, ag) {
       },
       plugins: {
         legend: { display: false },
-        tooltip: { backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1, titleColor:'#4fffb0', bodyColor:chartTooltipBody(), titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
+        tooltip: { backgroundColor:chartTooltipBg(), borderColor:chartTooltipBorder(), borderWidth:1, titleColor:chartTooltipTitle(), bodyColor:chartTooltipBody(), titleFont:{family:'DM Mono',size:11}, bodyFont:{family:'Figtree',size:13}, padding:14,
           callbacks: { label: ctx => ' ' + vFmtR(ctx.parsed.y) }
         }
       },
       scales: {
-        x: { ticks:{ color: ctx => vSelC?(byCat[ctx.index]?.cat===vSelC?'#4fffb0':chartInactiveTick()):chartTickColor(), font:{family:'DM Mono',size:9}, maxRotation:35, autoSkip:false }, grid:{color:chartGridX()} },
+        x: { ticks:{ color: ctx => vSelC?(byCat[ctx.index]?.cat===vSelC?chartMonthlyColor('valor').solid:chartInactiveTick()):chartTickColor(), font:{family:'DM Mono',size:9}, maxRotation:35, autoSkip:false }, grid:{color:chartGridX()} },
         y: { ticks:{ color:chartTickColor(), font:{family:'DM Mono',size:11}, callback: v => 'R$ '+v.toLocaleString('pt-BR') }, grid:{color:chartGridY()} }
       }
     }
@@ -6740,7 +6764,7 @@ function vRenderFam1(data, preAg, ag) {
       labels: byFamChart.map(r => r.fam),
       datasets: [{
         data: byFamChart.map(r => r.val),
-        backgroundColor: byFamChart.map((r,i) => vSelF ? (r.fam === vSelF ? chartColor(i) + 'ee' : chartInactiveBg()) : chartColor(i) + 'cc'),
+        backgroundColor: byFamChart.map((r,i) => vSelF ? (r.fam === vSelF ? chartBarBgColor(i) : chartInactiveBg()) : chartBarBgColor(i)),
         borderColor: byFamChart.map((r,i) => vSelF ? (r.fam === vSelF ? chartColor(i) : chartInactiveBorder()) : chartColor(i)),
         borderWidth: 1.5,
         borderRadius: 6
@@ -6758,7 +6782,7 @@ function vRenderFam1(data, preAg, ag) {
           backgroundColor:chartTooltipBg(),
           borderColor:chartTooltipBorder(),
           borderWidth:1,
-          titleColor:'#4fffb0',
+          titleColor:chartTooltipTitle(),
           bodyColor:chartTooltipBody(),
           titleFont:{family:'DM Mono',size:11},
           bodyFont:{family:'Figtree',size:13},
