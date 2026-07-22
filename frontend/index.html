@@ -2304,10 +2304,9 @@ async function init() {
     corrigirLabelsPeriodo();
     configurarExportacaoRelatorios();
     
-    const [deParaRes, catRes, resumoRes, catsRes, famsRes, filtrosRes] = await Promise.allSettled([
+    const [deParaRes, catRes, catsRes, famsRes, filtrosRes] = await Promise.allSettled([
       fetchJSON('/api/lojas-depara'),
       fetchJSON('/api/categorias-depara'),
-      fetchJSON('/api/dashboard/resumo'),
       fetchJSON('/api/dashboard/categorias'),
       fetchJSON('/api/dashboard/familias'),
       fetchJSON('/api/dashboard/filtros')
@@ -2389,24 +2388,12 @@ async function init() {
       } catch(e) {}
     }
 
-    if (resumoRes.status === 'fulfilled') {
-      const resumo = resumoRes.value || {};
-      document.getElementById('status-msg').textContent =
-        `${Number(resumo.total_vendido || 0).toLocaleString('pt-BR')} itens vendidos · ` +
-        `${Number(resumo.total_lojas || 0).toLocaleString('pt-BR')} lojas · ` +
-        `R$ ${Number(resumo.total_valor || 0).toLocaleString('pt-BR', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2
-        })}`;
-    } else {
-      document.getElementById('status-msg').textContent =
-        `${rawData.length.toLocaleString('pt-BR')} registros carregados do MongoDB ? ${Object.keys(deParaMap).length} lojas no de-para`;
-    }
+    document.getElementById('status-msg').textContent = 'Carregando vendas...';
 
     preencherAnoMesTodasAbas();
     garantirFiltrosAba('f');
     prepararAbasOcultas();
-    ['f','v','d2','d3','se'].forEach(aplicarFiltroAtual);
+    aplicarFiltroAtual('f');
     renderizar();
     tabsRenderizadas.add('vendas');
 
