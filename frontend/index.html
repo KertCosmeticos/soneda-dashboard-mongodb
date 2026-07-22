@@ -2303,7 +2303,6 @@ async function init() {
 
     preencherAnoMesTodasAbas();
     garantirFiltrosAba('f');
-    ['f','v','d2','d3','se'].forEach(aplicarFiltroAtual);
     renderizar();
     tabsRenderizadas.add('vendas');
 
@@ -2979,21 +2978,6 @@ function buildAgreParams(prefix, activeObj) {
     }
   };
   addMulti('ano', `${prefix}-ano`);
-  if (!params.has('ano')) {
-    const anos = filtroAnos()
-      .map(a => String(a || '').trim())
-      .filter(Boolean)
-      .sort((a, b) => Number(b) - Number(a));
-    const anoPadrao = anos[0];
-    if (anoPadrao) {
-      params.append('ano', anoPadrao);
-      const anoEl = document.getElementById(`${prefix}-ano`);
-      if (anoEl && [...anoEl.options].some(o => o.value === anoPadrao)) {
-        anoEl.value = anoPadrao;
-        updateMultiSelect(anoEl);
-      }
-    }
-  }
   addMulti('mes', `${prefix}-mes`);
   addMulti('loja', `${prefix}-loja`);
   addMulti('cat', `${prefix}-cat`);
@@ -6961,22 +6945,18 @@ function trocarAba(aba, evt) {
   if (!tabsRenderizadas.has(aba)) {
     if (aba === 'valor') {
       garantirFiltrosAba('v');
-      aplicarFiltroAtual('v');
       vRenderizar();
     }
     if (aba === 'dia') {
       garantirFiltrosAba('d2');
-      aplicarFiltroAtual('d2');
       d2Renderizar();
     }
     if (aba === 'estoque') {
       garantirFiltrosAba('d3');
-      aplicarFiltroAtual('d3');
       d3Renderizar();
     }
     if (aba === 'se') {
       garantirFiltrosAba('se');
-      aplicarFiltroAtual('se');
       seRenderizar();
     }
     tabsRenderizadas.add(aba);
