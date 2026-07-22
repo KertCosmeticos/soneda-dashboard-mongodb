@@ -8,7 +8,6 @@
 <meta http-equiv="Expires" content="0">
 <title>Soneda · Dashboard de Vendas</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Figtree:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script>
@@ -2099,14 +2098,25 @@ function valorCSV(valor) {
   return /[;"\n\r]/.test(texto) ? `"${texto.replace(/"/g, '""')}"` : texto;
 }
 
+function carregarBibliotecaXLSX() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (window.__xlsxPromise) return window.__xlsxPromise;
+
+  window.__xlsxPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    script.async = true;
+    script.onload = () => window.XLSX ? resolve(window.XLSX) : reject(new Error('Biblioteca XLSX nao ficou disponivel.'));
+    script.onerror = () => reject(new Error('Nao foi possivel carregar a biblioteca XLSX.'));
+    document.head.appendChild(script);
+  });
+
+  return window.__xlsxPromise;
+}
+
 async function enviarPlanilhaDadosBrutosComoCSV(inputId, rota) {
   const fileInput = document.getElementById(inputId);
   const status = document.getElementById('import-status');
-  if (!window.XLSX) {
-    status.textContent = 'Biblioteca de leitura XLSX ainda nao carregou. Recarregue a pagina e tente novamente.';
-    status.className = 'import-status err';
-    return;
-  }
   if (!fileInput || !fileInput.files.length) {
     status.textContent = 'Selecione um arquivo XLS ou XLSX antes de importar.';
     status.className = 'import-status err';
@@ -2116,15 +2126,17 @@ async function enviarPlanilhaDadosBrutosComoCSV(inputId, rota) {
   const arquivo = fileInput.files[0];
   const kb = Math.round(arquivo.size / 1024);
   try {
-    status.innerHTML = htmlBarraImportacao(8, `Lendo planilha ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`);
+    status.innerHTML = htmlBarraImportacao(5, 'Carregando leitor de XLSX...');
     status.className = 'import-status';
+    const XLSXLib = await carregarBibliotecaXLSX();
 
+    status.innerHTML = htmlBarraImportacao(8, `Lendo planilha ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`);
     const buffer = await arquivo.arrayBuffer();
     status.innerHTML = htmlBarraImportacao(14, 'Convertendo planilha para importacao em lotes...');
-    const workbook = XLSX.read(buffer, { type: 'array', raw: false, cellDates: false });
+    const workbook = XLSXLib.read(buffer, { type: 'array', raw: false, cellDates: false });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
+    const rows = XLSXLib.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
     const linhas = rows
       .filter(row => row.some(cell => String(cell ?? '').trim() !== ''))
       .map(row => row.map(valorCSV).join(';'));
