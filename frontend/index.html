@@ -1636,7 +1636,7 @@ function d2FiltrarPorData(dataOriginal) {
 function d3LimparAtivo() { d3_active = {dim:null,val:null}; d3Renderizar();}
 
 const PALETTE = ['#c8f135','#4fffb0','#38bdf8','#f472b6','#fb923c','#a78bfa','#facc15','#34d399','#f87171','#60a5fa','#e879f9','#fbbf24'];
-const LIGHT_PALETTE = ['#83b000','#008f68','#087dbd','#d02a87','#d85c13','#7253d7','#c89600','#008f82','#d23b3b','#246ce6','#af26c4','#aa6200'];
+const LIGHT_PALETTE = ['#6f9900','#007a59','#006fa8','#bd1f78','#bf4c0d','#6042c4','#a87800','#00786e','#bd3030','#1d5ed0','#9a1eb0','#8f5100'];
 const MONTHLY_CHART_COLORS = {
   sellout: { solid: '#c8f135', bg: 'rgba(200,241,53,0.82)', fill: 'rgba(200,241,53,0.10)' },
   valor:   { solid: '#38bdf8', bg: 'rgba(56,189,248,0.78)', fill: 'rgba(56,189,248,0.10)' },
@@ -1655,15 +1655,15 @@ function chartColor(i) {
 function chartMonthlyColor(key) {
   if (temaAtual() !== 'light') return MONTHLY_CHART_COLORS[key];
   const colors = {
-    sellout: { solid: '#83b000', bg: 'rgba(131,176,0,0.92)', fill: 'rgba(131,176,0,0.16)' },
-    valor:   { solid: '#087dbd', bg: 'rgba(8,125,189,0.90)', fill: 'rgba(8,125,189,0.15)' },
-    estoque: { solid: '#008f68', bg: 'rgba(0,143,104,0.88)', fill: 'rgba(0,143,104,0.15)' },
+    sellout: { solid: '#6f9900', bg: 'rgba(111,153,0,0.96)', fill: 'rgba(111,153,0,0.12)' },
+    valor:   { solid: '#006fa8', bg: 'rgba(0,111,168,0.96)', fill: 'rgba(0,111,168,0.12)' },
+    estoque: { solid: '#007a59', bg: 'rgba(0,122,89,0.96)', fill: 'rgba(0,122,89,0.12)' },
   };
   return colors[key] || MONTHLY_CHART_COLORS[key];
 }
 
-function chartGridX() { return temaAtual() === 'light' ? 'rgba(37, 50, 75, 0.035)' : '#1c2030'; }
-function chartGridY() { return temaAtual() === 'light' ? 'rgba(37, 50, 75, 0.06)' : '#252a3a'; }
+function chartGridX() { return temaAtual() === 'light' ? 'rgba(37, 50, 75, 0.018)' : '#1c2030'; }
+function chartGridY() { return temaAtual() === 'light' ? 'rgba(37, 50, 75, 0.032)' : '#252a3a'; }
 function chartTickColor() { return temaAtual() === 'light' ? '#61708c' : '#8891aa'; }
 function chartInactiveBg() { return temaAtual() === 'light' ? 'rgba(97,112,140,0.16)' : 'rgba(37,42,58,0.45)'; }
 function chartInactiveBorder() { return temaAtual() === 'light' ? 'rgba(97,112,140,0.26)' : 'rgba(37,42,58,0.2)'; }
@@ -3251,14 +3251,14 @@ function renderGrafico(byLoja, ag) {
   const monthlySellout = chartMonthlyColor('sellout');
   const bgColors     = byLoja.map((r, i) => {
     if (monthlyByLabel) return monthlySellout.bg;
-    if (sel) return r.loja === sel ? (temaAtual() === 'light' ? 'rgba(122,166,0,0.86)' : 'rgba(200,241,53,0.95)') : chartInactiveBg();
-    if (temaAtual() === 'light') return chartColor(i) + 'cc';
+    if (sel) return r.loja === sel ? (temaAtual() === 'light' ? 'rgba(111,153,0,0.96)' : 'rgba(200,241,53,0.95)') : chartInactiveBg();
+    if (temaAtual() === 'light') return chartColor(i) + 'ee';
     const t = n > 1 ? i/(n-1) : 0;
     return `rgba(${Math.round(200-t*80)},${Math.round(241-t*100)},${Math.round(53+t*100)},0.85)`;
   });
   const borderColors = byLoja.map((r, i) => {
     if (monthlyByLabel) return monthlySellout.solid;
-    if (sel) return r.loja === sel ? (temaAtual() === 'light' ? '#7aa600' : 'rgba(200,241,53,1)') : chartInactiveBorder();
+    if (sel) return r.loja === sel ? (temaAtual() === 'light' ? '#6f9900' : 'rgba(200,241,53,1)') : chartInactiveBorder();
     if (temaAtual() === 'light') return chartColor(i);
     const t = n > 1 ? i/(n-1) : 0;
     return `rgba(${Math.round(200-t*80)},${Math.round(241-t*100)},${Math.round(53+t*100)},1)`;
@@ -4640,8 +4640,8 @@ function d3Renderizar() {
         labels: chartLabels,
         datasets: [{
           data: byLoja.map(r => r.qty),
-          backgroundColor: byLoja.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.bg; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'rgba(0,143,104,0.78)':'rgba(79,255,176,0.95)'):chartInactiveBg(); if(temaAtual()==='light') return chartColor(i)+'cc'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},0.85)`; }),
-          borderColor:     byLoja.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.solid; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'#008f68':'rgba(79,255,176,1)'):chartInactiveBorder(); if(temaAtual()==='light') return chartColor(i); const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},1)`; }),
+          backgroundColor: byLoja.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.bg; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'rgba(0,122,89,0.94)':'rgba(79,255,176,0.95)'):chartInactiveBg(); if(temaAtual()==='light') return chartColor(i)+'ee'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},0.85)`; }),
+          borderColor:     byLoja.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.solid; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'#007a59':'rgba(79,255,176,1)'):chartInactiveBorder(); if(temaAtual()==='light') return chartColor(i); const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},1)`; }),
           borderWidth: 1.5, borderRadius: 6,
         }]
       },
@@ -4980,8 +4980,8 @@ function d3RenderGraficoEstoqueUltimoDia(ag) {
       labels: chartLabels,
       datasets: [{
         data: rows.map(r => r.qty),
-        backgroundColor: rows.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.bg; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'rgba(0,143,104,0.78)':'rgba(79,255,176,0.95)'):chartInactiveBg(); if(temaAtual()==='light') return chartColor(i)+'cc'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},0.85)`; }),
-        borderColor:     rows.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.solid; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'#008f68':'rgba(79,255,176,1)'):chartInactiveBorder(); if(temaAtual()==='light') return chartColor(i); const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},1)`; }),
+        backgroundColor: rows.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.bg; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'rgba(0,122,89,0.94)':'rgba(79,255,176,0.95)'):chartInactiveBg(); if(temaAtual()==='light') return chartColor(i)+'ee'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},0.85)`; }),
+        borderColor:     rows.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.solid; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'#007a59':'rgba(79,255,176,1)'):chartInactiveBorder(); if(temaAtual()==='light') return chartColor(i); const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},1)`; }),
         borderWidth: 1.5, borderRadius: 6,
       }]
     },
@@ -5089,8 +5089,8 @@ function d3RenderResumoEstoqueAgregado(ag) {
       labels: chartLabels,
       datasets: [{
         data: rows.map(r => r.qty),
-        backgroundColor: rows.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.bg; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'rgba(0,143,104,0.78)':'rgba(79,255,176,0.95)'):chartInactiveBg(); if(temaAtual()==='light') return chartColor(i)+'cc'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},0.85)`; }),
-        borderColor:     rows.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.solid; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'#008f68':'rgba(79,255,176,1)'):chartInactiveBorder(); if(temaAtual()==='light') return chartColor(i); const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},1)`; }),
+        backgroundColor: rows.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.bg; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'rgba(0,122,89,0.94)':'rgba(79,255,176,0.95)'):chartInactiveBg(); if(temaAtual()==='light') return chartColor(i)+'ee'; const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},0.85)`; }),
+        borderColor:     rows.map((r,i) => { if(monthlyByLabel) return monthlyEstoque.solid; if(d3Sel) return r.loja===d3Sel?(temaAtual()==='light'?'#007a59':'rgba(79,255,176,1)'):chartInactiveBorder(); if(temaAtual()==='light') return chartColor(i); const t=n>1?i/(n-1):0; return `rgba(${Math.round(79+t*121)},${Math.round(255-t*145)},${Math.round(176-t*123)},1)`; }),
         borderWidth: 1.5, borderRadius: 6,
       }]
     },
@@ -6432,14 +6432,14 @@ function vRenderGrafico(byLoja, ag) {
   const monthlyValor = chartMonthlyColor('valor');
   const bgColors = byLoja.map((r, i) => {
     if (monthlyByLabel) return monthlyValor.bg;
-    if (vSel) return r.loja === vSel ? (temaAtual() === 'light' ? 'rgba(0,143,104,0.78)' : 'rgba(79,255,176,0.95)') : chartInactiveBg();
-    if (temaAtual() === 'light') return chartColor(i) + 'cc';
+    if (vSel) return r.loja === vSel ? (temaAtual() === 'light' ? 'rgba(0,122,89,0.94)' : 'rgba(79,255,176,0.95)') : chartInactiveBg();
+    if (temaAtual() === 'light') return chartColor(i) + 'ee';
     const t = n > 1 ? i/(n-1) : 0;
     return `rgba(${Math.round(79+t*121)},${Math.round(255-t*100)},${Math.round(176-t*50)},0.85)`;
   });
   const borderColors = byLoja.map((r, i) => {
     if (monthlyByLabel) return monthlyValor.solid;
-    if (vSel) return r.loja === vSel ? (temaAtual() === 'light' ? '#008f68' : 'rgba(79,255,176,1)') : chartInactiveBorder();
+    if (vSel) return r.loja === vSel ? (temaAtual() === 'light' ? '#007a59' : 'rgba(79,255,176,1)') : chartInactiveBorder();
     if (temaAtual() === 'light') return chartColor(i);
     const t = n > 1 ? i/(n-1) : 0;
     return `rgba(${Math.round(79+t*121)},${Math.round(255-t*100)},${Math.round(176-t*50)},1)`;
