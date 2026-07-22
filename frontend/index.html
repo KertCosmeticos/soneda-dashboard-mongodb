@@ -2114,6 +2114,16 @@ function recarregarDados() {
   window.location.reload();
 }
 
+function htmlBarraImportacao(pct, msg) {
+  const valor = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
+  return `
+    <div style="width:100%;max-width:520px;height:8px;background:var(--surface2);border:1px solid var(--border);border-radius:999px;overflow:hidden;margin:8px 0 7px">
+      <div style="width:${valor}%;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .25s ease"></div>
+    </div>
+    <span style="font-family:'DM Mono',monospace">${valor}%</span> ${escapeHtml(msg)}
+  `;
+}
+
 async function enviarXLSX(inputId, rota) {
   if (bloquearSomenteLeitura('Importacao')) return;
   const fileInput = document.getElementById(inputId);
@@ -2133,18 +2143,20 @@ async function enviarXLSX(inputId, rota) {
 
   const arquivo  = fileInput.files[0];
   const kb       = Math.round(arquivo.size / 1024);
-  status.textContent = `Enviando ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`;
+  status.innerHTML = htmlBarraImportacao(15, `Preparando ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`);
   status.className   = 'import-status';
 
   try {
     const formData = new FormData();
     formData.append('file', arquivo);
+    status.innerHTML = htmlBarraImportacao(35, `Enviando ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`);
 
     const response = await fetch(`${API_BASE}${rota}`, {
       method:  'POST',
       headers: { 'Authorization': `Bearer ${token}` },
       body:    formData
     });
+    status.innerHTML = htmlBarraImportacao(85, 'Processando resposta do servidor...');
 
     if (response.status === 401) {
       sessionStorage.removeItem('adm_token');
@@ -2175,8 +2187,7 @@ async function init() {
     corrigirLabelsPeriodo();
     configurarExportacaoRelatorios();
     
-    const [brutosRes, deParaRes, catRes, resumoRes, catsRes, famsRes, filtrosRes] = await Promise.allSettled([
-      Promise.resolve([]),
+    const [deParaRes, catRes, resumoRes, catsRes, famsRes, filtrosRes] = await Promise.allSettled([
       fetchJSON('/api/lojas-depara'),
       fetchJSON('/api/categorias-depara'),
       fetchJSON('/api/dashboard/resumo'),
@@ -2260,32 +2271,6 @@ async function init() {
         };
       } catch(e) {}
     }
-
-    if (brutosRes.status !== 'fulfilled') {
-      throw new Error(brutosRes.reason?.message || 'Não foi possível buscar /api/dados-brutos');
-    }
-
-    const todas = Array.isArray(brutosRes.value) ? brutosRes.value : [];
-    rawData = todas
-      .filter(r => r && typeof r === 'object' && Object.keys(r).some(k => k !== '_id' && k !== 'importado_em' && r[k] !== null && r[k] !== ''))
-      .map(r => {
-        // Strip BOM (ï»¿) from field names (e.g. first column from Excel CSV exports)
-        const c = {};
-        Object.keys(r).forEach(k => { c[k.replace(/^ï»¿/, '')] = r[k]; });
-        if (c.Ano !== undefined && c.Ano !== null) c.Ano = String(c.Ano).trim();
-        if (c.Loja) c.Loja = normCodLoja(c.Loja);
-        // Synthesize Data (DD/MM/YYYY) from Mês + Ano when no Data column exists
-        if (!c.Data && !c.data) {
-          const MN = { Jan:1,Fev:2,Mar:3,Abr:4,Mai:5,Jun:6,Jul:7,Ago:8,Set:9,Out:10,Nov:11,Dez:12 };
-          const mes = c['Mês'] || c['Mes'] || '';
-          const ano = c['Ano'] || '';
-          const mesNum = MN[mes] || parseInt(mes);
-          if (mesNum && ano && !isNaN(parseInt(ano))) {
-            c.Data = `${parseInt(ano)}-${String(mesNum).padStart(2,'0')}-01`;
-          }
-        }
-        return c;
-      });
 
     if (resumoRes.status === 'fulfilled') {
       const resumo = resumoRes.value || {};

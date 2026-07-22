@@ -765,7 +765,6 @@ async function iniciarServidor() {
       const PORT_WU = process.env.PORT || 3000;
       const anoAtual = new Date().getFullYear();
       const paths = [
-        '/api/dashboard/kpis',
         '/api/dashboard/agregados',
         `/api/dashboard/agregados?ano=${anoAtual}&escopo=loja`,
         `/api/dashboard/agregados?ano=${anoAtual}`,
@@ -1432,20 +1431,6 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     // CONSULTAS
     // ─────────────────────────────────────
-    app.get("/api/dados-brutos", async (req, res) => {
-      try {
-        const limite = Number(req.query.limite || 5000);
-        const dados  = await db.collection("dados_brutos")
-          .find({})
-          .sort({ _data_iso: -1, importado_em: -1, _id: -1 })
-          .limit(limite)
-          .toArray();
-        res.json(dados);
-      } catch (error) {
-        res.status(500).json({ erro: "Erro ao buscar dados brutos", detalhe: error.message });
-      }
-    });
-
     app.get("/api/lojas-depara", async (req, res) => {
       const dados = await db.collection("lojas_depara").find({}).toArray();
       res.json(dados);
@@ -1459,53 +1444,6 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     // DADOS TRATADOS (JOIN)
     // ─────────────────────────────────────
-    app.get("/api/dados-tratados", async (req, res) => {
-      try {
-        const dados = await db.collection("dados_brutos").aggregate([
-          {
-            $lookup: {
-              from: "categorias_depara",
-              localField: "GTIN/PLU",
-              foreignField: "CODBARRAS",
-              as: "categoria_info"
-            }
-          },
-          {
-            $lookup: {
-              from: "lojas_depara",
-              localField: "Loja",
-              foreignField: "Cod_Loja",
-              as: "loja_info"
-            }
-          },
-          {
-            $addFields: {
-              Categoria_DePara: { $arrayElemAt: ["$categoria_info.CATEGORIA", 0] },
-              Familia_DePara:   { $arrayElemAt: ["$categoria_info.FAMILIA", 0] },
-              Produto_DePara: {
-                $arrayElemAt: [
-                  {
-                    $map: {
-                      input: "$categoria_info",
-                      as: "cat",
-                      in: { $getField: { field: "NOME PRODUTO", input: "$$cat" } }
-                    }
-                  },
-                  0
-                ]
-              },
-              Nome_Loja_DePara: { $arrayElemAt: ["$loja_info.Nome_Fantasia", 0] }
-            }
-          },
-          { $project: { categoria_info: 0, loja_info: 0 } }
-        ]).toArray();
-
-        res.json(dados);
-      } catch (error) {
-        res.status(500).json({ erro: "Erro ao buscar dados tratados", detalhe: error.message });
-      }
-    });
-
     // ─────────────────────────────────────
     // RESUMO DASHBOARD
     // ─────────────────────────────────────
@@ -1532,70 +1470,6 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     // KPIs COM FILTRO
     // ─────────────────────────────────────
-    app.get("/api/dashboard/kpis", async (req, res) => {
-      try {
-        const cacheKey = await dashboardCacheKey('kpis:v4', req.query);
-        const cached = cacheGet(cacheKey);
-        if (cached) return res.json(cached);
-
-        const { ano, mes, loja } = req.query;
-        const di = req.query.di || null;
-        const df = req.query.df || null;
-        const match = {};
-        if (ano)  aplicarFiltroAno(match, ano);
-        if (mes)  aplicarFiltroMes(match, mes);
-        if (loja) match["Loja"]  = matchTextoOuNumeroLista(loja);
-        if ((di || df) && _migData) {
-          const dr = {};
-          if (di) dr.$gte = di;
-          if (df) dr.$lte = df;
-          match["_data_iso"] = dr;
-        }
-
-        const matchStage = Object.keys(match).length > 0 ? [{ $match: match }] : [];
-        // Fallback de data quando _migData=false
-        const dateStage = (di || df) && !_migData ? (() => {
-          const isoExpr = { $dateToString: { date: { $ifNull: [
-            { $dateFromString: { dateString: { $toString: { $ifNull: [{ $getField: "Data" }, ""] } }, format: "%d/%m/%Y", onError: null, onNull: null } },
-            { $dateFromString: { dateString: { $toString: { $ifNull: [{ $getField: "Data" }, ""] } }, format: "%Y-%m-%d", onError: null, onNull: null } }
-          ]}, format: "%Y-%m-%d", onNull: "" }};
-          const conds = [];
-          if (di) conds.push({ $gte: [isoExpr, di] });
-          if (df) conds.push({ $lte: [isoExpr, df] });
-          return [{ $match: { $expr: conds.length === 1 ? conds[0] : { $and: conds } } }];
-        })() : [];
-
-        const [resumoArr, topLojaArr] = await Promise.all([
-          db.collection("dados_brutos").aggregate([
-            ...matchStage, ...dateStage,
-            {
-              $group: {
-                _id: null,
-                total_vendido: { $sum: _migNumericos ? "$_qtd_num"  : brToDouble({ $getField: "Venda (Qtd)" }) },
-                total_valor:   { $sum: _migNumericos ? "$_valor_num" : brValorExpr() },
-                lojas:         { $addToSet: "$Loja" }
-              }
-            },
-            { $project: { _id: 0, total_vendido: 1, total_valor: 1, total_lojas: { $size: "$lojas" } } }
-          ]).toArray(),
-          db.collection("dados_brutos").aggregate([
-            ...matchStage, ...dateStage,
-            { $group: { _id: "$Loja", qty: { $sum: _migNumericos ? "$_qtd_num" : brToDouble({ $getField: "Venda (Qtd)" }) } } },
-            { $sort: { qty: -1 } },
-            { $limit: 1 }
-          ]).toArray()
-        ]);
-
-        const resumo = resumoArr[0] || { total_vendido: 0, total_valor: 0, total_lojas: 0 };
-        if (topLojaArr[0]) resumo.maior_loja = topLojaArr[0];
-
-        cacheSet(cacheKey, resumo);
-        res.json(resumo);
-      } catch (error) {
-        res.status(500).json({ erro: "Erro ao gerar KPIs", detalhe: error.message });
-      }
-    });
-
     // ─────────────────────────────────────
     // AGREGADOS DASHBOARD (qtd + valor, por loja / cat / fam / dia)
     // ─────────────────────────────────────
@@ -2053,24 +1927,6 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     // VENDAS POR FILIAL
     // ─────────────────────────────────────
-    app.get("/api/dashboard/vendas-por-filial", async (req, res) => {
-      try {
-        const resultado = await db.collection("dados_brutos").aggregate([
-          {
-            $group: {
-              _id: "$Loja",
-              total_venda: { $sum: brValorExpr() }
-            }
-          },
-          { $sort: { total_venda: -1 } },
-          { $limit: 20 }
-        ]).toArray();
-        res.json(resultado);
-      } catch (error) {
-        res.status(500).json({ erro: "Erro ao buscar vendas por filial", detalhe: error.message });
-      }
-    });
-
     // ─────────────────────────────────────
     // CATEGORIAS
     // ─────────────────────────────────────
@@ -2128,28 +1984,40 @@ async function iniciarServidor() {
       }
     });
 
-    app.get("/api/dashboard/vendas-por-dia", async (req, res) => {
-      try {
-        const resultado = await db.collection("dados_brutos").aggregate([
-          {
-            $group: {
-              _id: { ano: "$Ano", mes: "$Mês" },
-              total_venda: { $sum: brValorExpr() }
-            }
-          },
-          { $sort: { "_id.ano": 1, "_id.mes": 1 } }
-        ]).toArray();
-        res.json(resultado);
-      } catch (error) {
-        res.status(500).json({ erro: "Erro ao buscar vendas por dia", detalhe: error.message });
-      }
-    });
-
     // ─────────────────────────────────────
     // IMPORTAÇÕES (PROTEGIDAS) — suporte a upload chunked
     // ─────────────────────────────────────
 
     // Helper: processa um arquivo CSV temporário e insere na coleção
+    function dataISODePlanilha(valor) {
+      if (valor instanceof Date && !Number.isNaN(valor.getTime())) {
+        return valor.toISOString().slice(0, 10);
+      }
+      if (typeof valor === "number" && Number.isFinite(valor)) {
+        const partes = XLSX.SSF.parse_date_code(valor);
+        if (partes?.y && partes?.m && partes?.d) {
+          return `${partes.y}-${String(partes.m).padStart(2, "0")}-${String(partes.d).padStart(2, "0")}`;
+        }
+      }
+      const dataStr = String(valor || "").trim();
+      const brMatch = dataStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      const isoMatch = dataStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (brMatch) return `${brMatch[3]}-${brMatch[2].padStart(2, "0")}-${brMatch[1].padStart(2, "0")}`;
+      if (isoMatch) return dataStr;
+      return null;
+    }
+
+    async function inserirEmLotes(colecao, resultados, tamanhoLote = 1500) {
+      let inserido = 0;
+      for (let i = 0; i < resultados.length; i += tamanhoLote) {
+        const lote = resultados.slice(i, i + tamanhoLote);
+        if (!lote.length) continue;
+        await colecao.insertMany(lote, { ordered: false });
+        inserido += lote.length;
+      }
+      return inserido;
+    }
+
     function prepararRegistroDadosBrutos(registro, categoriasPorGtin = null) {
       const qtdRaw = registro['Venda (Qtd)'] ?? registro['Venda Nf Quantidade'] ?? registro['Venda Pdv Quantidade'] ?? 0;
       const valRaw = registro['Venda (R$)'] ?? 0;
@@ -2165,25 +2033,18 @@ async function iniciarServidor() {
       registro._cat = categoria?.CATEGORIA || null;
       registro._fam = categoria?.FAMILIA || null;
 
-      const dataStr = String(registro['Data'] || '').trim();
-      const mesCanonico = mesDeData(dataStr) || normalizarMes(registro['MÃªs'] ?? registro['Mes']);
+      const dataIso = dataISODePlanilha(registro['Data']);
+      const mesIso = dataIso ? MESES_ABREV[Number(dataIso.slice(5, 7)) - 1] : "";
+      const mesCanonico = mesIso || normalizarMes(registro['M\u00EAs'] ?? registro['Mes']);
       if (mesCanonico) {
-        registro['MÃªs'] = mesCanonico;
+        registro['M\u00EAs'] = mesCanonico;
         const mesNumero = MESES_ABREV.indexOf(mesCanonico) + 1;
         if (mesNumero > 0 && (registro['Mes'] === undefined || registro['Mes'] === null || registro['Mes'] === "")) {
           registro['Mes'] = mesNumero;
         }
       }
 
-      const brMatch = dataStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-      const isoMatch = dataStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      if (brMatch) {
-        registro._data_iso = `${brMatch[3]}-${brMatch[2].padStart(2,'0')}-${brMatch[1].padStart(2,'0')}`;
-      } else if (isoMatch) {
-        registro._data_iso = dataStr;
-      } else {
-        registro._data_iso = null;
-      }
+      registro._data_iso = dataIso;
       return registro;
     }
 
@@ -2231,7 +2092,7 @@ async function iniciarServidor() {
             const dataStr = String(registro['Data'] || '').trim();
             const mesCanonico = mesDeData(dataStr) || normalizarMes(registro['Mês'] ?? registro['Mes']);
             if (mesCanonico) {
-              registro['Mês'] = mesCanonico;
+              registro['M\u00EAs'] = mesCanonico;
               const mesNumero = MESES_ABREV.indexOf(mesCanonico) + 1;
               if (mesNumero > 0 && (registro['Mes'] === undefined || registro['Mes'] === null || registro['Mes'] === "")) {
                 registro['Mes'] = mesNumero;
@@ -2256,11 +2117,9 @@ async function iniciarServidor() {
         stream.on("end", async () => {
           try {
             if (opcoes.deleteFirst) await colecao.deleteMany({});
-            if (resultados.length > 0) {
-              await colecao.insertMany(resultados, { ordered: false });
-            }
+            const inserido = await inserirEmLotes(colecao, resultados);
             try { fs.unlinkSync(req.file.path); } catch (_) {}
-            resolve(resultados.length);
+            resolve(inserido);
           } catch (err) {
             try { fs.unlinkSync(req.file.path); } catch (_) {}
             reject(err);
@@ -2304,8 +2163,7 @@ async function iniciarServidor() {
       });
 
       if (opcoes.deleteFirst) await colecao.deleteMany({});
-      if (resultados.length > 0) await colecao.insertMany(resultados, { ordered: false });
-      return resultados.length;
+      return inserirEmLotes(colecao, resultados);
     }
 
     async function aplicarRetencaoDadosBrutos(mesesParaManter = 13) {
