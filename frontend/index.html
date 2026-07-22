@@ -1987,26 +1987,26 @@ async function admLogout() {
   admAtualizarUI();
 }
 
-async function enviarCSV(inputId, rota, arquivoOverride = null) {
+async function enviarCSV(inputId, rota) {
   if (bloquearSomenteLeitura('Importacao')) return;
   const fileInput = document.getElementById(inputId);
   const status    = document.getElementById('import-status');
   const token     = admGetToken();
 
-  if (!arquivoOverride && (!fileInput || !fileInput.files.length)) {
+  if (!fileInput || !fileInput.files.length) {
     status.textContent = 'Selecione um arquivo CSV antes de importar.';
     status.className = 'import-status err';
     return;
   }
 
-  const arquivo = arquivoOverride || fileInput.files[0];
+  const arquivo = fileInput.files[0];
   const kb = Math.round(arquivo.size / 1024);
 
   // Função para atualizar barra de progresso visual
   const setProgresso = (atual, total, msg) => {
     const pct = total > 0 ? Math.round((atual / total) * 100) : 0;
     const blocos = Math.round(pct / 5); // barra de 20 blocos
-    const barra = '█'.repeat(blocos) + '░'.repeat(20 - blocos);
+    const barra = 'â–ˆ'.repeat(blocos) + 'â–‘'.repeat(20 - blocos);
     status.innerHTML = `<span style="font-family:'DM Mono',monospace">[${barra}] ${pct}%</span> ${msg}`;
     status.className = 'import-status';
   };
@@ -2043,7 +2043,7 @@ async function enviarCSV(inputId, rota, arquivoOverride = null) {
       formData.append('totalRecords', String(dados.length));
 
       setProgresso(i, totalLotes,
-        `Enviando lote ${i + 1} de ${totalLotes} · ${fatia.length.toLocaleString('pt-BR')} linhas · total ${dados.length.toLocaleString('pt-BR')} registros`);
+        `Enviando lote ${i + 1} de ${totalLotes} ? ${fatia.length.toLocaleString('pt-BR')} linhas ? total ${dados.length.toLocaleString('pt-BR')} registros`);
 
       const response = await fetch(`${API_BASE}${rota}`, {
         method: 'POST',
@@ -2076,8 +2076,7 @@ async function enviarCSV(inputId, rota, arquivoOverride = null) {
     status.className = 'import-status ok';
     // Limpa cache de agregados para que o painel recarregue com dados novos
     limparCacheDashboard();
-    setTimeout(() => recarregarDados(), 1600);
-    if (fileInput) fileInput.value = '';
+    setTimeout(() => recarregarDados(), 900);
 
   } catch (error) {
     console.error(error);
@@ -2093,67 +2092,6 @@ async function enviarCSV(inputId, rota, arquivoOverride = null) {
   }
 }
 
-function valorCSV(valor) {
-  const texto = String(valor ?? '').replace(/\r?\n/g, ' ').trim();
-  return /[;"\n\r]/.test(texto) ? `"${texto.replace(/"/g, '""')}"` : texto;
-}
-
-function carregarBibliotecaXLSX() {
-  if (window.XLSX) return Promise.resolve(window.XLSX);
-  if (window.__xlsxPromise) return window.__xlsxPromise;
-
-  window.__xlsxPromise = new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-    script.async = true;
-    script.onload = () => window.XLSX ? resolve(window.XLSX) : reject(new Error('Biblioteca XLSX nao ficou disponivel.'));
-    script.onerror = () => reject(new Error('Nao foi possivel carregar a biblioteca XLSX.'));
-    document.head.appendChild(script);
-  });
-
-  return window.__xlsxPromise;
-}
-
-async function enviarPlanilhaDadosBrutosComoCSV(inputId, rota) {
-  const fileInput = document.getElementById(inputId);
-  const status = document.getElementById('import-status');
-  if (!fileInput || !fileInput.files.length) {
-    status.textContent = 'Selecione um arquivo XLS ou XLSX antes de importar.';
-    status.className = 'import-status err';
-    return;
-  }
-
-  const arquivo = fileInput.files[0];
-  const kb = Math.round(arquivo.size / 1024);
-  try {
-    status.innerHTML = htmlBarraImportacao(5, 'Carregando leitor de XLSX...');
-    status.className = 'import-status';
-    const XLSXLib = await carregarBibliotecaXLSX();
-
-    status.innerHTML = htmlBarraImportacao(8, `Lendo planilha ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`);
-    const buffer = await arquivo.arrayBuffer();
-    status.innerHTML = htmlBarraImportacao(14, 'Convertendo planilha para importacao em lotes...');
-    const workbook = XLSXLib.read(buffer, { type: 'array', raw: false, cellDates: false });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const rows = XLSXLib.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
-    const linhas = rows
-      .filter(row => row.some(cell => String(cell ?? '').trim() !== ''))
-      .map(row => row.map(valorCSV).join(';'));
-
-    if (linhas.length <= 1) throw new Error('Arquivo vazio ou sem dados.');
-
-    const csvBlob = new Blob([linhas.join('\n')], { type: 'text/csv;charset=utf-8' });
-    const nomeCSV = arquivo.name.replace(/\.(xlsx|xls)$/i, '.csv');
-    const csvFile = new File([csvBlob], nomeCSV, { type: 'text/csv' });
-    return enviarCSV(inputId, rota, csvFile);
-  } catch (error) {
-    console.error(error);
-    status.textContent = `Erro ao ler XLS/XLSX: ${error.message}`;
-    status.className = 'import-status err';
-  }
-}
-
 async function enviarDadosBrutos(inputId, rota) {
   const fileInput = document.getElementById(inputId);
   const status = document.getElementById('import-status');
@@ -2165,7 +2103,7 @@ async function enviarDadosBrutos(inputId, rota) {
 
   const nome = fileInput.files[0].name.toLowerCase();
   if (nome.endsWith('.csv')) return enviarCSV(inputId, rota);
-  if (nome.endsWith('.xls') || nome.endsWith('.xlsx')) return enviarPlanilhaDadosBrutosComoCSV(inputId, rota);
+  if (nome.endsWith('.xls') || nome.endsWith('.xlsx')) return enviarXLSX(inputId, rota);
 
   status.textContent = 'Formato inválido. Use CSV, XLS ou XLSX.';
   status.className = 'import-status err';
@@ -2174,66 +2112,6 @@ async function enviarDadosBrutos(inputId, rota) {
 function recarregarDados() {
   limparCacheDashboard();
   window.location.reload();
-}
-
-function htmlBarraImportacao(pct, msg) {
-  const valor = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
-  return `
-    <div style="width:100%;max-width:520px;height:8px;background:var(--surface2);border:1px solid var(--border);border-radius:999px;overflow:hidden;margin:8px 0 7px">
-      <div style="width:${valor}%;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .25s ease"></div>
-    </div>
-    <span style="font-family:'DM Mono',monospace">${valor}%</span> ${escapeHtml(msg)}
-  `;
-}
-
-function postarFormDataComProgresso(url, formData, token, onUpload, onProcessamento) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    let processamentoTimer = null;
-    let processamentoPct = 60;
-
-    const pararProcessamento = () => {
-      if (processamentoTimer) clearInterval(processamentoTimer);
-      processamentoTimer = null;
-    };
-
-    xhr.open('POST', url);
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-
-    xhr.upload.onprogress = evt => {
-      if (!evt.lengthComputable) return;
-      const pct = 15 + (evt.loaded / evt.total) * 40;
-      onUpload(Math.min(55, pct));
-    };
-
-    xhr.upload.onload = () => {
-      processamentoPct = 60;
-      onProcessamento(processamentoPct);
-      processamentoTimer = setInterval(() => {
-        processamentoPct = Math.min(94, processamentoPct + 2);
-        onProcessamento(processamentoPct);
-      }, 1200);
-    };
-
-    xhr.onload = () => {
-      pararProcessamento();
-      let data = {};
-      try {
-        data = xhr.responseText ? JSON.parse(xhr.responseText) : {};
-      } catch (_) {
-        reject(new Error(`Servidor retornou resposta invalida (${xhr.status}).`));
-        return;
-      }
-      resolve({ status: xhr.status, ok: xhr.status >= 200 && xhr.status < 300, data });
-    };
-
-    xhr.onerror = () => {
-      pararProcessamento();
-      reject(new Error('Falha de rede durante a importacao.'));
-    };
-
-    xhr.send(formData);
-  });
 }
 
 async function enviarXLSX(inputId, rota) {
@@ -2255,25 +2133,18 @@ async function enviarXLSX(inputId, rota) {
 
   const arquivo  = fileInput.files[0];
   const kb       = Math.round(arquivo.size / 1024);
-  status.innerHTML = htmlBarraImportacao(15, `Preparando ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`);
+  status.textContent = `Enviando ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`;
   status.className   = 'import-status';
 
   try {
     const formData = new FormData();
     formData.append('file', arquivo);
-    status.innerHTML = htmlBarraImportacao(20, `Enviando ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`);
 
-    const response = await postarFormDataComProgresso(
-      `${API_BASE}${rota}`,
-      formData,
-      token,
-      pct => {
-        status.innerHTML = htmlBarraImportacao(pct, `Enviando ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`);
-      },
-      pct => {
-        status.innerHTML = htmlBarraImportacao(pct, 'Arquivo enviado. Processando no servidor...');
-      }
-    );
+    const response = await fetch(`${API_BASE}${rota}`, {
+      method:  'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body:    formData
+    });
 
     if (response.status === 401) {
       sessionStorage.removeItem('adm_token');
@@ -2281,13 +2152,13 @@ async function enviarXLSX(inputId, rota) {
       throw new Error('Sessão expirada. Faça login novamente.');
     }
 
-    const data = response.data;
+    const data = await response.json();
     if (!response.ok) throw new Error(data.erro || data.detalhe || 'Erro desconhecido');
 
-    status.innerHTML = htmlBarraImportacao(100, `Importacao concluida. ${(data.inserido || 0).toLocaleString('pt-BR')} registros inseridos. Atualizando painel...`);
+    status.innerHTML = `✓ Importação concluída · <strong>${(data.inserido || 0).toLocaleString('pt-BR')}</strong> registros inseridos.`;
     status.className = 'import-status ok';
     limparCacheDashboard();
-    setTimeout(() => recarregarDados(), 1600);
+    setTimeout(() => recarregarDados(), 900);
     fileInput.value = '';
   } catch (error) {
     console.error(error);
@@ -2304,9 +2175,11 @@ async function init() {
     corrigirLabelsPeriodo();
     configurarExportacaoRelatorios();
     
-    const [deParaRes, catRes, catsRes, famsRes, filtrosRes] = await Promise.allSettled([
+    const [brutosRes, deParaRes, catRes, resumoRes, catsRes, famsRes, filtrosRes] = await Promise.allSettled([
+      Promise.resolve([]),
       fetchJSON('/api/lojas-depara'),
       fetchJSON('/api/categorias-depara'),
+      fetchJSON('/api/dashboard/resumo'),
       fetchJSON('/api/dashboard/categorias'),
       fetchJSON('/api/dashboard/familias'),
       fetchJSON('/api/dashboard/filtros')
@@ -2388,12 +2261,48 @@ async function init() {
       } catch(e) {}
     }
 
-    document.getElementById('status-msg').textContent = 'Carregando vendas...';
+    if (brutosRes.status !== 'fulfilled') {
+      throw new Error(brutosRes.reason?.message || 'Não foi possível buscar /api/dados-brutos');
+    }
+
+    const todas = Array.isArray(brutosRes.value) ? brutosRes.value : [];
+    rawData = todas
+      .filter(r => r && typeof r === 'object' && Object.keys(r).some(k => k !== '_id' && k !== 'importado_em' && r[k] !== null && r[k] !== ''))
+      .map(r => {
+        // Strip BOM (ï»¿) from field names (e.g. first column from Excel CSV exports)
+        const c = {};
+        Object.keys(r).forEach(k => { c[k.replace(/^ï»¿/, '')] = r[k]; });
+        if (c.Ano !== undefined && c.Ano !== null) c.Ano = String(c.Ano).trim();
+        if (c.Loja) c.Loja = normCodLoja(c.Loja);
+        // Synthesize Data (DD/MM/YYYY) from Mês + Ano when no Data column exists
+        if (!c.Data && !c.data) {
+          const MN = { Jan:1,Fev:2,Mar:3,Abr:4,Mai:5,Jun:6,Jul:7,Ago:8,Set:9,Out:10,Nov:11,Dez:12 };
+          const mes = c['Mês'] || c['Mes'] || '';
+          const ano = c['Ano'] || '';
+          const mesNum = MN[mes] || parseInt(mes);
+          if (mesNum && ano && !isNaN(parseInt(ano))) {
+            c.Data = `${parseInt(ano)}-${String(mesNum).padStart(2,'0')}-01`;
+          }
+        }
+        return c;
+      });
+
+    if (resumoRes.status === 'fulfilled') {
+      const resumo = resumoRes.value || {};
+      document.getElementById('status-msg').textContent =
+        `${Number(resumo.total_vendido || 0).toLocaleString('pt-BR')} itens vendidos · ` +
+        `${Number(resumo.total_lojas || 0).toLocaleString('pt-BR')} lojas · ` +
+        `R$ ${Number(resumo.total_valor || 0).toLocaleString('pt-BR', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        })}`;
+    } else {
+      document.getElementById('status-msg').textContent =
+        `${rawData.length.toLocaleString('pt-BR')} registros carregados do MongoDB ? ${Object.keys(deParaMap).length} lojas no de-para`;
+    }
 
     preencherAnoMesTodasAbas();
     garantirFiltrosAba('f');
-    prepararAbasOcultas();
-    ['f','v','d2','d3','se'].forEach(aplicarFiltroAtual);
     renderizar();
     tabsRenderizadas.add('vendas');
 
@@ -7000,22 +6909,18 @@ function trocarAba(aba, evt) {
   if (!tabsRenderizadas.has(aba)) {
     if (aba === 'valor') {
       garantirFiltrosAba('v');
-      aplicarFiltroAtual('v');
       vRenderizar();
     }
     if (aba === 'dia') {
       garantirFiltrosAba('d2');
-      aplicarFiltroAtual('d2');
       d2Renderizar();
     }
     if (aba === 'estoque') {
       garantirFiltrosAba('d3');
-      aplicarFiltroAtual('d3');
       d3Renderizar();
     }
     if (aba === 'se') {
       garantirFiltrosAba('se');
-      aplicarFiltroAtual('se');
       seRenderizar();
     }
     tabsRenderizadas.add(aba);
@@ -7039,12 +6944,11 @@ function guAtualizarUI() {
   const resetEl  = document.getElementById('gu-reset');
   const painelEl = document.getElementById('gu-painel');
   if (!loginEl || !painelEl) return;
-  const abaGerirAtiva = document.getElementById('tab-gerir')?.classList.contains('active');
   if (token) {
     loginEl.style.display  = 'none';
     resetEl.style.display  = 'none';
     painelEl.style.display = 'block';
-    if (abaGerirAtiva) guCarregarUsuarios();
+    guCarregarUsuarios();
   } else {
     // so mostra o login se a tela de reset não estiver ativa
     if (resetEl.style.display !== 'flex') loginEl.style.display = 'flex';

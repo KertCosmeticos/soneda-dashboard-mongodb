@@ -127,10 +127,10 @@ function cacheClear() {
 }
 
 // ── FLAGS DE OTIMIZAÇÃO ──────────────────────────────────────────────────────
-let _migNumericos = true;  // importacoes atuais ja gravam _qtd_num/_valor_num
-let _migGtin      = true;  // importacoes atuais ja gravam _gtin
-let _migData      = true;  // importacoes atuais ja gravam _data_iso
-let _migCat       = true;  // importacoes atuais ja gravam _cat/_fam
+let _migNumericos = false; // true quando dados têm _qtd_num/_valor_num pré-computados
+let _migGtin      = false; // true quando dados têm _gtin pré-computado (join indexado)
+let _migData      = false; // true quando dados têm _data_iso pré-computado (filtro de data indexado)
+let _migCat       = false; // true quando dados têm _cat/_fam pré-computados (elimina $lookup em queries)
 let _catCountCache = -1;   // cache em memória do estimatedDocumentCount de categorias_depara
 
 // ─────────────────────────────────────────
@@ -757,17 +757,16 @@ async function iniciarServidor() {
       }
     }
 
-    const REFRESH_MIGRATION_FLAGS = /^(1|true|yes|sim)$/i.test(process.env.REFRESH_MIGRATION_FLAGS || "");
-    if (REFRESH_MIGRATION_FLAGS) {
-      setTimeout(() => atualizarFlagsMigracao().catch(e => console.warn('Flags de migracao em background falharam:', e.message)), 2500);
-    }
-    // Migracao pesada fica disponivel apenas via /api/admin/migrar-campos.
-    // Rodar automaticamente no startup pode travar consultas apos imports grandes.
+    await atualizarFlagsMigracao();
+    // Migra campos de performance em background sem bloquear o startup
+    if (!READ_ONLY) migrarCamposBackground();
     function aquecerCacheDashboard(motivo = "startup") {
       const { request } = require('http');
       const PORT_WU = process.env.PORT || 3000;
       const anoAtual = new Date().getFullYear();
       const paths = [
+        '/api/dashboard/kpis',
+        '/api/dashboard/agregados',
         `/api/dashboard/agregados?ano=${anoAtual}&escopo=loja`,
         `/api/dashboard/agregados?ano=${anoAtual}`,
         `/api/dashboard/estoque-resumo?ano=${anoAtual}`
@@ -781,8 +780,19 @@ async function iniciarServidor() {
         req.end();
       });
     }
-    const WARMUP_CACHE = /^(1|true|yes|sim)$/i.test(process.env.WARMUP_CACHE || "");
-    if (WARMUP_CACHE) setTimeout(() => aquecerCacheDashboard("startup"), 4500);
+    setTimeout(() => aquecerCacheDashboard("startup"), 4500);
+    // Pré-aquece o cache com a query mais comum (sem filtros) logo após o startup
+    setTimeout(() => {
+      const { request } = require('http');
+      const PORT_WU = process.env.PORT || 3000;
+      const req = request({ hostname: 'localhost', port: PORT_WU, path: '/api/dashboard/agregados' }, res => {
+        res.resume();
+        console.log('🔥 Cache pré-aquecido');
+      });
+      req.on('error', () => {});
+      req.end();
+    }, 4000);
+
     // Seed usuário inicial de importação a partir das variáveis de ambiente
     if (!READ_ONLY) {
     const totalUsuarios = await db.collection("usuarios_importacao").countDocuments();
@@ -856,26 +866,27 @@ async function iniciarServidor() {
       );
     }
 
-    // Indices rodam em background para nao atrasar o health check do Koyeb.
+    // Garante índice único no campo usuario
     await garantirUsuarioPai(db);
-    setTimeout(() => {
-      Promise.all([
-        db.collection("usuarios_importacao").createIndex({ usuario: 1 }, { unique: true }),
-        db.collection("dados_brutos").createIndex({ "Ano": 1, "M\u00EAs": 1, "Loja": 1 }),
-        db.collection("dados_brutos").createIndex({ "Ano": 1, "M\u00EAs": 1, "Data": 1 }),
-        db.collection("dados_brutos").createIndex({ "Ano": 1, "M\u00EAs": 1 }),
-        db.collection("dados_brutos").createIndex({ "Loja": 1 }),
-        db.collection("dados_brutos").createIndex({ "GTIN/PLU": 1 }),
-        db.collection("dados_brutos").createIndex({ "_gtin": 1 }),
-        db.collection("dados_brutos").createIndex({ "_data_iso": 1 }),
-        db.collection("dados_brutos").createIndex({ "Ano": 1, "_data_iso": 1, "Loja": 1 }),
-        db.collection("dados_brutos").createIndex({ "_data_iso": -1, "importado_em": -1 }),
-        db.collection("categorias_depara").createIndex({ "CODBARRAS": 1 }),
-        db.collection("tokens_reset").createIndex({ expira: 1 }, { expireAfterSeconds: 0 })
-      ])
-        .then(() => console.log("Indices de dashboard criados/verificados"))
-        .catch(e => console.warn("Indices de dashboard em background falharam:", e.message));
-    }, 30000);
+    await db.collection("usuarios_importacao").createIndex({ usuario: 1 }, { unique: true });
+
+    // Índices de performance para dados_brutos (queries de dashboard)
+    await Promise.all([
+      db.collection("dados_brutos").createIndex({ "Ano": 1, "Mês": 1, "Loja": 1 }),
+      db.collection("dados_brutos").createIndex({ "Ano": 1, "Mês": 1, "Data": 1 }),
+      db.collection("dados_brutos").createIndex({ "Ano": 1, "Mês": 1 }),
+      db.collection("dados_brutos").createIndex({ "Loja": 1 }),
+      db.collection("dados_brutos").createIndex({ "GTIN/PLU": 1 }),
+      db.collection("dados_brutos").createIndex({ "_gtin": 1 }),
+      db.collection("dados_brutos").createIndex({ "_data_iso": 1 }),
+      db.collection("dados_brutos").createIndex({ "Ano": 1, "_data_iso": 1, "Loja": 1 }),
+      db.collection("dados_brutos").createIndex({ "_data_iso": -1, "importado_em": -1 }),
+      db.collection("categorias_depara").createIndex({ "CODBARRAS": 1 })
+    ]);
+    console.log("📊 Índices de dashboard criados/verificados");
+
+    // TTL automático para tokens de reset expirados (importação e admin)
+    await db.collection("tokens_reset").createIndex({ expira: 1 }, { expireAfterSeconds: 0 });
     }
 
     app.get("/", (req, res) => {
@@ -1421,6 +1432,20 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     // CONSULTAS
     // ─────────────────────────────────────
+    app.get("/api/dados-brutos", async (req, res) => {
+      try {
+        const limite = Number(req.query.limite || 5000);
+        const dados  = await db.collection("dados_brutos")
+          .find({})
+          .sort({ _data_iso: -1, importado_em: -1, _id: -1 })
+          .limit(limite)
+          .toArray();
+        res.json(dados);
+      } catch (error) {
+        res.status(500).json({ erro: "Erro ao buscar dados brutos", detalhe: error.message });
+      }
+    });
+
     app.get("/api/lojas-depara", async (req, res) => {
       const dados = await db.collection("lojas_depara").find({}).toArray();
       res.json(dados);
@@ -1434,6 +1459,53 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     // DADOS TRATADOS (JOIN)
     // ─────────────────────────────────────
+    app.get("/api/dados-tratados", async (req, res) => {
+      try {
+        const dados = await db.collection("dados_brutos").aggregate([
+          {
+            $lookup: {
+              from: "categorias_depara",
+              localField: "GTIN/PLU",
+              foreignField: "CODBARRAS",
+              as: "categoria_info"
+            }
+          },
+          {
+            $lookup: {
+              from: "lojas_depara",
+              localField: "Loja",
+              foreignField: "Cod_Loja",
+              as: "loja_info"
+            }
+          },
+          {
+            $addFields: {
+              Categoria_DePara: { $arrayElemAt: ["$categoria_info.CATEGORIA", 0] },
+              Familia_DePara:   { $arrayElemAt: ["$categoria_info.FAMILIA", 0] },
+              Produto_DePara: {
+                $arrayElemAt: [
+                  {
+                    $map: {
+                      input: "$categoria_info",
+                      as: "cat",
+                      in: { $getField: { field: "NOME PRODUTO", input: "$$cat" } }
+                    }
+                  },
+                  0
+                ]
+              },
+              Nome_Loja_DePara: { $arrayElemAt: ["$loja_info.Nome_Fantasia", 0] }
+            }
+          },
+          { $project: { categoria_info: 0, loja_info: 0 } }
+        ]).toArray();
+
+        res.json(dados);
+      } catch (error) {
+        res.status(500).json({ erro: "Erro ao buscar dados tratados", detalhe: error.message });
+      }
+    });
+
     // ─────────────────────────────────────
     // RESUMO DASHBOARD
     // ─────────────────────────────────────
@@ -1460,6 +1532,70 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     // KPIs COM FILTRO
     // ─────────────────────────────────────
+    app.get("/api/dashboard/kpis", async (req, res) => {
+      try {
+        const cacheKey = await dashboardCacheKey('kpis:v4', req.query);
+        const cached = cacheGet(cacheKey);
+        if (cached) return res.json(cached);
+
+        const { ano, mes, loja } = req.query;
+        const di = req.query.di || null;
+        const df = req.query.df || null;
+        const match = {};
+        if (ano)  aplicarFiltroAno(match, ano);
+        if (mes)  aplicarFiltroMes(match, mes);
+        if (loja) match["Loja"]  = matchTextoOuNumeroLista(loja);
+        if ((di || df) && _migData) {
+          const dr = {};
+          if (di) dr.$gte = di;
+          if (df) dr.$lte = df;
+          match["_data_iso"] = dr;
+        }
+
+        const matchStage = Object.keys(match).length > 0 ? [{ $match: match }] : [];
+        // Fallback de data quando _migData=false
+        const dateStage = (di || df) && !_migData ? (() => {
+          const isoExpr = { $dateToString: { date: { $ifNull: [
+            { $dateFromString: { dateString: { $toString: { $ifNull: [{ $getField: "Data" }, ""] } }, format: "%d/%m/%Y", onError: null, onNull: null } },
+            { $dateFromString: { dateString: { $toString: { $ifNull: [{ $getField: "Data" }, ""] } }, format: "%Y-%m-%d", onError: null, onNull: null } }
+          ]}, format: "%Y-%m-%d", onNull: "" }};
+          const conds = [];
+          if (di) conds.push({ $gte: [isoExpr, di] });
+          if (df) conds.push({ $lte: [isoExpr, df] });
+          return [{ $match: { $expr: conds.length === 1 ? conds[0] : { $and: conds } } }];
+        })() : [];
+
+        const [resumoArr, topLojaArr] = await Promise.all([
+          db.collection("dados_brutos").aggregate([
+            ...matchStage, ...dateStage,
+            {
+              $group: {
+                _id: null,
+                total_vendido: { $sum: _migNumericos ? "$_qtd_num"  : brToDouble({ $getField: "Venda (Qtd)" }) },
+                total_valor:   { $sum: _migNumericos ? "$_valor_num" : brValorExpr() },
+                lojas:         { $addToSet: "$Loja" }
+              }
+            },
+            { $project: { _id: 0, total_vendido: 1, total_valor: 1, total_lojas: { $size: "$lojas" } } }
+          ]).toArray(),
+          db.collection("dados_brutos").aggregate([
+            ...matchStage, ...dateStage,
+            { $group: { _id: "$Loja", qty: { $sum: _migNumericos ? "$_qtd_num" : brToDouble({ $getField: "Venda (Qtd)" }) } } },
+            { $sort: { qty: -1 } },
+            { $limit: 1 }
+          ]).toArray()
+        ]);
+
+        const resumo = resumoArr[0] || { total_vendido: 0, total_valor: 0, total_lojas: 0 };
+        if (topLojaArr[0]) resumo.maior_loja = topLojaArr[0];
+
+        cacheSet(cacheKey, resumo);
+        res.json(resumo);
+      } catch (error) {
+        res.status(500).json({ erro: "Erro ao gerar KPIs", detalhe: error.message });
+      }
+    });
+
     // ─────────────────────────────────────
     // AGREGADOS DASHBOARD (qtd + valor, por loja / cat / fam / dia)
     // ─────────────────────────────────────
@@ -1536,8 +1672,7 @@ async function iniciarServidor() {
         }
 
         // Join único (uma vez para todos os facets de cat/fam/produto) — pulado quando _cat já está pré-computado
-        const precisaCategoria = !apenasLoja || !!(cat || familia || produto || aCat || aFamilia || incluirDiaDetalhado);
-        if (precisaCategoria && (!_migCat || (produto && !produto_gtin))) {
+        if (!_migCat || (produto && !produto_gtin)) {
           if (_catCountCache < 0) _catCountCache = await db.collection("categorias_depara").estimatedDocumentCount();
           if (_catCountCache > 0) preStages.push(...joinCat);
         }
@@ -1576,15 +1711,15 @@ async function iniciarServidor() {
             ...mCat, ...mFamilia,
             { $group: { _id: "$Loja", ...grp } },
             { $sort: { qty: -1 } }
+          ],
+          por_dia: [
+            ...mLoja, ...mCat, ...mFamilia,
+            { $group: { _id: dateGroupExpr, ...grp } },
+            { $sort: { _id: 1 } }
           ]
         };
 
         if (!apenasLoja) {
-          facets.por_dia = [
-            ...mLoja, ...mCat, ...mFamilia,
-            { $group: { _id: dateGroupExpr, ...grp } },
-            { $sort: { _id: 1 } }
-          ];
           facets.por_cat = [
             ...mLoja, ...mFamilia,
             { $group: { _id: "$_cat", ...grp } },
@@ -1918,6 +2053,24 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     // VENDAS POR FILIAL
     // ─────────────────────────────────────
+    app.get("/api/dashboard/vendas-por-filial", async (req, res) => {
+      try {
+        const resultado = await db.collection("dados_brutos").aggregate([
+          {
+            $group: {
+              _id: "$Loja",
+              total_venda: { $sum: brValorExpr() }
+            }
+          },
+          { $sort: { total_venda: -1 } },
+          { $limit: 20 }
+        ]).toArray();
+        res.json(resultado);
+      } catch (error) {
+        res.status(500).json({ erro: "Erro ao buscar vendas por filial", detalhe: error.message });
+      }
+    });
+
     // ─────────────────────────────────────
     // CATEGORIAS
     // ─────────────────────────────────────
@@ -1975,40 +2128,28 @@ async function iniciarServidor() {
       }
     });
 
+    app.get("/api/dashboard/vendas-por-dia", async (req, res) => {
+      try {
+        const resultado = await db.collection("dados_brutos").aggregate([
+          {
+            $group: {
+              _id: { ano: "$Ano", mes: "$Mês" },
+              total_venda: { $sum: brValorExpr() }
+            }
+          },
+          { $sort: { "_id.ano": 1, "_id.mes": 1 } }
+        ]).toArray();
+        res.json(resultado);
+      } catch (error) {
+        res.status(500).json({ erro: "Erro ao buscar vendas por dia", detalhe: error.message });
+      }
+    });
+
     // ─────────────────────────────────────
     // IMPORTAÇÕES (PROTEGIDAS) — suporte a upload chunked
     // ─────────────────────────────────────
 
     // Helper: processa um arquivo CSV temporário e insere na coleção
-    function dataISODePlanilha(valor) {
-      if (valor instanceof Date && !Number.isNaN(valor.getTime())) {
-        return valor.toISOString().slice(0, 10);
-      }
-      if (typeof valor === "number" && Number.isFinite(valor)) {
-        const partes = XLSX.SSF.parse_date_code(valor);
-        if (partes?.y && partes?.m && partes?.d) {
-          return `${partes.y}-${String(partes.m).padStart(2, "0")}-${String(partes.d).padStart(2, "0")}`;
-        }
-      }
-      const dataStr = String(valor || "").trim();
-      const brMatch = dataStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-      const isoMatch = dataStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      if (brMatch) return `${brMatch[3]}-${brMatch[2].padStart(2, "0")}-${brMatch[1].padStart(2, "0")}`;
-      if (isoMatch) return dataStr;
-      return null;
-    }
-
-    async function inserirEmLotes(colecao, resultados, tamanhoLote = 1500) {
-      let inserido = 0;
-      for (let i = 0; i < resultados.length; i += tamanhoLote) {
-        const lote = resultados.slice(i, i + tamanhoLote);
-        if (!lote.length) continue;
-        await colecao.insertMany(lote, { ordered: false });
-        inserido += lote.length;
-      }
-      return inserido;
-    }
-
     function prepararRegistroDadosBrutos(registro, categoriasPorGtin = null) {
       const qtdRaw = registro['Venda (Qtd)'] ?? registro['Venda Nf Quantidade'] ?? registro['Venda Pdv Quantidade'] ?? 0;
       const valRaw = registro['Venda (R$)'] ?? 0;
@@ -2024,18 +2165,25 @@ async function iniciarServidor() {
       registro._cat = categoria?.CATEGORIA || null;
       registro._fam = categoria?.FAMILIA || null;
 
-      const dataIso = dataISODePlanilha(registro['Data']);
-      const mesIso = dataIso ? MESES_ABREV[Number(dataIso.slice(5, 7)) - 1] : "";
-      const mesCanonico = mesIso || normalizarMes(registro['M\u00EAs'] ?? registro['Mes']);
+      const dataStr = String(registro['Data'] || '').trim();
+      const mesCanonico = mesDeData(dataStr) || normalizarMes(registro['MÃªs'] ?? registro['Mes']);
       if (mesCanonico) {
-        registro['M\u00EAs'] = mesCanonico;
+        registro['MÃªs'] = mesCanonico;
         const mesNumero = MESES_ABREV.indexOf(mesCanonico) + 1;
         if (mesNumero > 0 && (registro['Mes'] === undefined || registro['Mes'] === null || registro['Mes'] === "")) {
           registro['Mes'] = mesNumero;
         }
       }
 
-      registro._data_iso = dataIso;
+      const brMatch = dataStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      const isoMatch = dataStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (brMatch) {
+        registro._data_iso = `${brMatch[3]}-${brMatch[2].padStart(2,'0')}-${brMatch[1].padStart(2,'0')}`;
+      } else if (isoMatch) {
+        registro._data_iso = dataStr;
+      } else {
+        registro._data_iso = null;
+      }
       return registro;
     }
 
@@ -2083,7 +2231,7 @@ async function iniciarServidor() {
             const dataStr = String(registro['Data'] || '').trim();
             const mesCanonico = mesDeData(dataStr) || normalizarMes(registro['Mês'] ?? registro['Mes']);
             if (mesCanonico) {
-              registro['M\u00EAs'] = mesCanonico;
+              registro['Mês'] = mesCanonico;
               const mesNumero = MESES_ABREV.indexOf(mesCanonico) + 1;
               if (mesNumero > 0 && (registro['Mes'] === undefined || registro['Mes'] === null || registro['Mes'] === "")) {
                 registro['Mes'] = mesNumero;
@@ -2108,9 +2256,11 @@ async function iniciarServidor() {
         stream.on("end", async () => {
           try {
             if (opcoes.deleteFirst) await colecao.deleteMany({});
-            const inserido = await inserirEmLotes(colecao, resultados);
+            if (resultados.length > 0) {
+              await colecao.insertMany(resultados, { ordered: false });
+            }
             try { fs.unlinkSync(req.file.path); } catch (_) {}
-            resolve(inserido);
+            resolve(resultados.length);
           } catch (err) {
             try { fs.unlinkSync(req.file.path); } catch (_) {}
             reject(err);
@@ -2154,7 +2304,8 @@ async function iniciarServidor() {
       });
 
       if (opcoes.deleteFirst) await colecao.deleteMany({});
-      return inserirEmLotes(colecao, resultados);
+      if (resultados.length > 0) await colecao.insertMany(resultados, { ordered: false });
+      return resultados.length;
     }
 
     async function aplicarRetencaoDadosBrutos(mesesParaManter = 13) {
@@ -2237,6 +2388,9 @@ async function iniciarServidor() {
           retencao = await aplicarRetencaoDadosBrutos(13);
           cacheClear();
           await atualizarFlagsMigracao();
+          // Re-migra _cat/_fam para novos registros (em background)
+          migrarCamposBackground();
+          setTimeout(() => aquecerCacheDashboard("importacao"), 1500);
         }
 
         res.json({
