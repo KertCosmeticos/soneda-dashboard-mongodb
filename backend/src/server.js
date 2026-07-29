@@ -126,6 +126,47 @@ function cacheClear() {
   _dadosVersionCache = { ts: 0, value: "init" };
 }
 
+function csvCell(valor) {
+  const texto = limparTextoExibicao(valor);
+  return /[;"\r\n]/.test(texto) ? `"${texto.replace(/"/g, '""')}"` : texto;
+}
+
+function enviarCsv(res, filename, colunas, linhas) {
+  const conteudo = "\uFEFF" + [
+    colunas.map(csvCell).join(";"),
+    ...linhas.map(linha => colunas.map(col => csvCell(linha[col] ?? "")).join(";"))
+  ].join("\n") + "\n";
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  return res.send(conteudo);
+}
+
+function enviarXlsx(res, filename, sheetName, colunas, linhas, colunasTexto = []) {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([colunas, ...linhas]);
+  const textoSet = new Set(colunasTexto);
+  ws["!cols"] = colunas.map(col => textoSet.has(col) ? { wch: 22, numFmt: "@" } : { wch: 20 });
+  ws["!autofilter"] = { ref: `A1:${XLSX.utils.encode_col(colunas.length - 1)}${linhas.length + 1}` };
+  colunas.forEach((col, idx) => {
+    if (!textoSet.has(col)) return;
+    for (let row = 2; row <= linhas.length + 1; row++) {
+      const addr = XLSX.utils.encode_cell({ r: row - 1, c: idx });
+      if (ws[addr]) { ws[addr].t = "s"; ws[addr].z = "@"; }
+    }
+  });
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  return res.send(buffer);
+}
+
+function colunasDocumentoModelo(doc = {}, fallback = []) {
+  const colunas = Object.keys(doc)
+    .filter(col => !String(col).startsWith("_") && !["_id", "importado_em"].includes(col));
+  return colunas.length ? colunas : fallback;
+}
+
 // ── FLAGS DE OTIMIZAÇÃO ──────────────────────────────────────────────────────
 let _migNumericos = false; // true quando dados têm _qtd_num/_valor_num pré-computados
 let _migGtin      = false; // true quando dados têm _gtin pré-computado (join indexado)
@@ -906,55 +947,59 @@ async function iniciarServidor() {
         exemplo:  ["001", "Loja Centro"]
       }
     };
+    const TEMPLATES_DINAMICOS = [
+      { filename: "modelo_dados_brutos.csv", nome: "Dados Brutos", tipo: "dados_brutos" },
+      { filename: "modelo_categorias_depara.xlsx", nome: "De/Para Categorias", tipo: "categorias_depara" },
+      { filename: "modelo_lojas_depara.csv", nome: "De/Para Lojas", tipo: "lojas_depara" }
+    ];
 
     // Download público — sem autenticação
     app.get("/api/templates/:filename", async (req, res) => {
       try {
         const { filename } = req.params;
 
-        // Se há binário customizado salvo pelo usuário, serve ele com prioridade
-        if (filename.endsWith(".xlsx")) {
-          const stored = await db.collection("templates_importacao").findOne({ filename });
-          if (stored?.conteudoBase64) {
-            res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-            return res.send(Buffer.from(stored.conteudoBase64, "base64"));
-          }
+        if (filename === "modelo_dados_brutos.csv") {
+          const ultimoLog = await db.collection("logs_importacao")
+            .find({ tipo: "dados_brutos", importId: { $exists: true, $ne: null } })
+            .sort({ data: -1 })
+            .limit(1)
+            .next();
+          const docs = ultimoLog?.importId
+            ? await db.collection("dados_brutos").find({ _import_id: ultimoLog.importId }).sort({ _id: 1 }).toArray()
+            : [];
+          const fallback = ["Ano", "Mês", "Data", "Loja", "GTIN/PLU", "Produto", "Venda (Qtd)", "Venda (R$)", "Estoque Diario"];
+          const colunas = docs.length ? colunasDocumentoModelo(docs[0], fallback) : fallback;
+          return enviarCsv(res, filename, colunas, docs);
         }
 
-        // Gera XLSX on-the-fly para os De/Para (preserva GTINs como texto)
-        if (TEMPLATES_XLSX[filename]) {
-          const tpl = TEMPLATES_XLSX[filename];
-          const wb  = XLSX.utils.book_new();
-          const ws  = XLSX.utils.aoa_to_sheet([tpl.colunas, tpl.exemplo]);
-
-          // Força coluna CODBARRAS como texto para que Excel não converta em notação científica
-          const codIdx = tpl.colunas.indexOf("CODBARRAS");
-          if (codIdx >= 0) {
-            const colLetra = String.fromCharCode(65 + codIdx);
-            // Linha de cabeçalho (row 1) e linha de exemplo (row 2)
-            [`${colLetra}1`, `${colLetra}2`].forEach(addr => {
-              if (ws[addr]) { ws[addr].t = 's'; ws[addr].z = '@'; }
-            });
-            // Formato de coluna: '@' = texto
-            if (!ws['!cols']) ws['!cols'] = tpl.colunas.map(() => ({}));
-            ws['!cols'][codIdx] = { wch: 20, numFmt: '@' };
-          }
-
-          XLSX.utils.book_append_sheet(wb, ws, "Dados");
-          const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
-
-          res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-          res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-          return res.send(buffer);
+        if (filename === "modelo_categorias_depara.xlsx") {
+          const colunas = TEMPLATES_XLSX[filename].colunas;
+          const atuais = await db.collection("categorias_depara")
+            .find({}, { projection: { CODBARRAS: 1, CATEGORIA: 1, FAMILIA: 1, "NOME PRODUTO": 1 } })
+            .sort({ CATEGORIA: 1, FAMILIA: 1, "NOME PRODUTO": 1 })
+            .toArray();
+          const linhas = atuais.map(r => [
+            normalizarEAN(r.CODBARRAS),
+            limparTextoExibicao(r.CATEGORIA),
+            limparTextoExibicao(r.FAMILIA),
+            limparTextoExibicao(r["NOME PRODUTO"])
+          ]);
+          return enviarXlsx(res, filename, "Categorias", colunas, linhas, ["CODBARRAS"]);
         }
 
-        // CSV para dados_brutos (mantém comportamento atual)
-        const template = await db.collection("templates_importacao").findOne({ filename });
-        if (!template) return res.status(404).json({ erro: "Template não encontrado." });
-        res.setHeader("Content-Type", "text/csv; charset=utf-8");
-        res.setHeader("Content-Disposition", `attachment; filename="${template.filename}"`);
-        res.send("﻿" + template.conteudo);
+        if (filename === "modelo_lojas_depara.csv") {
+          const atuais = await db.collection("lojas_depara")
+            .find({}, { projection: { Cod_Loja: 1, Nome_Fantasia: 1 } })
+            .sort({ Cod_Loja: 1 })
+            .toArray();
+          const linhas = atuais.map(r => ({
+            Cod_Loja: limparTextoExibicao(r.Cod_Loja),
+            Nome_Fantasia: limparTextoExibicao(r.Nome_Fantasia)
+          }));
+          return enviarCsv(res, filename, ["Cod_Loja", "Nome_Fantasia"], linhas);
+        }
+
+        return res.status(404).json({ erro: "Template não encontrado." });
       } catch (error) {
         res.status(500).json({ erro: "Erro ao buscar template.", detalhe: error.message });
       }
@@ -963,11 +1008,16 @@ async function iniciarServidor() {
     // Listar templates (admin)
     app.get("/api/admin/templates", verificarTokenAdmin, async (req, res) => {
       try {
-        const templates = await db
-          .collection("templates_importacao")
-          .find({}, { projection: { conteudo: 0 } })
-          .sort({ nome: 1 })
-          .toArray();
+        const logs = await db.collection("logs_importacao").aggregate([
+          { $sort: { data: -1 } },
+          { $group: { _id: "$tipo", data: { $first: "$data" } } }
+        ]).toArray();
+        const dataPorTipo = new Map(logs.map(log => [log._id, log.data]));
+        const templates = TEMPLATES_DINAMICOS.map(t => ({
+          filename: t.filename,
+          nome: t.nome,
+          atualizadoEm: dataPorTipo.get(t.tipo) || null
+        }));
         res.json(templates);
       } catch (error) {
         res.status(500).json({ erro: "Erro ao listar templates." });

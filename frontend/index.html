@@ -759,7 +759,7 @@
     <!-- Sub-aba: Modelos de Importação -->
     <div id="gu-sub-modelos" class="gu-subpanel">
       <p style="font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--text-dim);margin-bottom:20px;line-height:1.6">
-        Arquivos usados como modelo na area de importação. Clique em <strong style="color:var(--text)">Subir Novo</strong> para substituir um modelo pelo seu arquivo atualizado.
+        Arquivos usados como modelo na area de importação. Os downloads usam as informações atuais cadastradas no banco.
       </p>
       <div class="gu-table-wrap">
         <table>
@@ -1849,8 +1849,7 @@ function combinarSelloutEstoquePorMes(vendasPorDia, estoquePorLojaDia) {
 }
 
 function shouldUseMonthlyMainChart(prefix, active) {
-  const lojaSelecionada = selectedValues(`${prefix}-loja`).length > 0;
-  return active.dim !== 'loja' && !lojaSelecionada;
+  return active.dim !== 'loja';
 }
 
 function setFirstChartTitle(tabId, title) {
@@ -2761,10 +2760,14 @@ function updateMultiSelect(selectOrId, renderMenu = false) {
   if (!select || select.dataset.multiFilter !== '1') return;
   const wrap = select.nextElementSibling;
   if (!wrap || !wrap.classList.contains('multi-select')) return;
+  const emptyLabel = select.options[0]?.textContent?.trim() || 'Todos';
+  const options = [...select.options].filter(o => o.value);
   const values = selectedValues(select.id);
   const labels = selectedLabels(select.id);
-  const emptyLabel = select.options[0]?.textContent?.trim() || 'Todos';
-  wrap.querySelector('.multi-select-label').textContent = formatSelection(labels, '', '') || emptyLabel;
+  const todasSelecionadas = options.length > 0 && options.every(o => o.selected);
+  wrap.querySelector('.multi-select-label').textContent = (!values.length || todasSelecionadas)
+    ? emptyLabel
+    : formatSelection(labels, '', '');
   const menu = wrap.querySelector('.multi-select-menu');
   if (!renderMenu && !wrap.classList.contains('open')) {
     menu.innerHTML = '';
@@ -2775,13 +2778,12 @@ function updateMultiSelect(selectOrId, renderMenu = false) {
   const cursorBusca = manterFocoBusca ? searchInputAtual.selectionStart : null;
   const busca = wrap.dataset.search || '';
   const buscaNorm = normalizarBusca(busca);
-  const options = [...select.options].filter(o => o.value);
   const filteredOptions = buscaNorm
     ? options.filter(o => normalizarBusca(`${o.textContent} ${o.value}`).includes(buscaNorm))
     : options;
   menu.innerHTML = [
     `<div class="multi-select-search"><input type="search" class="multi-select-search-input" placeholder="Buscar..." value="${escapeHtml(busca)}"></div>`,
-    `<label class="multi-select-option all"><input type="checkbox" value="" ${values.length ? '' : 'checked'}>${escapeHtml(emptyLabel)}</label>`,
+    `<label class="multi-select-option all"><input type="checkbox" value="" ${(!values.length || todasSelecionadas) ? 'checked' : ''}>${escapeHtml(emptyLabel)}</label>`,
     ...filteredOptions.map(o => `<label class="multi-select-option"><input type="checkbox" value="${escapeHtml(o.value)}" ${o.selected ? 'checked' : ''}>${escapeHtml(o.textContent)}</label>`),
     filteredOptions.length ? '' : '<div class="multi-select-empty">Nenhum resultado encontrado</div>'
   ].join('');
@@ -2804,7 +2806,8 @@ function updateMultiSelect(selectOrId, renderMenu = false) {
     if (input.classList.contains('multi-select-search-input')) return;
     input.addEventListener('change', () => {
       if (!input.value) {
-        [...select.options].forEach(o => { o.selected = false; });
+        const marcarTodas = options.some(o => !o.selected);
+        options.forEach(o => { o.selected = marcarTodas; });
         wrap.dataset.search = '';
       } else {
         const opt = [...select.options].find(o => o.value === input.value);
@@ -7454,11 +7457,6 @@ async function guCarregarModelos() {
           <td>
             <div class="td-actions">
               <a class="btn-gu senha" href="/api/templates/${escHtml(t.filename)}" download="${escHtml(t.filename)}" style="text-decoration:none">↓ Baixar</a>
-              <label class="btn-gu novo" style="cursor:pointer;margin:0">
-                ↑ Subir Novo
-                <input type="file" accept="${t.filename.endsWith('.xlsx') ? '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : '.csv,text/csv'}" style="display:none"
-                       onchange="guFazUploadModelo('${escHtml(t.filename)}', this)" />
-              </label>
             </div>
           </td>
         </tr>`;
