@@ -100,7 +100,8 @@ app.use((req, res, next) => {
     "/api/login",
     "/api/logout",
     "/api/admin/login",
-    "/api/admin/logout"
+    "/api/admin/logout",
+    "/api/cache/limpar"
   ].includes(req.path);
   if (metodoEscrita && !rotaSessao) {
     return res.status(403).json({
@@ -638,17 +639,29 @@ async function iniciarServidor() {
     const db = READ_ONLY ? criarDbSomenteLeitura(client.db(dbName)) : client.db(dbName);
 
     async function dadosVersion() {
-      if (Date.now() - _dadosVersionCache.ts < 5000) return _dadosVersionCache.value;
-      const [total, ultimoLog] = await Promise.all([
+      const [totalBrutos, totalLojas, totalCategorias, logs] = await Promise.all([
         db.collection("dados_brutos").countDocuments({}),
-        db.collection("logs_importacao")
-          .find({ tipo: "dados_brutos" }, { projection: { importId: 1, data: 1 } })
-          .sort({ data: -1 })
-          .limit(1)
-          .next()
+        db.collection("lojas_depara").countDocuments({}),
+        db.collection("categorias_depara").countDocuments({}),
+        db.collection("logs_importacao").aggregate([
+          { $sort: { data: -1 } },
+          {
+            $group: {
+              _id: "$tipo",
+              importId: { $first: "$importId" },
+              data: { $first: "$data" }
+            }
+          }
+        ]).toArray()
       ]);
-      const logKey = ultimoLog ? `${ultimoLog.importId || ""}:${ultimoLog.data ? new Date(ultimoLog.data).getTime() : ""}` : "sem-log";
-      _dadosVersionCache = { ts: Date.now(), value: `${total}:${logKey}` };
+      const logKey = logs
+        .map(log => `${log._id}:${log.importId || ""}:${log.data ? new Date(log.data).getTime() : ""}`)
+        .sort()
+        .join("|") || "sem-log";
+      _dadosVersionCache = {
+        ts: Date.now(),
+        value: `${totalBrutos}:${totalLojas}:${totalCategorias}:${logKey}`
+      };
       return _dadosVersionCache.value;
     }
 
@@ -707,16 +720,17 @@ async function iniciarServidor() {
     // ── FUNÇÕES DE OTIMIZAÇÃO ────────────────────────────────────────────────
     async function atualizarFlagsMigracao() {
       const catPendente = { _cat: { $exists: false } };
-      const [s1, s2, s3, s4] = await Promise.all([
+      const [s1, s2, s3, s4, catCount] = await Promise.all([
         db.collection("dados_brutos").findOne({ _qtd_num:  { $exists: true } }, { projection: { _id: 1 } }),
         db.collection("dados_brutos").findOne({ _gtin:     { $exists: true } }, { projection: { _id: 1 } }),
         db.collection("dados_brutos").findOne({ _data_iso: { $exists: true } }, { projection: { _id: 1 } }),
-        db.collection("dados_brutos").findOne(catPendente, { projection: { _id: 1 } })
+        db.collection("dados_brutos").findOne(catPendente, { projection: { _id: 1 } }),
+        db.collection("categorias_depara").countDocuments({})
       ]);
       _migNumericos = !!s1;
       _migGtin      = !!s2;
       _migData      = !!s3;
-      _migCat       = !s4;
+      _migCat       = catCount > 0 && !s4;
       _catCountCache = -1; // força re-leitura do catCount
       console.log(`📊 Otimizações ativas: numéricos=${_migNumericos}, gtin=${_migGtin}, data=${_migData}, cat=${_migCat}`);
     }
@@ -941,6 +955,16 @@ async function iniciarServidor() {
         readOnly: READ_ONLY,
         ambiente: READ_ONLY ? "teste" : "producao"
       });
+    });
+
+    app.post("/api/cache/limpar", (req, res) => {
+      cacheClear();
+      _migNumericos = false;
+      _migGtin = false;
+      _migData = false;
+      _migCat = false;
+      _catCountCache = -1;
+      res.json({ ok: true });
     });
 
     app.get("/reset-senha", (req, res) => {

@@ -1535,6 +1535,7 @@ const DASHBOARD_CACHE_BUST_KEY = 'soneda_dashboard_cache_bust';
 const AGRE_CACHE_PREFIX = 'agre_v8__';
 const DASHBOARD_CACHE_SCHEMA = 'monthly-main-v1';
 const DASHBOARD_CACHE_SCHEMA_KEY = 'soneda_dashboard_cache_schema';
+let DASHBOARD_RUNTIME_CACHE_BUST = String(Date.now());
 
 function agreCache(key, data) {
   const cacheKey = `${AGRE_CACHE_PREFIX}${key}`;
@@ -1565,6 +1566,7 @@ function agreCache(key, data) {
 }
 
 function limparCacheDashboard(notificarOutrasAbas = true) {
+  DASHBOARD_RUNTIME_CACHE_BUST = String(Date.now());
   _agreMemCache.clear();
   Object.keys(sessionStorage)
     .filter(k => k.startsWith('agre__') || /^agre_v\d+__/.test(k))
@@ -1880,7 +1882,13 @@ function corrigirLabelsPeriodo() {
 async function fetchJSON(endpoint, signal) {
   const opts = { cache: 'no-store' };
   if (signal) opts.signal = signal;
-  const res = await fetch(`${API_BASE}${endpoint}`, opts);
+  const endpointStr = String(endpoint);
+  const precisaCacheBust = /\/api\/(dashboard|dados-brutos|dados-tratados|lojas-depara|categorias-depara)(?:\?|$)/.test(endpointStr);
+  const separador = endpointStr.includes('?') ? '&' : '?';
+  const endpointFinal = precisaCacheBust
+    ? `${endpointStr}${separador}_cb=${encodeURIComponent(DASHBOARD_RUNTIME_CACHE_BUST)}`
+    : endpointStr;
+  const res = await fetch(`${API_BASE}${endpointFinal}`, opts);
   if (!res.ok) throw new Error(`HTTP ${res.status} em ${endpoint}`);
   return res.json();
 }
@@ -2204,8 +2212,19 @@ async function enviarDadosBrutos(inputId, rota) {
   status.className = 'import-status err';
 }
 
-function recarregarDados() {
+async function limparCacheServidor() {
+  try {
+    await fetch(`${API_BASE}/api/cache/limpar`, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (_) {}
+}
+
+async function recarregarDados() {
   limparCacheDashboard();
+  await limparCacheServidor();
   window.location.reload();
 }
 
@@ -2254,6 +2273,7 @@ async function enviarXLSX(inputId, rota) {
 // â”€â”€ INICIALIZAÇÃO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function init() {
   try {
+    limparCacheDashboard(false);
     atualizarBotaoTema();
     sincronizarDefaultsGraficos();
     await carregarConfigApp();
