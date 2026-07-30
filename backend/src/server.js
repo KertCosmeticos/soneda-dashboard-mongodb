@@ -386,6 +386,27 @@ function brValorExpr() {
   return brToDouble({ $getField: "Venda (R$)" });
 }
 
+function vendaQtdExpr() {
+  return {
+    $ifNull: [
+      "$_qtd_num",
+      brToDouble({
+        $ifNull: [
+          { $getField: "Venda (Qtd)" },
+          { $ifNull: [
+            { $getField: "Venda Nf Quantidade" },
+            { $getField: "Venda Pdv Quantidade" }
+          ] }
+        ]
+      })
+    ]
+  };
+}
+
+function vendaValorExpr() {
+  return { $ifNull: ["$_valor_num", brValorExpr()] };
+}
+
 function matchTextoOuNumero(valor) {
   const s = String(valor);
   const n = Number(s);
@@ -957,13 +978,10 @@ async function iniciarServidor() {
       });
     });
 
-    app.post("/api/cache/limpar", (req, res) => {
+    app.post("/api/cache/limpar", async (req, res) => {
       cacheClear();
-      _migNumericos = false;
-      _migGtin = false;
-      _migData = false;
-      _migCat = false;
       _catCountCache = -1;
+      await atualizarFlagsMigracao();
       res.json({ ok: true });
     });
 
@@ -1652,8 +1670,8 @@ async function iniciarServidor() {
           {
             $group: {
               _id: null,
-              total_vendido: { $sum: _migNumericos ? "$_qtd_num"   : brToDouble({ $getField: "Venda (Qtd)" }) },
-              total_valor:   { $sum: _migNumericos ? "$_valor_num" : brValorExpr() },
+              total_vendido: { $sum: vendaQtdExpr() },
+              total_valor:   { $sum: vendaValorExpr() },
               lojas:         { $addToSet: "$Loja" }
             }
           },
@@ -1708,8 +1726,8 @@ async function iniciarServidor() {
             {
               $group: {
                 _id: null,
-                total_vendido: { $sum: _migNumericos ? "$_qtd_num"  : brToDouble({ $getField: "Venda (Qtd)" }) },
-                total_valor:   { $sum: _migNumericos ? "$_valor_num" : brValorExpr() },
+                total_vendido: { $sum: vendaQtdExpr() },
+                total_valor:   { $sum: vendaValorExpr() },
                 lojas:         { $addToSet: "$Loja" }
               }
             },
@@ -1717,7 +1735,7 @@ async function iniciarServidor() {
           ]).toArray(),
           db.collection("dados_brutos").aggregate([
             ...matchStage, ...dateStage,
-            { $group: { _id: "$Loja", qty: { $sum: _migNumericos ? "$_qtd_num" : brToDouble({ $getField: "Venda (Qtd)" }) } } },
+            { $group: { _id: "$Loja", qty: { $sum: vendaQtdExpr() } } },
             { $sort: { qty: -1 } },
             { $limit: 1 }
           ]).toArray()
@@ -1773,8 +1791,8 @@ async function iniciarServidor() {
 
         // Usa campos numéricos pré-computados quando disponíveis
         const grp = {
-          qty:   { $sum: _migNumericos ? "$_qtd_num"  : brToDouble({ $getField: "Venda (Qtd)" }) },
-          valor: { $sum: _migNumericos ? "$_valor_num" : brValorExpr() }
+          qty:   { $sum: vendaQtdExpr() },
+          valor: { $sum: vendaValorExpr() }
         };
 
         const AGG_OPTS = { allowDiskUse: true };
