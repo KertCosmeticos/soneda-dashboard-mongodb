@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const { MongoClient, ObjectId } = require("mongodb");
+const { MongoClient, ObjectId, GridFSBucket } = require("mongodb");
 const multer = require("multer");
 const csv = require("csv-parser");
 const XLSX = require("xlsx");
@@ -139,6 +139,21 @@ function enviarCsv(res, filename, colunas, linhas) {
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   return res.send(conteudo);
+}
+
+async function enviarCsvCursor(res, filename, colunas, cursor) {
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.write("\uFEFF" + colunas.map(csvCell).join(";") + "\n");
+  try {
+    for await (const linha of cursor) {
+      res.write(colunas.map(col => csvCell(linha[col] ?? "")).join(";") + "\n");
+    }
+    res.end();
+  } catch (error) {
+    if (!res.headersSent) throw error;
+    res.destroy(error);
+  }
 }
 
 function enviarXlsx(res, filename, sheetName, colunas, linhas, colunasTexto = []) {
@@ -954,25 +969,83 @@ async function iniciarServidor() {
     ];
 
     // Download público — sem autenticação
+    const arquivosImportacaoBucket = new GridFSBucket(db, { bucketName: "arquivos_importacao" });
+
+    async function buscarUltimaImportacao(tipo) {
+      return db.collection("logs_importacao")
+        .find({ tipo, importId: { $exists: true, $ne: null } })
+        .sort({ data: -1 })
+        .limit(1)
+        .next();
+    }
+
+    async function salvarArquivoImportacao(req, tipo, importId, nomeArquivo) {
+      if (!req.file?.path) return null;
+      const filename = `${tipo}_${importId}_${nomeArquivo || req.file.filename}`;
+      const uploadStream = arquivosImportacaoBucket.openUploadStream(filename, {
+        metadata: {
+          tipo,
+          importId,
+          originalName: nomeArquivo || req.file.originalname || req.file.filename,
+          mimetype: req.file.mimetype || "application/octet-stream",
+          data: new Date()
+        }
+      });
+      await new Promise((resolve, reject) => {
+        fs.createReadStream(req.file.path)
+          .on("error", reject)
+          .pipe(uploadStream)
+          .on("error", reject)
+          .on("finish", resolve);
+      });
+      return {
+        arquivoGridFsId: uploadStream.id,
+        arquivoGridFsNome: filename,
+        arquivoOriginalNome: nomeArquivo || req.file.originalname || req.file.filename,
+        arquivoMimeType: req.file.mimetype || "application/octet-stream"
+      };
+    }
+
+    async function removerArquivosImportacaoPorFiltro(filtro) {
+      const query = {};
+      Object.entries(filtro || {}).forEach(([key, value]) => {
+        query[`metadata.${key}`] = value;
+      });
+      const files = await db.collection("arquivos_importacao.files").find(query).project({ _id: 1 }).toArray();
+      for (const file of files) {
+        try { await arquivosImportacaoBucket.delete(file._id); } catch (_) {}
+      }
+    }
+
+    async function enviarArquivoImportadoSeExistir(res, log, filename) {
+      if (!log?.arquivoGridFsId) return false;
+      const fileId = typeof log.arquivoGridFsId === "string" ? new ObjectId(log.arquivoGridFsId) : log.arquivoGridFsId;
+      const file = await db.collection("arquivos_importacao.files").findOne({ _id: fileId });
+      if (!file) return false;
+      res.setHeader("Content-Type", file.metadata?.mimetype || log.arquivoMimeType || "application/octet-stream");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename || file.metadata?.originalName || log.arquivo || file.filename}"`);
+      arquivosImportacaoBucket.openDownloadStream(fileId).pipe(res);
+      return true;
+    }
+
     app.get("/api/templates/:filename", async (req, res) => {
       try {
         const { filename } = req.params;
 
         if (filename === "modelo_dados_brutos.csv") {
-          const ultimoLog = await db.collection("logs_importacao")
-            .find({ tipo: "dados_brutos", importId: { $exists: true, $ne: null } })
-            .sort({ data: -1 })
-            .limit(1)
-            .next();
-          const docs = ultimoLog?.importId
-            ? await db.collection("dados_brutos").find({ _import_id: ultimoLog.importId }).sort({ _id: 1 }).toArray()
-            : [];
           const fallback = ["Ano", "Mês", "Data", "Loja", "GTIN/PLU", "Produto", "Venda (Qtd)", "Venda (R$)", "Estoque Diario"];
-          const colunas = docs.length ? colunasDocumentoModelo(docs[0], fallback) : fallback;
-          return enviarCsv(res, filename, colunas, docs);
+          const ultimoLog = await buscarUltimaImportacao("dados_brutos");
+          if (await enviarArquivoImportadoSeExistir(res, ultimoLog, filename)) return;
+          const filtro = ultimoLog?.importId ? { _import_id: ultimoLog.importId } : {};
+          const primeiro = await db.collection("dados_brutos").find(filtro).sort({ _id: 1 }).limit(1).next();
+          const colunas = primeiro ? colunasDocumentoModelo(primeiro, fallback) : fallback;
+          const cursor = db.collection("dados_brutos").find(filtro).sort({ _id: 1 });
+          return enviarCsvCursor(res, filename, colunas, cursor);
         }
 
         if (filename === "modelo_categorias_depara.xlsx") {
+          const ultimoLog = await buscarUltimaImportacao("categorias_depara");
+          if (await enviarArquivoImportadoSeExistir(res, ultimoLog, filename)) return;
           const colunas = TEMPLATES_XLSX[filename].colunas;
           const atuais = await db.collection("categorias_depara")
             .find({}, { projection: { CODBARRAS: 1, CATEGORIA: 1, FAMILIA: 1, "NOME PRODUTO": 1 } })
@@ -988,8 +1061,11 @@ async function iniciarServidor() {
         }
 
         if (filename === "modelo_lojas_depara.csv") {
+          const ultimoLog = await buscarUltimaImportacao("lojas_depara");
+          if (await enviarArquivoImportadoSeExistir(res, ultimoLog, filename)) return;
+          const filtro = ultimoLog?.importId ? { _import_id: ultimoLog.importId } : {};
           const atuais = await db.collection("lojas_depara")
-            .find({}, { projection: { Cod_Loja: 1, Nome_Fantasia: 1 } })
+            .find(filtro, { projection: { Cod_Loja: 1, Nome_Fantasia: 1 } })
             .sort({ Cod_Loja: 1 })
             .toArray();
           const linhas = atuais.map(r => ({
@@ -2465,19 +2541,27 @@ async function iniciarServidor() {
       if (!req.file) return res.status(400).json({ erro: "Nenhum arquivo enviado." });
       const importId    = req.body.importId || crypto.randomBytes(8).toString("hex");
       const nomeArquivo = req.file.originalname || req.file.filename;
+      let arquivoImportado = null;
       try {
+        await removerArquivosImportacaoPorFiltro({ tipo: "categorias_depara" });
+        await db.collection("logs_importacao").deleteMany({ tipo: "categorias_depara" });
+        arquivoImportado = await salvarArquivoImportacao(req, "categorias_depara", importId, nomeArquivo);
         const inserido = await processarXLSX(req, db.collection("categorias_depara"), {
           deleteFirst: true,
           extraCampos: { _import_id: importId }
         });
         await db.collection("logs_importacao").insertOne({
           importId, tipo: "categorias_depara", arquivo: nomeArquivo,
-          usuario: req.usuarioLogado, total: inserido, data: new Date()
+          usuario: req.usuarioLogado, total: inserido, data: new Date(),
+          ...arquivoImportado
         });
         cacheClear();
         _migCat = false; _catCountCache = -1;
         res.json({ ok: true, inserido, ultimo: true, mensagem: "Categorias importadas" });
       } catch (error) {
+        if (arquivoImportado?.arquivoGridFsId) {
+          try { await arquivosImportacaoBucket.delete(arquivoImportado.arquivoGridFsId); } catch (_) {}
+        }
         res.status(500).json({ erro: "Erro ao salvar no banco de dados", detalhe: error.message });
       }
     });
@@ -2486,18 +2570,27 @@ async function iniciarServidor() {
       if (!req.file) return res.status(400).json({ erro: "Nenhum arquivo enviado." });
       const importId    = req.body.importId || crypto.randomBytes(8).toString("hex");
       const nomeArquivo = req.file.originalname || req.file.filename;
+      const extArquivo  = path.extname(nomeArquivo).toLowerCase();
+      let arquivoImportado = null;
       try {
-        const inserido = await processarXLSX(req, db.collection("lojas_depara"), {
-          deleteFirst: true,
-          extraCampos: { _import_id: importId }
-        });
+        await removerArquivosImportacaoPorFiltro({ tipo: "lojas_depara" });
+        await db.collection("logs_importacao").deleteMany({ tipo: "lojas_depara" });
+        arquivoImportado = await salvarArquivoImportacao(req, "lojas_depara", importId, nomeArquivo);
+        const opcoesImportacao = { deleteFirst: true, extraCampos: { _import_id: importId } };
+        const inserido = extArquivo === ".xls" || extArquivo === ".xlsx"
+          ? await processarXLSX(req, db.collection("lojas_depara"), opcoesImportacao)
+          : await processarChunkCSV(req, db.collection("lojas_depara"), false, opcoesImportacao);
         await db.collection("logs_importacao").insertOne({
           importId, tipo: "lojas_depara", arquivo: nomeArquivo,
-          usuario: req.usuarioLogado, total: inserido, data: new Date()
+          usuario: req.usuarioLogado, total: inserido, data: new Date(),
+          ...arquivoImportado
         });
         cacheClear();
         res.json({ ok: true, inserido, ultimo: true, mensagem: "Lojas importadas" });
       } catch (error) {
+        if (arquivoImportado?.arquivoGridFsId) {
+          try { await arquivosImportacaoBucket.delete(arquivoImportado.arquivoGridFsId); } catch (_) {}
+        }
         res.status(500).json({ erro: "Erro ao salvar no banco de dados", detalhe: error.message });
       }
     });
@@ -2559,19 +2652,28 @@ async function iniciarServidor() {
 
         let removidos = 0;
         if (log.tipo === "dados_brutos") {
-          const result = await db.collection("dados_brutos").deleteMany({ _import_id: log.importId });
+          const filtro = log.importId ? { _import_id: log.importId } : {};
+          const result = await db.collection("dados_brutos").deleteMany(filtro);
           removidos = result.deletedCount;
           await atualizarFlagsMigracao();
         } else if (log.tipo === "categorias_depara") {
-          const result = await db.collection("categorias_depara").deleteMany({});
+          const filtro = log.importId ? { _import_id: log.importId } : {};
+          const result = await db.collection("categorias_depara").deleteMany(filtro);
           removidos = result.deletedCount;
           _migCat = false;
           _catCountCache = -1;
         } else if (log.tipo === "lojas_depara") {
-          const result = await db.collection("lojas_depara").deleteMany({});
+          const filtro = log.importId ? { _import_id: log.importId } : {};
+          const result = await db.collection("lojas_depara").deleteMany(filtro);
           removidos = result.deletedCount;
         }
 
+        if (log.arquivoGridFsId) {
+          try {
+            const fileId = typeof log.arquivoGridFsId === "string" ? new ObjectId(log.arquivoGridFsId) : log.arquivoGridFsId;
+            await arquivosImportacaoBucket.delete(fileId);
+          } catch (_) {}
+        }
         await db.collection("logs_importacao").deleteOne({ _id: new ObjectId(req.params.id) });
         cacheClear();
         res.json({ ok: true, removidos });

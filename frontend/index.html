@@ -547,28 +547,28 @@
       <div class="import-row">
         <div class="import-label">Dados Brutos</div>
         <input class="import-file" type="file" id="csvDadosBrutos" accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
-        <a class="btn-modelo" href="/api/templates/modelo_dados_brutos.csv" download="modelo_dados_brutos.csv">
+        <button type="button" class="btn-modelo" onclick="baixarModeloImportacao('modelo_dados_brutos.csv')">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Modelo
-        </a>
+        </button>
         <button class="btn-import" onclick="enviarDadosBrutos('csvDadosBrutos', '/api/importar/dados-brutos')">Importar</button>
       </div>
       <div class="import-row">
         <div class="import-label">De/Para Categorias</div>
         <input class="import-file" type="file" id="xlsxCategorias" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
-        <a class="btn-modelo" href="/api/templates/modelo_categorias_depara.xlsx" download="modelo_categorias_depara.xlsx">
+        <button type="button" class="btn-modelo" onclick="baixarModeloImportacao('modelo_categorias_depara.xlsx')">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Modelo
-        </a>
+        </button>
         <button class="btn-import" onclick="enviarXLSX('xlsxCategorias', '/api/importar/categorias-depara')">Importar</button>
       </div>
       <div class="import-row">
         <div class="import-label">De/Para Lojas</div>
         <input class="import-file" type="file" id="xlsxLojas" accept=".csv,text/csv" />
-        <a class="btn-modelo" href="/api/templates/modelo_lojas_depara.csv" download="modelo_lojas_depara.csv">
+        <button type="button" class="btn-modelo" onclick="baixarModeloImportacao('modelo_lojas_depara.csv')">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Modelo
-        </a>
+        </button>
         <button class="btn-import" onclick="enviarXLSX('xlsxLojas', '/api/importar/lojas-depara')">Importar</button>
       </div>
       <button class="btn-import secondary" onclick="recarregarDados()">Atualizar painel</button>
@@ -2000,6 +2000,98 @@ async function admLogout() {
   admAtualizarUI();
 }
 
+function atualizarBarraImportacao(status, pct, msg) {
+  const percentual = Math.max(0, Math.min(100, Math.round(pct || 0)));
+  status.innerHTML = `
+    <div style="width:min(520px,100%);height:7px;background:var(--surface2);border:1px solid var(--border);border-radius:999px;overflow:hidden;margin-bottom:8px">
+      <div style="height:100%;width:${percentual}%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .2s"></div>
+    </div>
+    <span style="font-family:'DM Mono',monospace">${percentual}% ${msg || ''}</span>`;
+  status.className = 'import-status';
+}
+
+function postarImportacaoComProgresso(url, formData, token, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.upload.onprogress = event => {
+      if (event.lengthComputable && typeof onProgress === 'function') {
+        onProgress(event.loaded / event.total);
+      }
+    };
+    xhr.onload = () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText || '{}'); } catch (_) {
+        return reject(new Error(`Servidor retornou resposta invalida (${xhr.status}).`));
+      }
+      if (xhr.status === 401) {
+        sessionStorage.removeItem('adm_token');
+        admAtualizarUI();
+        return reject(new Error('Sessao expirada. Faca login novamente.'));
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        return reject(new Error(data.detalhe || data.erro || 'Erro desconhecido'));
+      }
+      resolve(data);
+    };
+    xhr.onerror = () => reject(new Error('Falha de rede ao enviar arquivo.'));
+    xhr.send(formData);
+  });
+}
+
+async function baixarModeloImportacao(filename) {
+  const status = document.getElementById('import-status');
+  const url = `${API_BASE}/api/templates/${encodeURIComponent(filename)}?t=${Date.now()}`;
+  if (status) {
+    status.textContent = `Preparando ${filename}...`;
+    status.className = 'import-status';
+  }
+
+  for (let tentativa = 1; tentativa <= 10; tentativa++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    try {
+      const res = await fetch(url, { method: 'GET', cache: 'no-store', signal: controller.signal });
+      clearTimeout(timeout);
+      const contentType = (res.headers.get('content-type') || '').toLowerCase();
+      if ([502, 503, 504].includes(res.status) || contentType.includes('text/html')) {
+        if (tentativa < 10) {
+          if (status) status.textContent = `Servidor iniciando, tentando novamente (${tentativa}/10)...`;
+          await new Promise(resolve => setTimeout(resolve, 1200));
+          continue;
+        }
+      }
+      if (!res.ok) {
+        let detalhe = '';
+        try { detalhe = (await res.json()).detalhe || ''; } catch (_) {}
+        throw new Error(detalhe || `HTTP ${res.status}`);
+      }
+      await res.body?.cancel?.();
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      if (status) {
+        status.textContent = `Baixando ${filename}...`;
+        status.className = 'import-status ok';
+      }
+      return;
+    } catch (error) {
+      clearTimeout(timeout);
+      if (tentativa >= 10 || error.name !== 'AbortError') {
+        if (status) {
+          status.textContent = `Erro ao baixar modelo: ${error.message}`;
+          status.className = 'import-status err';
+        }
+        return;
+      }
+    }
+  }
+}
+
 async function enviarCSV(inputId, rota) {
   if (bloquearSomenteLeitura('Importacao')) return;
   const fileInput = document.getElementById(inputId);
@@ -2060,24 +2152,12 @@ async function enviarCSV(inputId, rota) {
       setProgresso(i, totalLotes,
         `Enviando lote ${i + 1} de ${totalLotes} - ${fatia.length.toLocaleString('pt-BR')} linhas - total ${dados.length.toLocaleString('pt-BR')} registros`);
 
-      const response = await fetch(`${API_BASE}${rota}`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData,
+      const data = await postarImportacaoComProgresso(`${API_BASE}${rota}`, formData, token, frac => {
+        setProgresso(i + frac, totalLotes,
+          `Enviando lote ${i + 1} de ${totalLotes} - ${fatia.length.toLocaleString('pt-BR')} linhas - total ${dados.length.toLocaleString('pt-BR')} registros`);
+      }).catch(error => {
+        throw new Error(`Lote ${i + 1}: ${error.message}`);
       });
-
-      const textoResp = await response.text();
-      let data;
-      try { data = JSON.parse(textoResp); } catch (_) {
-        throw new Error(`Lote ${i + 1}: servidor retornou resposta inválida (${response.status}). Verifique o servidor e tente novamente.`);
-      }
-
-      if (response.status === 401) {
-        sessionStorage.removeItem('adm_token');
-        admAtualizarUI();
-        throw new Error('Sessão expirada. Faça login novamente.');
-      }
-      if (!response.ok) throw new Error(`Lote ${i + 1}: ${data.detalhe || data.erro || 'Erro desconhecido'}`);
 
       totalInserido += data.inserido || 0;
       if (data.retencao) retencaoInfo = data.retencao;
@@ -2155,20 +2235,9 @@ async function enviarXLSX(inputId, rota) {
     const formData = new FormData();
     formData.append('file', arquivo);
 
-    const response = await fetch(`${API_BASE}${rota}`, {
-      method:  'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body:    formData
+    const data = await postarImportacaoComProgresso(`${API_BASE}${rota}`, formData, token, frac => {
+      atualizarBarraImportacao(status, frac * 100, `Enviando ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`);
     });
-
-    if (response.status === 401) {
-      sessionStorage.removeItem('adm_token');
-      admAtualizarUI();
-      throw new Error('Sessão expirada. Faça login novamente.');
-    }
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.erro || data.detalhe || 'Erro desconhecido');
 
     status.innerHTML = `✓ Importação concluída · <strong>${(data.inserido || 0).toLocaleString('pt-BR')}</strong> registros inseridos.`;
     status.className = 'import-status ok';
@@ -2208,9 +2277,9 @@ async function init() {
           const keys    = Object.keys(r).filter(k => k !== '_id');
           const codKey  = keys.find(k => /cod.?loja|codigo.?loja|cod_loja|loja|filial/i.test(k)) || keys[0];
           const nomeKey = keys.find(k => /nome.?fantasia|nome_fantasia|nome.?loja|nome|fantasia/i.test(k)) || keys[1];
-          const cod  = normCodLoja((r[codKey]  || '').toString().trim());
+          const cod  = (r[codKey]  || '').toString().trim();
           const nome = (r[nomeKey] || '').toString().trim();
-          if (cod && nome) deParaMap[cod] = nome;
+          registrarLojaDePara(cod, nome);
         });
       } catch(e) { console.warn('De-Para de lojas não carregado:', e.message); }
     } else { console.warn('De-Para de lojas não carregado:', deParaRes.reason?.message); }
@@ -2314,7 +2383,7 @@ async function init() {
         })}`;
     } else {
       document.getElementById('status-msg').textContent =
-        `${rawData.length.toLocaleString('pt-BR')} registros carregados do MongoDB ? ${Object.keys(deParaMap).length} lojas no de-para`;
+        `${rawData.length.toLocaleString('pt-BR')} registros carregados do MongoDB ? ${totalLojasDePara()} lojas no de-para`;
     }
 
     preencherAnoMesTodasAbas();
@@ -2351,6 +2420,27 @@ function normCodLoja(v) {
   const s = String(v ?? '').trim();
   const n = parseInt(s, 10);
   return !isNaN(n) ? String(n) : s;
+}
+
+function registrarLojaDePara(codigo, nome) {
+  const nomeLimpo = String(nome ?? '').trim();
+  const raw = String(codigo ?? '').trim();
+  const norm = normCodLoja(raw);
+  const padded = /^\d+$/.test(norm) ? norm.padStart(2, '0') : norm;
+  if (!nomeLimpo || !norm) return;
+  [raw, norm, padded].filter(Boolean).forEach(key => { deParaMap[key] = nomeLimpo; });
+}
+
+function lojaExisteDePara(loja) {
+  const raw = String(loja ?? '').trim();
+  if (!raw) return false;
+  const norm = normCodLoja(raw);
+  const padded = /^\d+$/.test(norm) ? norm.padStart(2, '0') : norm;
+  return Boolean(deParaMap[raw] || deParaMap[norm] || deParaMap[padded]);
+}
+
+function totalLojasDePara() {
+  return new Set(Object.keys(deParaMap || {}).map(k => normCodLoja(k)).filter(Boolean)).size;
 }
 
 
@@ -2830,12 +2920,14 @@ document.addEventListener('click', e => {
 });
 
 function filtroLojas(apenasComDePara = false) {
-  const base = filterOptions.lojas.length
+  const lojasDados = filterOptions.lojas.length
     ? filterOptions.lojas
     : [...new Set(rawData.map(r => col(r,'Loja','loja')).filter(Boolean))];
+  const lojasDePara = Object.keys(deParaMap || {});
+  const base = (apenasComDePara || lojasDados.length === 0) ? [...lojasDados, ...lojasDePara] : lojasDados;
   return base
-    .map(l => String(l).trim())
-    .filter(l => l && (!apenasComDePara || deParaMap[l]))
+    .map(l => normCodLoja(String(l).trim()))
+    .filter((l, idx, arr) => l && arr.indexOf(l) === idx && (!apenasComDePara || lojaExisteDePara(l)))
     .sort((a,b) => +a - +b);
 }
 
@@ -4603,8 +4695,8 @@ function d3Renderizar() {
     const l   = col(r,'Loja','loja'); if (!l) return;
     const est = parseBR(col(r,'Estoque Diario','Estoque Diário','Estoque','estoque'));
     const key = l.trim();
-    if (!deParaMap[key]) return;
-    if (!mapLoja[key]) mapLoja[key] = { loja: key, nome: deParaMap[key], qty: 0 };
+    if (!lojaExisteDePara(key)) return;
+    if (!mapLoja[key]) mapLoja[key] = { loja: key, nome: nomeLojaDePara(key), qty: 0 };
     mapLoja[key].qty += est;
   });
 
@@ -4615,8 +4707,8 @@ function d3Renderizar() {
     const l   = col(r,'Loja','loja'); if (!l) return;
     const est = parseBR(col(r,'Estoque Diario','Estoque Diário','Estoque','estoque'));
     const key = l.trim();
-    if (!deParaMap[key]) return;
-    if (!mapLojaTabela[key]) mapLojaTabela[key] = { loja: key, nome: deParaMap[key], qty: 0 };
+    if (!lojaExisteDePara(key)) return;
+    if (!mapLojaTabela[key]) mapLojaTabela[key] = { loja: key, nome: nomeLojaDePara(key), qty: 0 };
     mapLojaTabela[key].qty += est;
   });
   const byLojaTabela = Object.values(mapLojaTabela).sort((a,b) => b.qty - a.qty);
@@ -4699,7 +4791,7 @@ function d3Renderizar() {
   const lojas = loja ? [loja] : (() => {
     const totPorLoja = {};
     dadosChart.forEach(r => {
-      const l = col(r,'Loja','loja'); if (!l || !deParaMap[l]) return;
+      const l = col(r,'Loja','loja'); if (!l || !lojaExisteDePara(l)) return;
       const est = parseBR(col(r,'Estoque Diario','Estoque Diário','Estoque','estoque'));
       totPorLoja[l] = (totPorLoja[l] || 0) + est;
     });
@@ -5646,7 +5738,7 @@ function seOpcoesLojas() {
   const lojasFiltro = (filterOptions.lojas || []).map(l => normCodLoja(String(l || '').trim())).filter(Boolean);
   const lojasDePara = Object.keys(deParaMap || {}).map(l => normCodLoja(l)).filter(Boolean);
   return [...new Set([...lojasFiltro, ...lojasDePara])]
-    .filter(l => l && deParaMap[l])
+    .filter(l => l && lojaExisteDePara(l))
     .sort((a,b) => +a - +b);
 }
 
@@ -5690,7 +5782,7 @@ function seConstruirFiltros() {
   );
 
   document.getElementById('se-status-msg').textContent =
-    `${rawData.length.toLocaleString('pt-BR')} registros carregados · ${Object.keys(deParaMap).length} lojas no de-para`;
+    `${rawData.length.toLocaleString('pt-BR')} registros carregados · ${totalLojasDePara()} lojas no de-para`;
 }
 
 function seLimparFiltros() {
@@ -5719,7 +5811,7 @@ function seFiltrar(excl) {
     const lojaKey = String(lojaRaw || '').trim();
 
     // Regra: loja fora do De-Para não existe para o painel
-    if (!lojaKey || !deParaMap[lojaKey]) return false;
+    if (!lojaKey || !lojaExisteDePara(lojaKey)) return false;
 
     if (!hasSelectedValue(anos, col(r,'Ano'))) return false;
     if (!hasSelectedValue(meses, col(r,'Mês','Mes'))) return false;
@@ -5753,7 +5845,7 @@ function seAgruparPorLoja(data) {
 
   data.forEach(r => {
     const loja = String(col(r,'Loja','loja') || '').trim();
-    if (!loja || !deParaMap[loja]) return;
+    if (!loja || !lojaExisteDePara(loja)) return;
 
     const sellout = parseBR(col(r,'Venda (Qtd)','Venda Nf Quantidade','Venda Pdv Quantidade'));
     const estoque = parseBR(col(r,'Estoque Diario','Estoque Diário','Estoque','estoque'));
@@ -5761,7 +5853,7 @@ function seAgruparPorLoja(data) {
     if (!map[loja]) {
       map[loja] = {
         loja,
-        nome: deParaMap[loja],
+        nome: nomeLojaDePara(loja),
         sellout: 0,
         estoque: 0,
         risco: ''
@@ -6181,7 +6273,7 @@ function seAgruparPorData(data) {
   const map = {};
   data.forEach(r => {
     const loja = String(col(r,'Loja','loja') || '').trim();
-    if (!loja || !deParaMap[loja]) return;
+    if (!loja || !lojaExisteDePara(loja)) return;
     const dataOriginal = String(col(r,'Data','data') || '').trim();
     if (!dataOriginal) return;
     const dt  = parseDataBR(dataOriginal);
@@ -7647,6 +7739,7 @@ async function guExcluirImportacao(id, arquivo, tipo) {
     msgEl.textContent = 'Importação desfeita com sucesso.';
     limparCacheDashboard();
     guCarregarLogs();
+    setTimeout(() => recarregarDados(), 900);
     setTimeout(() => { msgEl.textContent = ''; }, 4000);
   } catch (err) {
     msgEl.className  = 'gu-msg err';
