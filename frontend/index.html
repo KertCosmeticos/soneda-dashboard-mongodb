@@ -3321,7 +3321,7 @@ async function renderizar() {
       return { loja, nome, qty: r.qty };
     })
     .filter(r => r.loja);
-  const totalFiltrado = (ag, byLoja) => ag && ag.por_dia
+  const totalFiltrado = (ag, byLoja) => ag && Array.isArray(ag.por_dia) && ag.por_dia.length > 0
     ? ag.por_dia.reduce((s, r) => s + (r.qty || 0), 0)
     : byLoja.reduce((s, r) => s + r.qty, 0);
   const chartRowsFromAg = (ag, byLoja) => {
@@ -3405,7 +3405,7 @@ async function renderizar() {
 
 function renderKPIs(byLoja, ag) {
   // usa por_dia (todos os filtros aplicados) para o total correto no cross-filter
-  const total = ag && ag.por_dia
+  const total = ag && Array.isArray(ag.por_dia) && ag.por_dia.length > 0
     ? ag.por_dia.reduce((s, r) => s + r.qty, 0)
     : byLoja.reduce((s, r) => s + r.qty, 0);
   // quando filtra por loja específica, por_loja retorna todas as lojas (design cross-filter) â†’ for?ar 1

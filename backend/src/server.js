@@ -1833,6 +1833,26 @@ async function iniciarServidor() {
         const mCat     = aCat     ? [{ $match: { _cat: aCat } }]              : [];
         const mFamilia = aFamilia ? [{ $match: { _fam: aFamilia } }]          : [];
 
+        if (apenasLoja && !incluirDiaDetalhado) {
+          const porLoja = await db.collection("dados_brutos").aggregate([
+            ...preStages,
+            ...mCat,
+            ...mFamilia,
+            { $group: { _id: "$Loja", ...grp } },
+            { $sort: { qty: -1 } }
+          ], AGG_OPTS).toArray();
+          const resultFast = {
+            por_loja: porLoja.map(r => ({ loja: r._id, qty: r.qty, valor: r.valor })),
+            por_cat: [],
+            por_fam: [],
+            por_dia: null,
+            por_cat_dia: [],
+            por_fam_dia: []
+          };
+          cacheSet(cacheKey, resultFast);
+          return res.json(resultFast);
+        }
+
         const anoRefMensal = await anoReferenciaMensal(ano);
         const dateGroupExpr = {
           $ifNull: [
