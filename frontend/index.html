@@ -2229,6 +2229,7 @@ async function enviarXLSXDadosBrutos(inputId, rota) {
   let totalInserido = 0;
   let retencaoInfo = null;
 
+  let fastRendered = false;
   try {
     atualizarBarraImportacao(status, 1, `Lendo ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`);
     const buffer = await arquivo.arrayBuffer();
@@ -3355,6 +3356,7 @@ async function renderizar() {
     renderKPIs(byLoja, agFast);
     renderGrafico(chartRowsFromAg(agFast, byLoja), agFast);
     renderTabela(byLoja);
+    fastRendered = true;
     setChartLoading(['cat1-wrap','fam1-wrap','cat1-table-body','fam1-table-body'], true);
 
     const ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('f', f_active)}`, f_renderAbort.signal);
@@ -3373,6 +3375,7 @@ async function renderizar() {
     if (e.name === 'AbortError') return; // filtro mais recente ja esta carregando, ignorar
     setChartLoading(['f-kpi-row','chart-wrap','cat1-wrap','fam1-wrap','table-body','cat1-table-body','fam1-table-body'], false);
     console.warn('Agregados backend indisponiveis:', e.message);
+    if (fastRendered) return;
     renderSemDados();
   }
 }
