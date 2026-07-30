@@ -381,9 +381,32 @@ function brToDouble(expr) {
   };
 }
 
-// Valor oficial de venda: usar somente a coluna bruta "Venda (R$)".
+function vendaValorRawExpr() {
+  return {
+    $ifNull: [
+      { $getField: "Venda (R$)" },
+      { $ifNull: [
+        { $getField: "Venda Nf Valor" },
+        { $ifNull: [
+          { $getField: "Venda Pdv Valor" },
+          { $ifNull: [
+            { $getField: "Venda Valor" },
+            { $ifNull: [
+              { $getField: "Valor Venda" },
+              { $ifNull: [
+                { $getField: "Venda R$" },
+                { $getField: "Valor" }
+              ] }
+            ] }
+          ] }
+        ] }
+      ] }
+    ]
+  };
+}
+
 function brValorExpr() {
-  return brToDouble({ $getField: "Venda (R$)" });
+  return brToDouble(vendaValorRawExpr());
 }
 
 function vendaQtdExpr() {
@@ -404,7 +427,24 @@ function vendaQtdExpr() {
 }
 
 function vendaValorExpr() {
-  return { $ifNull: ["$_valor_num", brValorExpr()] };
+  return {
+    $cond: [
+      { $gt: [{ $ifNull: ["$_valor_num", 0] }, 0] },
+      "$_valor_num",
+      brValorExpr()
+    ]
+  };
+}
+
+function valorVendaRegistro(registro) {
+  return registro['Venda (R$)']
+    ?? registro['Venda Nf Valor']
+    ?? registro['Venda Pdv Valor']
+    ?? registro['Venda Valor']
+    ?? registro['Valor Venda']
+    ?? registro['Venda R$']
+    ?? registro['Valor']
+    ?? 0;
 }
 
 function matchTextoOuNumero(valor) {
@@ -2339,7 +2379,7 @@ async function iniciarServidor() {
     // Helper: processa um arquivo CSV temporário e insere na coleção
     function prepararRegistroDadosBrutos(registro, categoriasPorGtin = null) {
       const qtdRaw = registro['Venda (Qtd)'] ?? registro['Venda Nf Quantidade'] ?? registro['Venda Pdv Quantidade'] ?? 0;
-      const valRaw = registro['Venda (R$)'] ?? 0;
+      const valRaw = valorVendaRegistro(registro);
       const estRaw = registro['Estoque Diario'] ?? registro['Estoque DiÃ¡rio'] ?? registro['Estoque'] ?? 0;
       const qtd = parseBRNumber(qtdRaw);
       const val = parseBRNumber(valRaw);
@@ -2402,7 +2442,7 @@ async function iniciarServidor() {
           // Pré-computa campos numéricos, _gtin e _data_iso para queries indexadas
           if (colecao.collectionName === 'dados_brutos') {
             const qtdRaw = registro['Venda (Qtd)'] ?? registro['Venda Nf Quantidade'] ?? registro['Venda Pdv Quantidade'] ?? 0;
-            const valRaw = registro['Venda (R$)'] ?? 0;
+            const valRaw = valorVendaRegistro(registro);
             const estRaw = registro['Estoque Diario'] ?? registro['Estoque Diário'] ?? registro['Estoque'] ?? 0;
             const qtd = parseBRNumber(qtdRaw);
             const val = parseBRNumber(valRaw);
