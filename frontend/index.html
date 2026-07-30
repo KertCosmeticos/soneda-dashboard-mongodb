@@ -3279,29 +3279,7 @@ function prefetchFiltros(ag) {
 }
 
 function preaquecerAbasDashboard() {
-  if (_prewarmStarted) return;
-  _prewarmStarted = true;
-  setTimeout(() => {
-    try {
-      const jobs = [];
-      const vParams = buildAgreParams('v', v_active);
-      const d2Params = buildAgreParams('d2', d2_active);
-      d2Params.set('detalhe_dia', '1');
-      const d3Params = buildAgreParams('d3', d3_active);
-      d3Params.set('escopo', 'loja');
-      const seMain = buildAgreParams('se', null);
-
-      jobs.push(fetchJSON(`${API_BASE}/api/dashboard/agregados?${vParams}`).then(data => agreCache(vParams.toString(), data)));
-      jobs.push(fetchJSON(`${API_BASE}/api/dashboard/agregados?${d2Params}`).then(data => agreCache(`d2v2:${d2Params.toString()}`, data)));
-      jobs.push(fetchJSON(`${API_BASE}/api/dashboard/estoque-resumo?${d3Params}`));
-      jobs.push(fetchJSON(`${API_BASE}/api/dashboard/agregados?${seMain}`));
-      jobs.push(fetchJSON(`${API_BASE}/api/dashboard/estoque-resumo?${seMain}`));
-
-      Promise.allSettled(jobs).catch(() => {});
-    } catch(e) {
-      console.warn('Preaquecimento das abas falhou:', e.message);
-    }
-  }, 1200);
+  // Evita consultas pesadas automaticas logo apos importacoes ou desfazer importacoes.
 }
 
 async function renderizar() {
@@ -3325,7 +3303,7 @@ async function renderizar() {
     ? ag.por_dia.reduce((s, r) => s + (r.qty || 0), 0)
     : byLoja.reduce((s, r) => s + r.qty, 0);
   const chartRowsFromAg = (ag, byLoja) => {
-    if (shouldUseMonthlyMainChart('f', f_active)) {
+    if (ag && Array.isArray(ag.por_dia) && ag.por_dia.length > 0 && shouldUseMonthlyMainChart('f', f_active)) {
       const mensal = agruparAgPorMes(ag && ag.por_dia, 'qty', 'qty');
       if (mensal.length > 0) return mensal;
     }
@@ -3395,11 +3373,7 @@ async function renderizar() {
     if (e.name === 'AbortError') return; // filtro mais recente ja esta carregando, ignorar
     setChartLoading(['f-kpi-row','chart-wrap','cat1-wrap','fam1-wrap','table-body','cat1-table-body','fam1-table-body'], false);
     console.warn('Agregados backend indisponiveis:', e.message);
-    if (!rawDataPreviewOk) {
-      const byLojaChart = agruparPorLoja(filtrar('loja'));
-      renderGrafico(byLojaChart); renderTabela(byLojaChart);
-      renderCat1(filtrar('cat')); renderFam1(filtrar('familia'));
-    }
+    renderSemDados();
   }
 }
 
@@ -3420,9 +3394,9 @@ function renderKPIs(byLoja, ag) {
   document.getElementById('kpi-top-sub').textContent  = top ? `${top.qty.toLocaleString('pt-BR')} un.` : '—';
 
   // Atualiza subtítulo com valores filtrados (dinâmico, igual às outras abas)
-  const totalValor = ag && ag.por_dia
+  const totalValor = ag && Array.isArray(ag.por_dia) && ag.por_dia.length > 0
     ? ag.por_dia.reduce((s, r) => s + (r.valor || 0), 0)
-    : 0;
+    : byLoja.reduce((s, r) => s + (r.valor || 0), 0);
   const fmtR = v => 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   document.getElementById('status-msg').textContent =
     `${total.toLocaleString('pt-BR')} itens vendidos · ${lojas.toLocaleString('pt-BR')} lojas · ${fmtR(totalValor)}`;
@@ -3454,7 +3428,7 @@ function renderSemDados() {
 
 function renderGrafico(byLoja, ag) {
   // por_dia aplica todos os filtros (incluindo loja); por_loja exclui filtro de loja (cross-filter)
-  const total = ag && ag.por_dia
+  const total = ag && Array.isArray(ag.por_dia) && ag.por_dia.length > 0
     ? ag.por_dia.reduce((s, r) => s + r.qty, 0)
     : byLoja.reduce((s, r) => s + r.qty, 0);
   document.getElementById('chart-total-val').textContent = total.toLocaleString('pt-BR');

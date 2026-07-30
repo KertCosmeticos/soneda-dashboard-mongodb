@@ -1834,23 +1834,35 @@ async function iniciarServidor() {
         const mFamilia = aFamilia ? [{ $match: { _fam: aFamilia } }]          : [];
 
         if (apenasLoja && !incluirDiaDetalhado) {
-          const porLoja = await db.collection("dados_brutos").aggregate([
-            ...preStages,
-            ...mCat,
-            ...mFamilia,
-            { $group: { _id: "$Loja", ...grp } },
-            { $sort: { qty: -1 } }
-          ], AGG_OPTS).toArray();
-          const resultFast = {
-            por_loja: porLoja.map(r => ({ loja: r._id, qty: r.qty, valor: r.valor })),
-            por_cat: [],
-            por_fam: [],
-            por_dia: null,
-            por_cat_dia: [],
-            por_fam_dia: []
-          };
-          cacheSet(cacheKey, resultFast);
-          return res.json(resultFast);
+          try {
+            const porLoja = await db.collection("dados_brutos").aggregate([
+              ...preStages,
+              ...mCat,
+              ...mFamilia,
+              { $group: { _id: "$Loja", ...grp } },
+              { $sort: { qty: -1 } }
+            ], { ...AGG_OPTS, maxTimeMS: 25000 }).toArray();
+            const resultFast = {
+              por_loja: porLoja.map(r => ({ loja: r._id, qty: r.qty, valor: r.valor })),
+              por_cat: [],
+              por_fam: [],
+              por_dia: null,
+              por_cat_dia: [],
+              por_fam_dia: []
+            };
+            cacheSet(cacheKey, resultFast);
+            return res.json(resultFast);
+          } catch (fastError) {
+            console.warn("Agregado rapido por loja indisponivel:", fastError.message);
+            return res.json({
+              por_loja: [],
+              por_cat: [],
+              por_fam: [],
+              por_dia: null,
+              por_cat_dia: [],
+              por_fam_dia: []
+            });
+          }
         }
 
         const anoRefMensal = await anoReferenciaMensal(ano);
