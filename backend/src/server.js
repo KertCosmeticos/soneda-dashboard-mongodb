@@ -820,6 +820,7 @@ async function iniciarServidor() {
       if (result.modifiedCount > 0) {
         console.log(`🧹 Categorias pre-computadas invalidadas em ${result.modifiedCount} documentos`);
       }
+      setImmediate(() => migrarCamposBackground());
       return result.modifiedCount;
     }
 
@@ -916,8 +917,10 @@ async function iniciarServidor() {
     }
 
     await atualizarFlagsMigracao();
-    // Migracao pesada fica disponivel apenas via /api/admin/migrar-campos.
-    // Rodar automaticamente compete com as consultas do painel.
+    // Se ha categorias pendentes, recalcula em background sem bloquear o boot.
+    if (!_migCat) {
+      setImmediate(() => migrarCamposBackground());
+    }
     function aquecerCacheDashboard(motivo = "startup") {
       const { request } = require('http');
       const PORT_WU = process.env.PORT || 3000;
@@ -1893,8 +1896,10 @@ async function iniciarServidor() {
           preStages.push({ $match: { $expr: conds.length === 1 ? conds[0] : { $and: conds } } });
         }
 
-        // Join único (uma vez para todos os facets de cat/fam/produto) — pulado quando _cat já está pré-computado
-        if (!_migCat || (produto && !produto_gtin)) {
+        // Join unico (uma vez para todos os facets de cat/fam/produto).
+        // Em escopo=loja puro, nao precisa de categoria e evita timeout.
+        const precisaJoinCat = !apenasLoja || cat || familia || produto || aCat || aFamilia || incluirDiaDetalhado;
+        if (precisaJoinCat && (!_migCat || (produto && !produto_gtin))) {
           if (_catCountCache < 0) _catCountCache = await db.collection("categorias_depara").estimatedDocumentCount();
           if (_catCountCache > 0) preStages.push(...joinCat);
         }
