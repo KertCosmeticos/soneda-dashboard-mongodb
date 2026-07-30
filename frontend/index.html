@@ -3296,7 +3296,7 @@ async function renderizar() {
     .map(r => {
       const loja = normCodLoja(String(r.loja||''));
       const nome = nomeLojaDePara(loja);
-      return { loja, nome, qty: r.qty };
+      return { loja, nome, qty: r.qty, valor: r.valor || 0 };
     })
     .filter(r => r.loja);
   const totalFiltrado = (ag, byLoja) => ag && Array.isArray(ag.por_dia) && ag.por_dia.length > 0
