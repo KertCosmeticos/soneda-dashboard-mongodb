@@ -190,6 +190,19 @@ let _migData      = false; // true quando dados têm _data_iso pré-computado (f
 let _migCat       = false; // true quando dados têm _cat/_fam pré-computados (elimina $lookup em queries)
 let _catCountCache = -1;   // cache em memória do estimatedDocumentCount de categorias_depara
 
+function filtroCategoriaPendente() {
+  return {
+    $or: [
+      { _cat: { $exists: false } },
+      { _cat: null },
+      { _cat: "" },
+      { _fam: { $exists: false } },
+      { _fam: null },
+      { _fam: "" }
+    ]
+  };
+}
+
 // ─────────────────────────────────────────
 // UPLOAD
 // ─────────────────────────────────────────
@@ -780,7 +793,7 @@ async function iniciarServidor() {
 
     // ── FUNÇÕES DE OTIMIZAÇÃO ────────────────────────────────────────────────
     async function atualizarFlagsMigracao() {
-      const catPendente = { _cat: { $exists: false } };
+      const catPendente = filtroCategoriaPendente();
       const [s1, s2, s3, s4, catCount] = await Promise.all([
         db.collection("dados_brutos").findOne({ _qtd_num:  { $exists: true } }, { projection: { _id: 1 } }),
         db.collection("dados_brutos").findOne({ _gtin:     { $exists: true } }, { projection: { _id: 1 } }),
@@ -794,6 +807,20 @@ async function iniciarServidor() {
       _migCat       = catCount > 0 && !s4;
       _catCountCache = -1; // força re-leitura do catCount
       console.log(`📊 Otimizações ativas: numéricos=${_migNumericos}, gtin=${_migGtin}, data=${_migData}, cat=${_migCat}`);
+    }
+
+    async function invalidarCategoriasPrecomputadas() {
+      const result = await db.collection("dados_brutos").updateMany(
+        { $or: [{ _cat: { $exists: true } }, { _fam: { $exists: true } }, { _prod: { $exists: true } }] },
+        { $unset: { _cat: "", _fam: "", _prod: "" } }
+      );
+      _migCat = false;
+      _catCountCache = -1;
+      cacheClear();
+      if (result.modifiedCount > 0) {
+        console.log(`🧹 Categorias pre-computadas invalidadas em ${result.modifiedCount} documentos`);
+      }
+      return result.modifiedCount;
     }
 
     // Migração automática de campos de performance (roda inteiramente no MongoDB, não bloqueia Node.js)
@@ -852,7 +879,7 @@ async function iniciarServidor() {
           const catCnt = await db.collection("categorias_depara").estimatedDocumentCount();
           _catCountCache = catCnt;
           if (catCnt > 0) {
-            const catPendente = { _cat: { $exists: false } };
+            const catPendente = filtroCategoriaPendente();
             const semCat = await db.collection("dados_brutos").countDocuments(catPendente);
             if (semCat > 0) {
               await db.collection("dados_brutos").aggregate([
@@ -2669,8 +2696,7 @@ async function iniciarServidor() {
           usuario: req.usuarioLogado, total: inserido, data: new Date(),
           ...arquivoImportado
         });
-        cacheClear();
-        _migCat = false; _catCountCache = -1;
+        await invalidarCategoriasPrecomputadas();
         res.json({ ok: true, inserido, ultimo: true, mensagem: "Categorias importadas" });
       } catch (error) {
         if (arquivoImportado?.arquivoGridFsId) {
@@ -2774,8 +2800,7 @@ async function iniciarServidor() {
           const filtro = log.importId ? { _import_id: log.importId } : {};
           const result = await db.collection("categorias_depara").deleteMany(filtro);
           removidos = result.deletedCount;
-          _migCat = false;
-          _catCountCache = -1;
+          await invalidarCategoriasPrecomputadas();
         } else if (log.tipo === "lojas_depara") {
           const filtro = log.importId ? { _import_id: log.importId } : {};
           const result = await db.collection("lojas_depara").deleteMany(filtro);
