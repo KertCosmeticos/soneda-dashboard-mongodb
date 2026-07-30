@@ -189,6 +189,7 @@ let _migGtin      = false; // true quando dados têm _gtin pré-computado (join 
 let _migData      = false; // true quando dados têm _data_iso pré-computado (filtro de data indexado)
 let _migCat       = false; // true quando dados têm _cat/_fam pré-computados (elimina $lookup em queries)
 let _catCountCache = -1;   // cache em memória do estimatedDocumentCount de categorias_depara
+let _migBackgroundRodando = false;
 
 function filtroCategoriaPendente() {
   return {
@@ -820,8 +821,20 @@ async function iniciarServidor() {
       if (result.modifiedCount > 0) {
         console.log(`🧹 Categorias pre-computadas invalidadas em ${result.modifiedCount} documentos`);
       }
-      setImmediate(() => migrarCamposBackground());
+      agendarMigracaoBackground();
       return result.modifiedCount;
+    }
+
+    function agendarMigracaoBackground() {
+      if (_migBackgroundRodando) return;
+      _migBackgroundRodando = true;
+      setImmediate(async () => {
+        try {
+          await migrarCamposBackground();
+        } finally {
+          _migBackgroundRodando = false;
+        }
+      });
     }
 
     // Migração automática de campos de performance (roda inteiramente no MongoDB, não bloqueia Node.js)
@@ -919,7 +932,7 @@ async function iniciarServidor() {
     await atualizarFlagsMigracao();
     // Se ha categorias pendentes, recalcula em background sem bloquear o boot.
     if (!_migCat) {
-      setImmediate(() => migrarCamposBackground());
+      agendarMigracaoBackground();
     }
     function aquecerCacheDashboard(motivo = "startup") {
       const { request } = require('http');
@@ -1902,7 +1915,7 @@ async function iniciarServidor() {
         const consultaAmplaSemFiltroCat = !cat && !familia && !produto && !aCat && !aFamilia && !incluirDiaDetalhado;
         const podeFazerJoinCat = _migCat || !consultaAmplaSemFiltroCat;
         if (!_migCat && consultaAmplaSemFiltroCat) {
-          setImmediate(() => migrarCamposBackground());
+          agendarMigracaoBackground();
         }
         if (precisaJoinCat && podeFazerJoinCat && (!_migCat || (produto && !produto_gtin))) {
           if (_catCountCache < 0) _catCountCache = await db.collection("categorias_depara").estimatedDocumentCount();
