@@ -8,6 +8,7 @@
 <meta http-equiv="Expires" content="0">
 <title>Soneda · Dashboard de Vendas</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Figtree:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script>
@@ -2195,6 +2196,104 @@ async function enviarCSV(inputId, rota) {
   }
 }
 
+function valorCsvImportacao(valor) {
+  const texto = String(valor ?? '').trim();
+  return /[;"\r\n]/.test(texto) ? `"${texto.replace(/"/g, '""')}"` : texto;
+}
+
+async function enviarXLSXDadosBrutos(inputId, rota) {
+  if (bloquearSomenteLeitura('Importacao')) return;
+  const fileInput = document.getElementById(inputId);
+  const status    = document.getElementById('import-status');
+  const token     = admGetToken();
+
+  if (!fileInput || !fileInput.files.length) {
+    status.textContent = 'Selecione um arquivo XLS ou XLSX antes de importar.';
+    status.className = 'import-status err';
+    return;
+  }
+  if (!token) {
+    status.textContent = 'Faca login como administrador para importar.';
+    status.className = 'import-status err';
+    return;
+  }
+  if (typeof XLSX === 'undefined') {
+    status.textContent = 'Biblioteca XLSX ainda nao carregou. Atualize a pagina e tente novamente.';
+    status.className = 'import-status err';
+    return;
+  }
+
+  const arquivo = fileInput.files[0];
+  const kb = Math.round(arquivo.size / 1024);
+  var importId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  let totalInserido = 0;
+  let retencaoInfo = null;
+
+  try {
+    atualizarBarraImportacao(status, 1, `Lendo ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`);
+    const buffer = await arquivo.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', raw: false, cellDates: false });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
+    const cabecalho = (rows[0] || []).map(v => String(v ?? '').trim());
+    const dados = rows.slice(1).filter(row => Array.isArray(row) && row.some(v => String(v ?? '').trim() !== ''));
+
+    if (!cabecalho.length || dados.length === 0) {
+      throw new Error('Arquivo vazio ou sem dados.');
+    }
+
+    const LINHAS_POR_LOTE = 1500;
+    const totalLotes = Math.ceil(dados.length / LINHAS_POR_LOTE);
+    const nomeCsv = arquivo.name.replace(/\.(xlsx|xls)$/i, '.csv');
+    const cabecalhoCsv = cabecalho.map(valorCsvImportacao).join(';');
+
+    for (let i = 0; i < totalLotes; i++) {
+      const fatia = dados.slice(i * LINHAS_POR_LOTE, (i + 1) * LINHAS_POR_LOTE);
+      const linhasCsv = fatia.map(row => cabecalho.map((_, idx) => valorCsvImportacao(row[idx])).join(';'));
+      const csvLote = cabecalhoCsv + '\n' + linhasCsv.join('\n');
+      const blob = new Blob([csvLote], { type: 'text/csv;charset=utf-8' });
+      const formData = new FormData();
+      formData.append('file', new File([blob], nomeCsv, { type: 'text/csv' }));
+      formData.append('originalFileName', arquivo.name);
+      formData.append('importId', importId);
+      formData.append('chunkIndex', String(i));
+      formData.append('totalChunks', String(totalLotes));
+      formData.append('totalRecords', String(dados.length));
+
+      const data = await postarImportacaoComProgresso(`${API_BASE}${rota}`, formData, token, frac => {
+        const pct = ((i + frac) / totalLotes) * 100;
+        atualizarBarraImportacao(status, pct,
+          `Enviando lote ${i + 1} de ${totalLotes} - ${fatia.length.toLocaleString('pt-BR')} linhas - total ${dados.length.toLocaleString('pt-BR')} registros`);
+      }).catch(error => {
+        throw new Error(`Lote ${i + 1}: ${error.message}`);
+      });
+
+      totalInserido += data.inserido || 0;
+      if (data.retencao) retencaoInfo = data.retencao;
+    }
+
+    atualizarBarraImportacao(status, 100, '');
+    status.innerHTML = `✓ Importação concluída · <strong>${totalInserido.toLocaleString('pt-BR')}</strong> registros inseridos em ${totalLotes} lote${totalLotes > 1 ? 's' : ''}.`;
+    if (retencaoInfo?.aplicado) {
+      status.innerHTML += ` Retencao aplicada: ${Number(retencaoInfo.registrosRemovidos || 0).toLocaleString('pt-BR')} registros antigos removidos; mantidos ${retencaoInfo.mesesMantidos?.length || 13} meses.`;
+    }
+    status.className = 'import-status ok';
+    limparCacheDashboard();
+    setTimeout(() => recarregarDados(), 900);
+  } catch (error) {
+    console.error(error);
+    if (importId) {
+      await fetch(`${API_BASE}/api/importar/dados-brutos/cancelar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ importId })
+      }).catch(() => {});
+    }
+    status.textContent = `Erro ao importar: ${error.message}`;
+    status.className = 'import-status err';
+  }
+}
+
 async function enviarDadosBrutos(inputId, rota) {
   const fileInput = document.getElementById(inputId);
   const status = document.getElementById('import-status');
@@ -2206,7 +2305,7 @@ async function enviarDadosBrutos(inputId, rota) {
 
   const nome = fileInput.files[0].name.toLowerCase();
   if (nome.endsWith('.csv')) return enviarCSV(inputId, rota);
-  if (nome.endsWith('.xls') || nome.endsWith('.xlsx')) return enviarXLSX(inputId, rota);
+  if (nome.endsWith('.xls') || nome.endsWith('.xlsx')) return enviarXLSXDadosBrutos(inputId, rota);
 
   status.textContent = 'Formato inválido. Use CSV, XLS ou XLSX.';
   status.className = 'import-status err';

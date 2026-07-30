@@ -2497,9 +2497,9 @@ async function iniciarServidor() {
       const chunkIndex   = parseInt(req.body.chunkIndex   ?? "0",  10);
       const totalChunks  = parseInt(req.body.totalChunks  ?? "1",  10);
       const totalRecords = parseInt(req.body.totalRecords ?? "0",  10);
-      const nomeArquivo  = req.file.originalname || req.file.filename;
+      const nomeArquivo  = req.body.originalFileName || req.file.originalname || req.file.filename;
       const substituir   = req.body.substituir === 'true';
-      const extArquivo   = path.extname(nomeArquivo).toLowerCase();
+      const extArquivo   = path.extname(req.file.originalname || nomeArquivo).toLowerCase();
 
       try {
         let retencao = null;
