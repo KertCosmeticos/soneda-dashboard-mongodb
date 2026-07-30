@@ -1899,7 +1899,12 @@ async function iniciarServidor() {
         // Join unico (uma vez para todos os facets de cat/fam/produto).
         // Em escopo=loja puro, nao precisa de categoria e evita timeout.
         const precisaJoinCat = !apenasLoja || cat || familia || produto || aCat || aFamilia || incluirDiaDetalhado;
-        if (precisaJoinCat && (!_migCat || (produto && !produto_gtin))) {
+        const consultaAmplaSemFiltroCat = !cat && !familia && !produto && !aCat && !aFamilia && !incluirDiaDetalhado;
+        const podeFazerJoinCat = _migCat || !consultaAmplaSemFiltroCat;
+        if (!_migCat && consultaAmplaSemFiltroCat) {
+          setImmediate(() => migrarCamposBackground());
+        }
+        if (precisaJoinCat && podeFazerJoinCat && (!_migCat || (produto && !produto_gtin))) {
           if (_catCountCache < 0) _catCountCache = await db.collection("categorias_depara").estimatedDocumentCount();
           if (_catCountCache > 0) preStages.push(...joinCat);
         }
