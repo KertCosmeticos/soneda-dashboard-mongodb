@@ -930,10 +930,7 @@ async function iniciarServidor() {
     }
 
     await atualizarFlagsMigracao();
-    // Se ha categorias pendentes, recalcula em background sem bloquear o boot.
-    if (!_migCat) {
-      agendarMigracaoBackground();
-    }
+    // Migrações pesadas ficam sob demanda para não competir com o painel.
     function aquecerCacheDashboard(motivo = "startup") {
       const { request } = require('http');
       const PORT_WU = process.env.PORT || 3000;
@@ -1914,9 +1911,6 @@ async function iniciarServidor() {
         const precisaJoinCat = !apenasLoja || cat || familia || produto || aCat || aFamilia || incluirDiaDetalhado;
         const consultaAmplaSemFiltroCat = !cat && !familia && !produto && !aCat && !aFamilia && !incluirDiaDetalhado;
         const podeFazerJoinCat = _migCat || !consultaAmplaSemFiltroCat;
-        if (!_migCat && consultaAmplaSemFiltroCat) {
-          agendarMigracaoBackground();
-        }
         if (precisaJoinCat && podeFazerJoinCat && (!_migCat || (produto && !produto_gtin))) {
           if (_catCountCache < 0) _catCountCache = await db.collection("categorias_depara").estimatedDocumentCount();
           if (_catCountCache > 0) preStages.push(...joinCat);
