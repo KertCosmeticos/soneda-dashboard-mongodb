@@ -7126,7 +7126,7 @@ async function vRenderizar() {
   const toByLoja = ag => ag.por_loja
     .map(r => {
       const loja = normCodLoja(String(r.loja || ''));
-      return { loja, nome: nomeLojaDePara(loja), val: r.valor };
+      return { loja, nome: nomeLojaDePara(loja), val: Number(r.valor || 0), qty: Number(r.qty || 0) };
     })
     .filter(r => r.loja);
   const chartRowsFromAg = (ag, byLoja) => {
