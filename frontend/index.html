@@ -2233,9 +2233,9 @@ async function enviarXLSXDadosBrutos(inputId, rota) {
   try {
     atualizarBarraImportacao(status, 1, `Lendo ${arquivo.name} (${kb.toLocaleString('pt-BR')} KB)...`);
     const buffer = await arquivo.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: 'array', raw: false, cellDates: false });
+    const workbook = XLSX.read(buffer, { type: 'array', raw: true, cellDates: false });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
     const cabecalho = (rows[0] || []).map(v => String(v ?? '').trim());
     const dados = rows.slice(1).filter(row => Array.isArray(row) && row.some(v => String(v ?? '').trim() !== ''));
 
