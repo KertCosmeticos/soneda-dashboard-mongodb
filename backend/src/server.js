@@ -1836,7 +1836,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/agregados", async (req, res) => {
       try {
-        const cacheKey = await dashboardCacheKey('agre:v10', req.query);
+        const cacheKey = await dashboardCacheKey('agre:v11', req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
@@ -1937,13 +1937,17 @@ async function iniciarServidor() {
 
         if (apenasLoja && !incluirDiaDetalhado) {
           try {
+            const grpLojaRapido = {
+              qty: { $sum: { $ifNull: ["$_qtd_num", 0] } },
+              valor: { $sum: { $ifNull: ["$_valor_num", 0] } }
+            };
             const porLoja = await db.collection("dados_brutos").aggregate([
               ...preStages,
               ...mCat,
               ...mFamilia,
-              { $group: { _id: "$Loja", ...grp } },
+              { $group: { _id: "$Loja", ...grpLojaRapido } },
               { $sort: { qty: -1 } }
-            ], { ...AGG_OPTS, maxTimeMS: 25000 }).toArray();
+            ], { ...AGG_OPTS, maxTimeMS: 60000 }).toArray();
             const resultFast = {
               por_loja: porLoja.map(r => ({ loja: r._id, qty: r.qty, valor: r.valor })),
               por_cat: [],
@@ -1956,14 +1960,7 @@ async function iniciarServidor() {
             return res.json(resultFast);
           } catch (fastError) {
             console.warn("Agregado rapido por loja indisponivel:", fastError.message);
-            return res.json({
-              por_loja: [],
-              por_cat: [],
-              por_fam: [],
-              por_dia: null,
-              por_cat_dia: [],
-              por_fam_dia: []
-            });
+            return res.status(504).json({ erro: "Agregado rapido indisponivel", detalhe: fastError.message });
           }
         }
 

@@ -3376,7 +3376,7 @@ async function renderizar() {
     setChartLoading(['f-kpi-row','chart-wrap','cat1-wrap','fam1-wrap','table-body','cat1-table-body','fam1-table-body'], false);
     console.warn('Agregados backend indisponiveis:', e.message);
     if (fastRendered) return;
-    renderSemDados();
+    renderErroAgregados(e.message);
   }
 }
 
@@ -3427,6 +3427,12 @@ function renderSemDados() {
   if (fam1Chart) { fam1Chart.destroy(); fam1Chart = null; }
   document.getElementById('cat1-table-body').innerHTML = '<div class="no-data">Nenhum dado para os filtros selecionados</div>';
   document.getElementById('fam1-table-body').innerHTML = '<div class="no-data">Nenhum dado para os filtros selecionados</div>';
+}
+
+function renderErroAgregados(msg) {
+  document.getElementById('status-msg').textContent = 'Agregados indisponiveis no momento.';
+  setEstado(`Erro ao carregar agregados: ${escHtml(msg || 'tente atualizar o painel')}`);
+  document.getElementById('table-body').innerHTML = '<div class="no-data err">Erro ao carregar agregados.</div>';
 }
 
 function renderGrafico(byLoja, ag) {
