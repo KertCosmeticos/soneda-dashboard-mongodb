@@ -6814,7 +6814,7 @@ function vRenderCat1(data, preAg, ag) {
     byCat = Object.values(map);
   }
   const total = byCat.reduce((s,r) => s + r.val, 0);
-  const displayTotal = ag && ag.por_dia
+  const displayTotal = ag && Array.isArray(ag.por_dia) && ag.por_dia.length > 0
     ? ag.por_dia.reduce((s, r) => s + (r.valor || 0), 0)
     : total;
   const vCat1TotalEl = document.getElementById('v-cat1-total-val');
@@ -6938,7 +6938,7 @@ function vRenderFam1(data, preAg, ag) {
   // Separa famílias reais das sem mapeamento (para o gráfico mostra so as reais)
   let byFamChart = byFam.filter(r => r.fam !== SEM_MAP_V);
   const total = byFam.reduce((s,r) => s + r.val, 0);
-  const displayTotalFam = ag && ag.por_dia
+  const displayTotalFam = ag && Array.isArray(ag.por_dia) && ag.por_dia.length > 0
     ? ag.por_dia.reduce((s, r) => s + (r.valor || 0), 0)
     : total;
   const vFam1TotalEl = document.getElementById('v-fam1-total-val');
