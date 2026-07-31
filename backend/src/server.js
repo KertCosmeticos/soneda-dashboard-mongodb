@@ -1836,7 +1836,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/agregados", async (req, res) => {
       try {
-        const cacheKey = await dashboardCacheKey('agre:v13', req.query);
+        const cacheKey = await dashboardCacheKey('agre:v14', req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
@@ -1968,15 +1968,26 @@ async function iniciarServidor() {
 
         let dateGroupExpr = null;
         if (!apenasDimensoes || incluirDiaDetalhado) {
-          const anoRefMensal = await anoReferenciaMensal(ano);
-          dateGroupExpr = {
-            $ifNull: [
-              _migData ? dataIsoValidaExpr() : null,
-              dataValidaPorCampoDataExpr(),
-              dataFallbackPorMesExpr(anoRefMensal)
-            ]
-          };
+          if (apenasDia || incluirDiaDetalhado) {
+            dateGroupExpr = {
+              $ifNull: [
+                _migData ? dataIsoValidaExpr() : null,
+                dataValidaPorCampoDataExpr()
+              ]
+            };
+          } else {
+            const anoRefMensal = await anoReferenciaMensal(ano);
+            dateGroupExpr = {
+              $ifNull: [
+                _migData ? dataIsoValidaExpr() : null,
+                dataValidaPorCampoDataExpr(),
+                dataFallbackPorMesExpr(anoRefMensal)
+              ]
+            };
+          }
         }
+        const apenasDataReal = apenasDia || incluirDiaDetalhado;
+        const mDataReal = apenasDataReal ? [{ $match: { $expr: { $ne: [dateGroupExpr, null] } } }] : [];
 
         // Um único $facet — uma varredura, um join
         const facets = {};
@@ -1992,6 +2003,7 @@ async function iniciarServidor() {
         if (!apenasDimensoes) {
           facets.por_dia = [
             ...mLoja, ...mCat, ...mFamilia,
+            ...mDataReal,
             { $group: { _id: dateGroupExpr, ...grp } },
             { $sort: { _id: 1 } }
           ];
@@ -2013,11 +2025,13 @@ async function iniciarServidor() {
         if (incluirDiaDetalhado) {
           facets.por_cat_dia = [
             ...mLoja, ...mFamilia,
+            ...mDataReal,
             { $group: { _id: { cat: "$_cat", data: dateGroupExpr }, ...grp } },
             { $sort: { "_id.data": 1, qty: -1 } }
           ];
           facets.por_fam_dia = [
             ...mLoja, ...mCat,
+            ...mDataReal,
             { $group: { _id: { fam: "$_fam", data: dateGroupExpr }, ...grp } },
             { $sort: { "_id.data": 1, qty: -1 } }
           ];

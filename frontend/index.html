@@ -4127,8 +4127,8 @@ async function d2Renderizar() {
   const d2DetalheParams = new URLSearchParams(d2FiltroParams);
   d2DetalheParams.set('detalhe_dia', '1');
   d2DetalheParams.set('escopo', 'dimensoes');
-  const baseCacheKey = 'd2dia:v1:' + d2BaseParams.toString();
-  const detalheCacheKey = 'd2det:v1:' + d2DetalheParams.toString();
+  const baseCacheKey = 'd2dia:v2:' + d2BaseParams.toString();
+  const detalheCacheKey = 'd2det:v2:' + d2DetalheParams.toString();
 
   // Mostra loading apenas no primeiro carregamento
   if (!rawDataPreviewOk) {
