@@ -2682,12 +2682,16 @@ function filtroMeses() {
 function selectedValues(id) {
   const el = document.getElementById(id);
   if (!el) return [];
+  const options = [...el.options].filter(o => o.value);
+  if (options.length > 0 && options.every(o => o.selected)) return [];
   return [...el.selectedOptions].map(o => o.value).filter(Boolean);
 }
 
 function selectedLabels(id) {
   const el = document.getElementById(id);
   if (!el) return [];
+  const options = [...el.options].filter(o => o.value);
+  if (options.length > 0 && options.every(o => o.selected)) return [];
   return [...el.selectedOptions].filter(o => o.value).map(o => o.textContent.trim());
 }
 
