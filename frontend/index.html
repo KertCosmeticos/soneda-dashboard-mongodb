@@ -3348,10 +3348,12 @@ async function renderizar() {
   try {
     const fastParams = buildAgreParams('f', f_active);
     fastParams.set('escopo', 'loja');
+    const dimParams = buildAgreParams('f', f_active);
+    dimParams.set('escopo', 'dimensoes');
     setChartLoading(['cat1-wrap','fam1-wrap','cat1-table-body','fam1-table-body'], true);
 
     const fastPromise = fetchJSON(`${API_BASE}/api/dashboard/agregados?${fastParams}`, f_renderAbort.signal);
-    const fullPromise = fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('f', f_active)}`, f_renderAbort.signal);
+    const fullPromise = fetchJSON(`${API_BASE}/api/dashboard/agregados?${dimParams}`, f_renderAbort.signal);
 
     const fastTask = fastPromise.then(agFast => {
       rawDataPreviewOk = true;
@@ -3368,12 +3370,7 @@ async function renderizar() {
     });
 
     const fullTask = fullPromise.then(ag => {
-      agreCache(cacheKey, ag);
       setChartLoading(['cat1-wrap','fam1-wrap','cat1-table-body','fam1-table-body'], false);
-      if (totalFiltrado(ag, toByLoja(ag)) <= 0) {
-        renderSemDados();
-        return;
-      }
       if (ag.por_cat.length > 0) renderCat1(null, ag.por_cat, ag); else renderCat1(filtrar('cat'));
       if (ag.por_fam.length > 0) renderFam1(null, ag.por_fam, ag); else renderFam1(filtrar('familia'));
     });
@@ -7138,11 +7135,48 @@ async function vRenderizar() {
   v_renderAbort = new AbortController();
 
   try {
-    const ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('v', v_active)}`, v_renderAbort.signal);
-    agreCache(cacheKey, ag);
-    rawDataPreviewOk = true;
-    setChartLoading(V_IDS, false);
-    renderFromAg(ag, toByLoja(ag));
+    const fastParams = buildAgreParams('v', v_active);
+    fastParams.set('escopo', 'loja');
+    const dimParams = buildAgreParams('v', v_active);
+    dimParams.set('escopo', 'dimensoes');
+    const fastPromise = fetchJSON(`${API_BASE}/api/dashboard/agregados?${fastParams}`, v_renderAbort.signal);
+    const fullPromise = fetchJSON(`${API_BASE}/api/dashboard/agregados?${dimParams}`, v_renderAbort.signal);
+
+    const fastTask = fastPromise.then(agFast => {
+      rawDataPreviewOk = true;
+      setChartLoading(['v-kpi-row','v-chart-wrap','v-table-body'], false);
+      const byLoja = toByLoja(agFast);
+      const totalFiltrado = byLoja.reduce((s, r) => s + Number(r.val || 0), 0);
+      if (totalFiltrado <= 0) {
+        vRenderSemDados();
+        return;
+      }
+      vRenderKPIs(byLoja, agFast);
+      vRenderGrafico(chartRowsFromAg(agFast, byLoja), agFast);
+      vRenderTabela(byLoja);
+    });
+
+    const fullTask = fullPromise.then(ag => {
+      setChartLoading(['v-cat1-wrap','v-fam1-wrap','v-cat1-table-body','v-fam1-table-body'], false);
+      if (ag.por_cat.length > 0) vRenderCat1(null, ag.por_cat, ag); else vRenderCat1(vFiltrar('cat'));
+      if (ag.por_fam.length > 0) vRenderFam1(null, ag.por_fam, ag); else vRenderFam1(vFiltrar('familia'));
+    });
+
+    const results = await Promise.allSettled([fastTask, fullTask]);
+    const abortResult = results.find(r => r.status === 'rejected' && r.reason?.name === 'AbortError');
+    if (abortResult) throw abortResult.reason;
+    const failures = results.filter(r => r.status === 'rejected');
+    if (failures.length === results.length) throw failures[0].reason;
+    if (failures.length) {
+      setChartLoading(['v-cat1-wrap','v-fam1-wrap','v-cat1-table-body','v-fam1-table-body'], false);
+      if (results[1]?.status === 'rejected') {
+        ['v-cat1-state', 'v-fam1-state'].forEach(id => {
+          const state = document.getElementById(id);
+          if (state) { state.style.display = 'flex'; state.innerHTML = 'Erro ao carregar este gráfico.'; }
+        });
+      }
+      console.warn('Parte dos agregados ficou indisponivel:', failures[0].reason?.message || failures[0].reason);
+    }
   } catch(e) {
     if (e.name === 'AbortError') return;
     setChartLoading(V_IDS, false);

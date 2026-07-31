@@ -1836,7 +1836,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/agregados", async (req, res) => {
       try {
-        const cacheKey = await dashboardCacheKey('agre:v11', req.query);
+        const cacheKey = await dashboardCacheKey('agre:v12', req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
@@ -1848,6 +1848,7 @@ async function iniciarServidor() {
         const aFamilia = req.query.ativo_familia || null;
         const incluirDiaDetalhado = req.query.detalhe_dia === "1";
         const apenasLoja = req.query.escopo === "loja";
+        const apenasDimensoes = req.query.escopo === "dimensoes";
 
         // Join com categorias_depara em tempo de query.
         // Quando _migGtin=true (todos os docs têm _gtin), usa localField/foreignField
@@ -1908,7 +1909,7 @@ async function iniciarServidor() {
 
         // Join unico (uma vez para todos os facets de cat/fam/produto).
         // Em escopo=loja puro, nao precisa de categoria e evita timeout.
-        const precisaJoinCat = !apenasLoja || cat || familia || produto || aCat || aFamilia || incluirDiaDetalhado;
+        const precisaJoinCat = apenasDimensoes || !apenasLoja || cat || familia || produto || aCat || aFamilia || incluirDiaDetalhado;
         const consultaAmplaSemFiltroCat = !cat && !familia && !produto && !aCat && !aFamilia && !incluirDiaDetalhado;
         const podeFazerJoinCat = _migCat || !consultaAmplaSemFiltroCat;
         if (precisaJoinCat && podeFazerJoinCat && (!_migCat || (produto && !produto_gtin))) {
@@ -1964,28 +1965,33 @@ async function iniciarServidor() {
           }
         }
 
-        const anoRefMensal = await anoReferenciaMensal(ano);
-        const dateGroupExpr = {
-          $ifNull: [
-            _migData ? dataIsoValidaExpr() : null,
-            dataValidaPorCampoDataExpr(),
-            dataFallbackPorMesExpr(anoRefMensal)
-          ]
-        };
+        let dateGroupExpr = null;
+        if (!apenasDimensoes || incluirDiaDetalhado) {
+          const anoRefMensal = await anoReferenciaMensal(ano);
+          dateGroupExpr = {
+            $ifNull: [
+              _migData ? dataIsoValidaExpr() : null,
+              dataValidaPorCampoDataExpr(),
+              dataFallbackPorMesExpr(anoRefMensal)
+            ]
+          };
+        }
 
         // Um único $facet — uma varredura, um join
-        const facets = {
-          por_loja: [
+        const facets = {};
+
+        if (!apenasDimensoes) {
+          facets.por_loja = [
             ...mCat, ...mFamilia,
             { $group: { _id: "$Loja", ...grp } },
             { $sort: { qty: -1 } }
-          ],
-          por_dia: [
+          ];
+          facets.por_dia = [
             ...mLoja, ...mCat, ...mFamilia,
             { $group: { _id: dateGroupExpr, ...grp } },
             { $sort: { _id: 1 } }
-          ]
-        };
+          ];
+        }
 
         if (!apenasLoja) {
           facets.por_cat = [
