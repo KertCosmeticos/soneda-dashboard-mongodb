@@ -1836,7 +1836,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/agregados", async (req, res) => {
       try {
-        const cacheKey = await dashboardCacheKey('agre:v14', req.query);
+        const cacheKey = await dashboardCacheKey('agre:v15', req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
@@ -1849,7 +1849,9 @@ async function iniciarServidor() {
         const incluirDiaDetalhado = req.query.detalhe_dia === "1";
         const apenasLoja = req.query.escopo === "loja";
         const apenasDia = req.query.escopo === "dia";
+        const apenasPeriodo = req.query.escopo === "periodo";
         const apenasDimensoes = req.query.escopo === "dimensoes";
+        const apenasDataReal = apenasDia || incluirDiaDetalhado;
 
         // Join com categorias_depara em tempo de query.
         // Quando _migGtin=true (todos os docs têm _gtin), usa localField/foreignField
@@ -1888,8 +1890,13 @@ async function iniciarServidor() {
         if (mes)  aplicarFiltroMes(baseMatch, mes);
         if (loja) baseMatch["Loja"] = matchTextoOuNumeroLista(loja);
         if (produto_gtin && _migGtin) baseMatch["_gtin"] = matchListaTexto(produto_gtin);
+        if (apenasDataReal && _migData) {
+          baseMatch["_data_iso"] = { $type: "string", $regex: /^(19|20)\d{2}-\d{2}-\d{2}$/ };
+        }
         if ((di || df) && _migData) {
-          const dr = {};
+          const dr = baseMatch["_data_iso"] && typeof baseMatch["_data_iso"] === "object"
+            ? { ...baseMatch["_data_iso"] }
+            : {};
           if (di) dr.$gte = di;
           if (df) dr.$lte = df;
           baseMatch["_data_iso"] = dr;
@@ -1910,7 +1917,7 @@ async function iniciarServidor() {
 
         // Join unico (uma vez para todos os facets de cat/fam/produto).
         // Em escopo=loja puro, nao precisa de categoria e evita timeout.
-        const precisaJoinCat = apenasDimensoes || (!apenasLoja && !apenasDia) || cat || familia || produto || aCat || aFamilia || incluirDiaDetalhado;
+        const precisaJoinCat = apenasDimensoes || (!apenasLoja && !apenasDia && !apenasPeriodo) || cat || familia || produto || aCat || aFamilia || incluirDiaDetalhado;
         const consultaAmplaSemFiltroCat = !cat && !familia && !produto && !aCat && !aFamilia && !incluirDiaDetalhado;
         const podeFazerJoinCat = _migCat || !consultaAmplaSemFiltroCat;
         if (precisaJoinCat && podeFazerJoinCat && (!_migCat || (produto && !produto_gtin))) {
@@ -1986,13 +1993,12 @@ async function iniciarServidor() {
             };
           }
         }
-        const apenasDataReal = apenasDia || incluirDiaDetalhado;
         const mDataReal = apenasDataReal ? [{ $match: { $expr: { $ne: [dateGroupExpr, null] } } }] : [];
 
         // Um único $facet — uma varredura, um join
         const facets = {};
 
-        if (!apenasDimensoes && !apenasDia) {
+        if (!apenasDimensoes && !apenasDia && !apenasPeriodo) {
           facets.por_loja = [
             ...mCat, ...mFamilia,
             { $group: { _id: "$Loja", ...grp } },
@@ -2009,7 +2015,7 @@ async function iniciarServidor() {
           ];
         }
 
-        if (!apenasLoja && !apenasDia && !(apenasDimensoes && incluirDiaDetalhado)) {
+        if (!apenasLoja && !apenasDia && !apenasPeriodo && !(apenasDimensoes && incluirDiaDetalhado)) {
           facets.por_cat = [
             ...mLoja, ...mFamilia,
             { $group: { _id: "$_cat", ...grp } },

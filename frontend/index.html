@@ -6184,6 +6184,9 @@ async function seRenderizarAgregado() {
   paramsGrafico.set('escopo', 'loja');
   const paramsMain = seParams(true);
   const paramsTabela = seParams(false);
+  const paramsPeriodo = buildAgreParams('se', null);
+  if (se_active.dim === 'loja' && se_active.val) paramsPeriodo.set('loja', se_active.val);
+  paramsPeriodo.set('escopo', 'periodo');
   const estoqueEndpoint = seViewMode === 'data' ? 'estoque' : 'estoque-resumo';
   const paramsEstoqueUltimoDia = new URLSearchParams(paramsGrafico);
   paramsEstoqueUltimoDia.set('snapshot', '1');
@@ -6195,8 +6198,9 @@ async function seRenderizarAgregado() {
   paramsEstoqueHistorico.set('historico', '1');
 
   try {
-    const [vMain, eUltimoDia, eHistorico, vTabela, eTabela, eUltimoDiaTabela] = await Promise.all([
+    const [vMain, vPeriodo, eUltimoDia, eHistorico, vTabela, eTabela, eUltimoDiaTabela] = await Promise.all([
       fetchJSON(`${API_BASE}/api/dashboard/agregados?${paramsGrafico}`, se_renderAbort.signal),
+      fetchJSON(`${API_BASE}/api/dashboard/agregados?${paramsPeriodo}`, se_renderAbort.signal),
       fetchJSON(`${API_BASE}/api/dashboard/estoque?${paramsEstoqueUltimoDia}`, se_renderAbort.signal),
       fetchJSON(`${API_BASE}/api/dashboard/estoque?${paramsEstoqueHistorico}`, se_renderAbort.signal),
       seViewMode !== 'data' && paramsTabela.toString() === paramsMain.toString()
@@ -6215,7 +6219,9 @@ async function seRenderizarAgregado() {
 
     const byLoja = seCombinarPorLoja(vMain.por_loja, eUltimoDia.por_loja);
     const byLojaTabela = seCombinarPorLoja(vendaTabela.por_loja, estoqueTabelaUltimoDia.por_loja);
-    const totalSellout = (vMain.por_dia || []).reduce((s,r) => s + Number(r.qty || 0), 0);
+    const totalSellout = (vMain.por_dia || []).length
+      ? vMain.por_dia.reduce((s,r) => s + Number(r.qty || 0), 0)
+      : (vMain.por_loja || []).reduce((s,r) => s + Number(r.qty || 0), 0);
     const estoqueUltimoDia = seResumoEstoqueUltimoDia(eUltimoDia);
     const totalEstoque = Number(estoqueUltimoDia.total || 0);
 
@@ -6250,7 +6256,7 @@ async function seRenderizarAgregado() {
     if (seStatusEl) seStatusEl.textContent =
       `${totalSellout.toLocaleString('pt-BR')} unidades vendidas · ${totalEstoque.toLocaleString('pt-BR')} em estoque${estoqueUltimoDia.data ? ` - ${d3FormatarDataKpi(estoqueUltimoDia.data)}` : ''}`;
 
-    const dadosGraficoMensal = combinarSelloutEstoquePorMes(vMain.por_dia, eHistorico?.por_loja_dia);
+    const dadosGraficoMensal = combinarSelloutEstoquePorMes(vPeriodo?.por_dia, eHistorico?.por_loja_dia);
     seRenderGrafico(dadosGraficoMensal, true, 'month');
     seRenderGrafico(byLoja, false, 'filial');
     if (seViewMode === 'data') {
