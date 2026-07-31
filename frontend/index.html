@@ -4121,11 +4121,13 @@ async function d2Renderizar() {
       : [all, all];
   };
 
-  const d2BaseParams = buildAgreParams('d2', d2_active);
-  const d2DetalheParams = new URLSearchParams(d2BaseParams);
+  const d2FiltroParams = buildAgreParams('d2', d2_active);
+  const d2BaseParams = new URLSearchParams(d2FiltroParams);
+  d2BaseParams.set('escopo', 'dia');
+  const d2DetalheParams = new URLSearchParams(d2FiltroParams);
   d2DetalheParams.set('detalhe_dia', '1');
   d2DetalheParams.set('escopo', 'dimensoes');
-  const baseCacheKey = d2BaseParams.toString();
+  const baseCacheKey = 'd2dia:v1:' + d2BaseParams.toString();
   const detalheCacheKey = 'd2det:v1:' + d2DetalheParams.toString();
 
   // Mostra loading apenas no primeiro carregamento
@@ -4135,39 +4137,48 @@ async function d2Renderizar() {
     if (d2Chart) { d2Chart.destroy(); d2Chart = null; }
   }
 
-  const D2_IDS = ['d2-kpi-row','d2-chart-wrap','cat2-wrap','fam2-wrap','d2-table-body','cat2-table-body','fam2-table-body'];
-  if (rawDataPreviewOk) setChartLoading(D2_IDS, true);
+  const D2_MAIN_IDS = ['d2-kpi-row','d2-chart-wrap','d2-table-body'];
+  const D2_DETAIL_IDS = ['cat2-wrap','fam2-wrap','cat2-table-body','fam2-table-body'];
+  if (rawDataPreviewOk) {
+    setChartLoading(D2_MAIN_IDS, true);
+    setChartLoading(D2_DETAIL_IDS, true);
+  }
 
   if (d2_renderAbort) d2_renderAbort.abort();
   d2_renderAbort = new AbortController();
   const d2Signal = d2_renderAbort.signal;
 
   try {
+    const detalheCached = agreCache(detalheCacheKey);
+    const detalhePromise = detalheCached
+      ? Promise.resolve(detalheCached)
+      : fetchJSON(`${API_BASE}/api/dashboard/agregados?${d2DetalheParams}`, d2Signal)
+          .then(agDetalhado => {
+            agreCache(detalheCacheKey, agDetalhado);
+            return agDetalhado;
+          })
+          .catch(e => ({ __erroDetalhe: e }));
+
     let ag = agreCache(baseCacheKey);
     if (!ag) {
       ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${d2BaseParams}`, d2Signal);
       agreCache(baseCacheKey, ag);
     }
-    setChartLoading(D2_IDS, false);
+    setChartLoading(D2_MAIN_IDS, false);
     const [pd, all] = agToDia(ag);
     d2AtualizarGrafico(pd, all, ag, false);
 
-    const detalheCached = agreCache(detalheCacheKey);
-    if (detalheCached) {
-      renderCat2(null, detalheCached?.por_cat_dia);
-      renderFam2(null, detalheCached?.por_fam_dia);
-      return;
-    }
-
-    fetchJSON(`${API_BASE}/api/dashboard/agregados?${d2DetalheParams}`, d2Signal)
+    detalhePromise
       .then(agDetalhado => {
-        agreCache(detalheCacheKey, agDetalhado);
         if (d2Signal.aborted) return;
+        if (agDetalhado?.__erroDetalhe) throw agDetalhado.__erroDetalhe;
+        setChartLoading(D2_DETAIL_IDS, false);
         renderCat2(null, agDetalhado?.por_cat_dia);
         renderFam2(null, agDetalhado?.por_fam_dia);
       })
       .catch(e => {
         if (e.name !== 'AbortError') {
+          setChartLoading(D2_DETAIL_IDS, false);
           console.warn('Detalhamento por dia indisponivel:', e.message);
           const msg = '<div class="no-data">Detalhamento indisponivel para os filtros selecionados.</div>';
           const catState = document.getElementById('cat2-state');
@@ -4180,8 +4191,21 @@ async function d2Renderizar() {
       });
   } catch(e) {
     if (e.name === 'AbortError') return;
-    setChartLoading(D2_IDS, false);
+    setChartLoading(D2_MAIN_IDS, false);
+    setChartLoading(D2_DETAIL_IDS, false);
     console.warn('Agregados backend indisponiveis:', e.message);
+    const d2StatusEl = document.getElementById('d2-status-msg');
+    if (d2StatusEl) d2StatusEl.textContent = 'Dados indisponiveis no momento';
+    const d2State = document.getElementById('d2-chart-state');
+    if (d2State) { d2State.style.display = 'flex'; d2State.innerHTML = 'Dados indisponiveis para os filtros selecionados.'; }
+    document.getElementById('d2-table-body').innerHTML = '<div class="no-data">Dados indisponiveis para os filtros selecionados</div>';
+    const msg = '<div class="no-data">Detalhamento indisponivel para os filtros selecionados.</div>';
+    const catState = document.getElementById('cat2-state');
+    const famState = document.getElementById('fam2-state');
+    if (catState) { catState.style.display = 'flex'; catState.innerHTML = 'Detalhamento indisponivel.'; }
+    if (famState) { famState.style.display = 'flex'; famState.innerHTML = 'Detalhamento indisponivel.'; }
+    document.getElementById('cat2-table-body').innerHTML = msg;
+    document.getElementById('fam2-table-body').innerHTML = msg;
   }
 }
 
