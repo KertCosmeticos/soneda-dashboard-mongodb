@@ -6540,9 +6540,13 @@ function vConstruirFiltros() {
   document.getElementById('v-produto').innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   prepararTodosMultiSelect();
 
-  ['v-ano','v-mes','v-di','v-df','v-loja','v-cat','v-familia','v-produto'].forEach(id =>
-    document.getElementById(id).addEventListener('change', vRenderizar)
-  );
+  ['v-ano','v-mes','v-di','v-df','v-loja','v-cat','v-familia','v-produto'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.dataset.valorChangeBound !== '1') {
+      el.addEventListener('change', vRenderizar);
+      el.dataset.valorChangeBound = '1';
+    }
+  });
   document.getElementById('v-status-msg').textContent = document.getElementById('status-msg').textContent;
 }
 
@@ -7188,6 +7192,15 @@ function trocarAba(aba, evt) {
 
   if (aba === 'importar') { admAtualizarUI(); return; }
   if (aba === 'gerir')    { guAtualizarUI(); return; }
+
+  if (aba === 'valor') {
+    const produtoValor = document.getElementById('v-produto');
+    const produtosCarregados = Object.keys(produtoMap || {}).length > 0 || filtroProdutos().length > 0;
+    if (produtosCarregados && produtoValor && produtoValor.options.length <= 1) {
+      filtrosAbasConstruidos.delete('v');
+      tabsRenderizadas.delete('valor');
+    }
+  }
 
   // Constr?i filtros e renderiza apenas na primeira vez que a aba for aberta
   if (!tabsRenderizadas.has(aba)) {
