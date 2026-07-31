@@ -776,6 +776,17 @@ async function iniciarServidor() {
       return map.get(raw) || map.get(norm) || map.get(padded) || `Filial ${norm || raw}`;
     }
 
+    async function parametroLojasCobreTodoDePara(valor) {
+      const selecionadas = new Set(listaParam(valor).map(normalizarCodigoLoja).filter(Boolean));
+      if (!selecionadas.size) return false;
+      const rows = await db.collection("lojas_depara")
+        .find({}, { projection: { Cod_Loja: 1 } })
+        .toArray();
+      const todas = rows.map(r => normalizarCodigoLoja(r.Cod_Loja)).filter(Boolean);
+      if (!todas.length || selecionadas.size < todas.length) return false;
+      return todas.every(loja => selecionadas.has(loja));
+    }
+
     async function anoReferenciaMensal(anoParam = null) {
       const anosParam = listaParam(anoParam)
         .map(v => Number(String(v).trim()))
@@ -1840,7 +1851,8 @@ async function iniciarServidor() {
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
-        const { ano, mes, loja, cat, familia, produto, produto_gtin } = req.query;
+        const { ano, mes, cat, familia, produto, produto_gtin } = req.query;
+        const loja = await parametroLojasCobreTodoDePara(req.query.loja) ? null : req.query.loja;
         const di       = req.query.di            || null; // data início YYYY-MM-DD
         const df       = req.query.df            || null; // data fim    YYYY-MM-DD
         const aLoja    = req.query.ativo_loja    || null;
