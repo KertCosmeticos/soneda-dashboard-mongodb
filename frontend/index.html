@@ -3348,30 +3348,51 @@ async function renderizar() {
   try {
     const fastParams = buildAgreParams('f', f_active);
     fastParams.set('escopo', 'loja');
-    const agFast = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${fastParams}`, f_renderAbort.signal);
-    rawDataPreviewOk = true;
-    setChartLoading(['f-kpi-row','chart-wrap','table-body'], false);
-    const byLoja = toByLoja(agFast);
-    if (totalFiltrado(agFast, byLoja) <= 0) {
-      setChartLoading(['cat1-wrap','fam1-wrap','cat1-table-body','fam1-table-body'], false);
-      renderSemDados();
-      return;
-    }
-    renderKPIs(byLoja, agFast);
-    renderGrafico(chartRowsFromAg(agFast, byLoja), agFast);
-    renderTabela(byLoja);
-    fastRendered = true;
     setChartLoading(['cat1-wrap','fam1-wrap','cat1-table-body','fam1-table-body'], true);
 
-    const ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('f', f_active)}`, f_renderAbort.signal);
-    agreCache(cacheKey, ag);
-    setChartLoading(['cat1-wrap','fam1-wrap','cat1-table-body','fam1-table-body'], false);
-    if (totalFiltrado(ag, toByLoja(ag)) <= 0) {
-      renderSemDados();
-      return;
+    const fastPromise = fetchJSON(`${API_BASE}/api/dashboard/agregados?${fastParams}`, f_renderAbort.signal);
+    const fullPromise = fetchJSON(`${API_BASE}/api/dashboard/agregados?${buildAgreParams('f', f_active)}`, f_renderAbort.signal);
+
+    const fastTask = fastPromise.then(agFast => {
+      rawDataPreviewOk = true;
+      setChartLoading(['f-kpi-row','chart-wrap','table-body'], false);
+      const byLoja = toByLoja(agFast);
+      if (totalFiltrado(agFast, byLoja) <= 0) {
+        renderSemDados();
+        return;
+      }
+      renderKPIs(byLoja, agFast);
+      renderGrafico(chartRowsFromAg(agFast, byLoja), agFast);
+      renderTabela(byLoja);
+      fastRendered = true;
+    });
+
+    const fullTask = fullPromise.then(ag => {
+      agreCache(cacheKey, ag);
+      setChartLoading(['cat1-wrap','fam1-wrap','cat1-table-body','fam1-table-body'], false);
+      if (totalFiltrado(ag, toByLoja(ag)) <= 0) {
+        renderSemDados();
+        return;
+      }
+      if (ag.por_cat.length > 0) renderCat1(null, ag.por_cat, ag); else renderCat1(filtrar('cat'));
+      if (ag.por_fam.length > 0) renderFam1(null, ag.por_fam, ag); else renderFam1(filtrar('familia'));
+    });
+
+    const results = await Promise.allSettled([fastTask, fullTask]);
+    const abortResult = results.find(r => r.status === 'rejected' && r.reason?.name === 'AbortError');
+    if (abortResult) throw abortResult.reason;
+    const failures = results.filter(r => r.status === 'rejected');
+    if (failures.length === results.length) throw failures[0].reason;
+    if (failures.length) {
+      setChartLoading(['cat1-wrap','fam1-wrap','cat1-table-body','fam1-table-body'], false);
+      if (results[1]?.status === 'rejected') {
+        ['cat1-state', 'fam1-state'].forEach(id => {
+          const state = document.getElementById(id);
+          if (state) { state.style.display = 'flex'; state.innerHTML = 'Erro ao carregar este gráfico.'; }
+        });
+      }
+      console.warn('Parte dos agregados ficou indisponivel:', failures[0].reason?.message || failures[0].reason);
     }
-    if (ag.por_cat.length > 0) renderCat1(null, ag.por_cat, ag); else renderCat1(filtrar('cat'));
-    if (ag.por_fam.length > 0) renderFam1(null, ag.por_fam, ag); else renderFam1(filtrar('familia'));
     // Pr?-aquece cache para os filtros dos itens que ja estao na tela (sem bloquear UI)
     // Evita disparar consultas pesadas em lote logo apos importacoes grandes.
     // Os filtros continuam carregando sob demanda quando o usuario interage.
