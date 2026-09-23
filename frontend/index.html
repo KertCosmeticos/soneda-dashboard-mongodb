@@ -2511,6 +2511,12 @@ async function init() {
     renderizar();
     tabsRenderizadas.add('vendas');
 
+    // A aba pode ser aberta enquanto as listas ainda estao carregando.
+    // Nesse caso, atualiza somente os filtros da Venda por Dia quando os dados chegam.
+    if (filtrosAbasConstruidos.has('d2')) {
+      d2ConstruirFiltros();
+    }
+
   } catch(err) {
     console.error(err);
     setEstado(`<span class="err">⚠ Erro ao carregar dados:<br>${err.message}</span>`);
