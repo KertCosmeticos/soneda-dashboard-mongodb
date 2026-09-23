@@ -3964,9 +3964,13 @@ function d2ConstruirFiltros() {
   document.getElementById('d2-produto').innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   prepararTodosMultiSelect();
 
-  ['d2-ano','d2-mes','d2-di','d2-df','d2-loja','d2-cat','d2-familia','d2-produto'].forEach(id =>
-    document.getElementById(id).addEventListener('change', d2Renderizar)
-  );
+  ['d2-ano','d2-mes','d2-di','d2-df','d2-loja','d2-cat','d2-familia','d2-produto'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.dataset.diaChangeBound !== '1') {
+      el.addEventListener('change', d2Renderizar);
+      el.dataset.diaChangeBound = '1';
+    }
+  });
 
   document.getElementById('d2-status-msg').textContent =
     document.getElementById('status-msg').textContent;
@@ -7275,6 +7279,24 @@ function trocarAba(aba, evt) {
     if (produtosCarregados && produtoValor && produtoValor.options.length <= 1) {
       filtrosAbasConstruidos.delete('v');
       tabsRenderizadas.delete('valor');
+    }
+  }
+  if (aba === 'dia') {
+    const catDia = document.getElementById('d2-cat');
+    const familiaDia = document.getElementById('d2-familia');
+    const produtoDia = document.getElementById('d2-produto');
+    const filtrosDiaCarregados =
+      catList.length > 0 ||
+      familiaList.length > 0 ||
+      Object.keys(produtoMap || {}).length > 0 ||
+      filtroProdutos().length > 0;
+    const filtrosDiaVazios =
+      (catDia && catDia.options.length <= 1) ||
+      (familiaDia && familiaDia.options.length <= 1) ||
+      (produtoDia && produtoDia.options.length <= 1);
+    if (filtrosDiaCarregados && filtrosDiaVazios) {
+      filtrosAbasConstruidos.delete('d2');
+      tabsRenderizadas.delete('dia');
     }
   }
 
