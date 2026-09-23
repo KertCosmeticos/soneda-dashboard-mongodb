@@ -4155,6 +4155,16 @@ async function d2Renderizar() {
   const d2Signal = d2_renderAbort.signal;
 
   try {
+    let ag = agreCache(baseCacheKey);
+    if (!ag) {
+      ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${d2BaseParams}`, d2Signal);
+      agreCache(baseCacheKey, ag);
+    }
+    setChartLoading(D2_MAIN_IDS, false);
+    const [pd, all] = agToDia(ag);
+    d2AtualizarGrafico(pd, all, ag, false);
+
+    // Prioriza o resultado filtrado principal antes da consulta detalhada, que e mais pesada.
     const detalheCached = agreCache(detalheCacheKey);
     const detalhePromise = detalheCached
       ? Promise.resolve(detalheCached)
@@ -4164,15 +4174,6 @@ async function d2Renderizar() {
             return agDetalhado;
           })
           .catch(e => ({ __erroDetalhe: e }));
-
-    let ag = agreCache(baseCacheKey);
-    if (!ag) {
-      ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${d2BaseParams}`, d2Signal);
-      agreCache(baseCacheKey, ag);
-    }
-    setChartLoading(D2_MAIN_IDS, false);
-    const [pd, all] = agToDia(ag);
-    d2AtualizarGrafico(pd, all, ag, false);
 
     detalhePromise
       .then(agDetalhado => {
