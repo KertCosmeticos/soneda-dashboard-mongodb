@@ -114,6 +114,7 @@ app.use((req, res, next) => {
 // ── CACHE DE RESULTADOS (TTL 60 min) ─────────────────────────────────────────
 const _cache = new Map();
 const CACHE_TTL_MS = 60 * 60 * 1000;
+const DADOS_VERSION_TTL_MS = 30 * 1000;
 let _dadosVersionCache = { ts: 0, value: "init" };
 function cacheGet(k) {
   const e = _cache.get(k);
@@ -714,6 +715,9 @@ async function iniciarServidor() {
     const db = READ_ONLY ? criarDbSomenteLeitura(client.db(dbName)) : client.db(dbName);
 
     async function dadosVersion() {
+      if (_dadosVersionCache.value !== "init" && Date.now() - _dadosVersionCache.ts < DADOS_VERSION_TTL_MS) {
+        return _dadosVersionCache.value;
+      }
       const [totalBrutos, totalLojas, totalCategorias, logs] = await Promise.all([
         db.collection("dados_brutos").countDocuments({}),
         db.collection("lojas_depara").countDocuments({}),
@@ -741,7 +745,17 @@ async function iniciarServidor() {
     }
 
     async function dashboardCacheKey(prefix, query) {
-      return `${prefix}:${await dadosVersion()}:${JSON.stringify(query)}`;
+      // _cb evita cache no navegador, mas nao representa uma alteracao nos dados.
+      // Ordenar os filtros permite reaproveitar o mesmo agregado entre usuarios e abas.
+      const filtros = Object.keys(query || {})
+        .filter(key => key !== "_cb")
+        .sort()
+        .reduce((acc, key) => {
+          const value = query[key];
+          acc[key] = Array.isArray(value) ? [...value].map(String).sort() : value;
+          return acc;
+        }, {});
+      return `${prefix}:${await dadosVersion()}:${JSON.stringify(filtros)}`;
     }
 
     async function mapaNomesLojas() {
@@ -2416,6 +2430,10 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/filtros", async (req, res) => {
       try {
+        const cacheKey = await dashboardCacheKey('filtros:v1', req.query);
+        const cached = cacheGet(cacheKey);
+        if (cached) return res.json(cached);
+
         const [anosRaw, mesesNomeRaw, mesesNumeroRaw, lojasRaw] = await Promise.all([
           db.collection("dados_brutos").distinct("Ano"),
           db.collection("dados_brutos").distinct("MÃªs"),
@@ -2432,7 +2450,9 @@ async function iniciarServidor() {
         const lojas = [...new Set(lojasRaw.map(v => String(v ?? "").trim()).filter(Boolean))]
           .sort((a, b) => Number(a) - Number(b));
 
-        res.json({ anos, meses, lojas });
+        const result = { anos, meses, lojas };
+        cacheSet(cacheKey, result);
+        res.json(result);
       } catch (error) {
         res.status(500).json({ erro: "Erro ao buscar filtros", detalhe: error.message });
       }

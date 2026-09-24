@@ -1537,6 +1537,9 @@ const AGRE_CACHE_PREFIX = 'agre_v8__';
 const DASHBOARD_CACHE_SCHEMA = 'monthly-main-v1';
 const DASHBOARD_CACHE_SCHEMA_KEY = 'soneda_dashboard_cache_schema';
 let DASHBOARD_RUNTIME_CACHE_BUST = String(Date.now());
+let dashboardMetadataLoaded = false;
+let dashboardCategoriasPromise = null;
+let dashboardFiltrosPromise = null;
 
 function agreCache(key, data) {
   const cacheKey = `${AGRE_CACHE_PREFIX}${key}`;
@@ -2380,15 +2383,25 @@ async function init() {
     corrigirLabelsPeriodo();
     configurarExportacaoRelatorios();
     
-    const [brutosRes, deParaRes, catRes, resumoRes, catsRes, famsRes, filtrosRes] = await Promise.allSettled([
+    if (!dashboardCategoriasPromise) dashboardCategoriasPromise = fetchJSON('/api/categorias-depara');
+    if (!dashboardFiltrosPromise) dashboardFiltrosPromise = fetchJSON('/api/dashboard/filtros');
+    const metadataPromise = Promise.allSettled([
       Promise.resolve([]),
       fetchJSON('/api/lojas-depara'),
-      fetchJSON('/api/categorias-depara'),
-      fetchJSON('/api/dashboard/resumo'),
+      dashboardCategoriasPromise,
       fetchJSON('/api/dashboard/categorias'),
       fetchJSON('/api/dashboard/familias'),
-      fetchJSON('/api/dashboard/filtros')
+      dashboardFiltrosPromise
     ]);
+
+    // A consulta principal pode iniciar enquanto os metadados dos filtros carregam.
+    if (document.getElementById('tab-vendas')?.classList.contains('active')) {
+      garantirFiltrosAba('f');
+      renderizar();
+      tabsRenderizadas.add('vendas');
+    }
+
+    const [brutosRes, deParaRes, catRes, catsRes, famsRes, filtrosRes] = await metadataPromise;
 
     if (deParaRes.status === 'fulfilled') {
       try {
@@ -2492,25 +2505,13 @@ async function init() {
         return c;
       });
 
-    if (resumoRes.status === 'fulfilled') {
-      const resumo = resumoRes.value || {};
-      document.getElementById('status-msg').textContent =
-        `${Number(resumo.total_vendido || 0).toLocaleString('pt-BR')} itens vendidos · ` +
-        `${Number(resumo.total_lojas || 0).toLocaleString('pt-BR')} lojas · ` +
-        `R$ ${Number(resumo.total_valor || 0).toLocaleString('pt-BR', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2
-        })}`;
-    } else {
-      document.getElementById('status-msg').textContent =
-        `${rawData.length.toLocaleString('pt-BR')} registros carregados do MongoDB ? ${totalLojasDePara()} lojas no de-para`;
-    }
-
+    dashboardMetadataLoaded = catRes.status === 'fulfilled' && filtrosRes.status === 'fulfilled';
     preencherAnoMesTodasAbas();
-    garantirFiltrosAba('f');
-    renderizar();
-    tabsRenderizadas.add('vendas');
+    construirFiltros();
     if (filtrosAbasConstruidos.has('d2')) d2ConstruirFiltros();
+    if (filtrosAbasConstruidos.has('v')) vConstruirFiltros();
+    if (filtrosAbasConstruidos.has('d3')) d3ConstruirFiltros();
+    if (filtrosAbasConstruidos.has('se')) seConstruirFiltros();
 
   } catch(err) {
     console.error(err);
@@ -3110,9 +3111,13 @@ function construirFiltros() {
   sP.innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   prepararTodosMultiSelect();
 
-  ['f-ano','f-mes','f-di','f-df','f-loja','f-cat','f-familia','f-produto'].forEach(id =>
-    document.getElementById(id).addEventListener('change', renderizar)
-  );
+  ['f-ano','f-mes','f-di','f-df','f-loja','f-cat','f-familia','f-produto'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.dataset.vendasChangeBound !== '1') {
+      el.addEventListener('change', renderizar);
+      el.dataset.vendasChangeBound = '1';
+    }
+  });
 }
 
 const filtrosAbasConstruidos = new Set();
@@ -3356,7 +3361,6 @@ async function renderizar() {
     setChartLoading(['cat1-wrap','fam1-wrap','cat1-table-body','fam1-table-body'], true);
 
     const fastPromise = fetchJSON(`${API_BASE}/api/dashboard/agregados?${fastParams}`, f_renderAbort.signal);
-    const fullPromise = fetchJSON(`${API_BASE}/api/dashboard/agregados?${dimParams}`, f_renderAbort.signal);
 
     const fastTask = fastPromise.then(agFast => {
       rawDataPreviewOk = true;
@@ -3372,7 +3376,10 @@ async function renderizar() {
       fastRendered = true;
     });
 
-    const fullTask = fullPromise.then(ag => {
+    const fullTask = fastTask.then(() => fetchJSON(
+      `${API_BASE}/api/dashboard/agregados?${dimParams}`,
+      f_renderAbort.signal
+    )).then(ag => {
       setChartLoading(['cat1-wrap','fam1-wrap','cat1-table-body','fam1-table-body'], false);
       if (ag.por_cat.length > 0) renderCat1(null, ag.por_cat, ag); else renderCat1(filtrar('cat'));
       if (ag.por_fam.length > 0) renderFam1(null, ag.por_fam, ag); else renderFam1(filtrar('familia'));
@@ -4002,20 +4009,22 @@ function d2ConstruirFiltros() {
     }
   });
 
-  document.getElementById('d2-status-msg').textContent =
-    document.getElementById('status-msg').textContent;
 }
 
 function d2CarregarFiltrosTopo() {
   d2ConstruirFiltros();
+  if (dashboardMetadataLoaded) return Promise.resolve();
   if (d2FiltrosTopoPromise) return d2FiltrosTopoPromise;
+
+  if (!dashboardCategoriasPromise) dashboardCategoriasPromise = fetchJSON('/api/categorias-depara');
+  if (!dashboardFiltrosPromise) dashboardFiltrosPromise = fetchJSON('/api/dashboard/filtros');
 
   const atualizarSeAberta = () => {
     if (filtrosAbasConstruidos.has('d2') || document.getElementById('tab-dia')?.classList.contains('active')) {
       d2ConstruirFiltros();
     }
   };
-  const categoriasTask = fetchJSON('/api/categorias-depara')
+  const categoriasTask = (dashboardCategoriasPromise || fetchJSON('/api/categorias-depara'))
     .then(rows => {
       const categorias = [], familias = [], produtos = [];
       (Array.isArray(rows) ? rows : []).forEach(row => {
@@ -4033,7 +4042,7 @@ function d2CarregarFiltrosTopo() {
     })
     .catch(error => console.warn('Filtros de categoria da Venda por Dia indisponiveis:', error.message));
 
-  const geraisTask = fetchJSON('/api/dashboard/filtros')
+  const geraisTask = (dashboardFiltrosPromise || fetchJSON('/api/dashboard/filtros'))
     .then(filtros => {
       d2OpcoesFiltro.anos = d2ValoresUnicos(Array.isArray(filtros?.anos) ? filtros.anos : []);
       d2OpcoesFiltro.meses = d2ValoresUnicos(Array.isArray(filtros?.meses) ? filtros.meses : []);
@@ -4816,10 +4825,13 @@ function d3ConstruirFiltros() {
   document.getElementById('d3-produto').innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   prepararTodosMultiSelect();
 
-  ['d3-ano','d3-mes','d3-di','d3-df','d3-loja','d3-cat','d3-familia','d3-produto'].forEach(id =>
-    document.getElementById(id).addEventListener('change', d3Renderizar)
-  );
-  document.getElementById('d3-status-msg').textContent = document.getElementById('status-msg').textContent;
+  ['d3-ano','d3-mes','d3-di','d3-df','d3-loja','d3-cat','d3-familia','d3-produto'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.dataset.estoqueChangeBound !== '1') {
+      el.addEventListener('change', d3Renderizar);
+      el.dataset.estoqueChangeBound = '1';
+    }
+  });
 }
 
 function d3ListaUnicaOrdenada(values) {
@@ -6011,12 +6023,14 @@ function seConstruirFiltros() {
   document.getElementById('se-produto').innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   ['se-ano','se-mes','se-loja','se-cat','se-familia','se-produto'].forEach(id => prepararMultiSelect(document.getElementById(id)));
 
-  ['se-ano','se-mes','se-di','se-df','se-loja','se-cat','se-familia','se-produto'].forEach(id =>
-    document.getElementById(id).addEventListener('change', seRenderizar)
-  );
+  ['se-ano','se-mes','se-di','se-df','se-loja','se-cat','se-familia','se-produto'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.dataset.selloutEstoqueChangeBound !== '1') {
+      el.addEventListener('change', seRenderizar);
+      el.dataset.selloutEstoqueChangeBound = '1';
+    }
+  });
 
-  document.getElementById('se-status-msg').textContent =
-    `${rawData.length.toLocaleString('pt-BR')} registros carregados · ${totalLojasDePara()} lojas no de-para`;
 }
 
 function seLimparFiltros() {
@@ -6660,7 +6674,6 @@ function vConstruirFiltros() {
       el.dataset.valorChangeBound = '1';
     }
   });
-  document.getElementById('v-status-msg').textContent = document.getElementById('status-msg').textContent;
 }
 
 function vLimparFiltros() {
@@ -7256,7 +7269,6 @@ async function vRenderizar() {
     const dimParams = buildAgreParams('v', v_active);
     dimParams.set('escopo', 'dimensoes');
     const fastPromise = fetchJSON(`${API_BASE}/api/dashboard/agregados?${fastParams}`, v_renderAbort.signal);
-    const fullPromise = fetchJSON(`${API_BASE}/api/dashboard/agregados?${dimParams}`, v_renderAbort.signal);
 
     const fastTask = fastPromise.then(agFast => {
       rawDataPreviewOk = true;
@@ -7272,7 +7284,10 @@ async function vRenderizar() {
       vRenderTabela(byLoja);
     });
 
-    const fullTask = fullPromise.then(ag => {
+    const fullTask = fastTask.then(() => fetchJSON(
+      `${API_BASE}/api/dashboard/agregados?${dimParams}`,
+      v_renderAbort.signal
+    )).then(ag => {
       setChartLoading(['v-cat1-wrap','v-fam1-wrap','v-cat1-table-body','v-fam1-table-body'], false);
       if (ag.por_cat.length > 0) vRenderCat1(null, ag.por_cat, ag); else vRenderCat1(vFiltrar('cat'));
       if (ag.por_fam.length > 0) vRenderFam1(null, ag.por_fam, ag); else vRenderFam1(vFiltrar('familia'));
@@ -7361,6 +7376,10 @@ function trocarAba(aba, evt) {
     if (aba === 'valor') {
       garantirFiltrosAba('v');
       vRenderizar();
+    }
+    if (aba === 'vendas') {
+      garantirFiltrosAba('f');
+      renderizar();
     }
     if (aba === 'dia') {
       garantirFiltrosAba('d2');
