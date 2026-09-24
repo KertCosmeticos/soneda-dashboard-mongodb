@@ -2511,12 +2511,6 @@ async function init() {
     renderizar();
     tabsRenderizadas.add('vendas');
 
-    // A aba pode ser aberta enquanto as listas ainda estao carregando.
-    // Nesse caso, atualiza somente os filtros da Venda por Dia quando os dados chegam.
-    if (filtrosAbasConstruidos.has('d2')) {
-      d2ConstruirFiltros();
-    }
-
   } catch(err) {
     console.error(err);
     setEstado(`<span class="err">⚠ Erro ao carregar dados:<br>${err.message}</span>`);
@@ -3970,13 +3964,9 @@ function d2ConstruirFiltros() {
   document.getElementById('d2-produto').innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   prepararTodosMultiSelect();
 
-  ['d2-ano','d2-mes','d2-di','d2-df','d2-loja','d2-cat','d2-familia','d2-produto'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el && el.dataset.diaChangeBound !== '1') {
-      el.addEventListener('change', d2Renderizar);
-      el.dataset.diaChangeBound = '1';
-    }
-  });
+  ['d2-ano','d2-mes','d2-di','d2-df','d2-loja','d2-cat','d2-familia','d2-produto'].forEach(id =>
+    document.getElementById(id).addEventListener('change', d2Renderizar)
+  );
 
   document.getElementById('d2-status-msg').textContent =
     document.getElementById('status-msg').textContent;
@@ -4161,16 +4151,6 @@ async function d2Renderizar() {
   const d2Signal = d2_renderAbort.signal;
 
   try {
-    let ag = agreCache(baseCacheKey);
-    if (!ag) {
-      ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${d2BaseParams}`, d2Signal);
-      agreCache(baseCacheKey, ag);
-    }
-    setChartLoading(D2_MAIN_IDS, false);
-    const [pd, all] = agToDia(ag);
-    d2AtualizarGrafico(pd, all, ag, false);
-
-    // Prioriza o resultado filtrado principal antes da consulta detalhada, que e mais pesada.
     const detalheCached = agreCache(detalheCacheKey);
     const detalhePromise = detalheCached
       ? Promise.resolve(detalheCached)
@@ -4180,6 +4160,15 @@ async function d2Renderizar() {
             return agDetalhado;
           })
           .catch(e => ({ __erroDetalhe: e }));
+
+    let ag = agreCache(baseCacheKey);
+    if (!ag) {
+      ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${d2BaseParams}`, d2Signal);
+      agreCache(baseCacheKey, ag);
+    }
+    setChartLoading(D2_MAIN_IDS, false);
+    const [pd, all] = agToDia(ag);
+    d2AtualizarGrafico(pd, all, ag, false);
 
     detalhePromise
       .then(agDetalhado => {
@@ -7286,24 +7275,6 @@ function trocarAba(aba, evt) {
     if (produtosCarregados && produtoValor && produtoValor.options.length <= 1) {
       filtrosAbasConstruidos.delete('v');
       tabsRenderizadas.delete('valor');
-    }
-  }
-  if (aba === 'dia') {
-    const catDia = document.getElementById('d2-cat');
-    const familiaDia = document.getElementById('d2-familia');
-    const produtoDia = document.getElementById('d2-produto');
-    const filtrosDiaCarregados =
-      catList.length > 0 ||
-      familiaList.length > 0 ||
-      Object.keys(produtoMap || {}).length > 0 ||
-      filtroProdutos().length > 0;
-    const filtrosDiaVazios =
-      (catDia && catDia.options.length <= 1) ||
-      (familiaDia && familiaDia.options.length <= 1) ||
-      (produtoDia && produtoDia.options.length <= 1);
-    if (filtrosDiaCarregados && filtrosDiaVazios) {
-      filtrosAbasConstruidos.delete('d2');
-      tabsRenderizadas.delete('dia');
     }
   }
 
