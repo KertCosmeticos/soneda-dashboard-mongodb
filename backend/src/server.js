@@ -2001,22 +2001,20 @@ async function iniciarServidor() {
 
         let dateGroupExpr = null;
         if (!apenasDimensoes || incluirDiaDetalhado) {
-          if (apenasDia || incluirDiaDetalhado) {
-            dateGroupExpr = {
-              $ifNull: [
-                _migData ? dataIsoValidaExpr() : null,
-                dataValidaPorCampoDataExpr()
-              ]
-            };
+          if ((apenasDia || incluirDiaDetalhado) && _migData) {
+            dateGroupExpr = "$_data_iso";
+          } else if (apenasDia || incluirDiaDetalhado) {
+            dateGroupExpr = dataValidaPorCampoDataExpr();
           } else {
             const anoRefMensal = await anoReferenciaMensal(ano);
-            dateGroupExpr = {
-              $ifNull: [
-                _migData ? dataIsoValidaExpr() : null,
-                dataValidaPorCampoDataExpr(),
-                dataFallbackPorMesExpr(anoRefMensal)
-              ]
-            };
+            dateGroupExpr = _migData
+              ? { $ifNull: ["$_data_iso", dataFallbackPorMesExpr(anoRefMensal)] }
+              : {
+                  $ifNull: [
+                    dataValidaPorCampoDataExpr(),
+                    dataFallbackPorMesExpr(anoRefMensal)
+                  ]
+                };
           }
         }
         const mDataReal = apenasDataReal ? [{ $match: { $expr: { $ne: [dateGroupExpr, null] } } }] : [];
@@ -2187,9 +2185,10 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/estoque", async (req, res) => {
       try {
-        const cacheKey = req.query.snapshot === "1"
-          ? `est:v15:snapshot:${JSON.stringify(req.query)}`
-          : await dashboardCacheKey('est:v19', req.query);
+        const cacheKey = await dashboardCacheKey(
+          req.query.snapshot === "1" ? 'est:v20:snapshot' : 'est:v20',
+          req.query
+        );
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
 
@@ -2249,14 +2248,15 @@ async function iniciarServidor() {
           );
         }
         const estoqueExpr = { $ifNull: ["$_estoque_num", brToDouble({ $getField: "Estoque Diario" })] };
-        const anoRefMensal = await anoReferenciaMensal(ano);
-        const dateGroupExpr = {
-          $ifNull: [
-            _migData ? dataIsoValidaExpr() : null,
-            dataValidaPorCampoDataExpr(),
-            dataFallbackPorMesExpr(anoRefMensal)
-          ]
-        };
+        const anoRefMensal = _migData ? null : await anoReferenciaMensal(ano);
+        const dateGroupExpr = _migData
+          ? "$_data_iso"
+          : {
+              $ifNull: [
+                dataValidaPorCampoDataExpr(),
+                dataFallbackPorMesExpr(anoRefMensal)
+              ]
+            };
 
         if (req.query.historico === "1") {
           const historico = await db.collection("dados_brutos").aggregate([

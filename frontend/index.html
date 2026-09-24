@@ -5180,45 +5180,40 @@ function d3Renderizar() {
 
 async function d3FetchTotalEstoque(renderSeq = d3_renderSeq, signal = null) {
   try {
-    const resumoParams = buildAgreParams('d3', d3_active);
-    resumoParams.set('escopo', 'loja');
-    const agResumo = await fetchJSON(`${API_BASE}/api/dashboard/estoque-resumo?${resumoParams}`, signal);
-    if (renderSeq !== d3_renderSeq) return;
-    d3_estoqueAg = agResumo;
-    d3RenderResumoEstoqueAgregado(agResumo);
-    setChartLoading(['d3-kpi-row','d3-chart-wrap'], false);
-
     const detalhesParams = buildAgreParams('d3', d3_active);
+    ['ativo_loja','ativo_cat','ativo_familia'].forEach(key => detalhesParams.delete(key));
     detalhesParams.set('snapshot', '1');
     const agDetalhado = await fetchJSON(`${API_BASE}/api/dashboard/estoque?${detalhesParams}`, signal);
     if (renderSeq !== d3_renderSeq) return;
 
     d3_estoqueAg = agDetalhado;
+    d3RenderResumoEstoqueAgregado(agDetalhado);
     d3AtualizarFiltrosEstoqueAgregado(agDetalhado);
     d3AtualizarKpiEstoqueUltimoDia(agDetalhado);
-    if (shouldUseMonthlyMainChart('d3', d3_active)) {
-      const histParams = buildAgreParams('d3', d3_active);
-      histParams.set('historico', '1');
-      const agHistorico = await fetchJSON(`${API_BASE}/api/dashboard/estoque?${histParams}`, signal);
-      if (renderSeq !== d3_renderSeq) return;
-      d3RenderGraficoEstoqueUltimoDia(agHistorico);
-    } else {
-      d3RenderGraficoEstoqueUltimoDia(agDetalhado);
-    }
+    d3RenderGraficoEstoqueUltimoDia(agDetalhado);
     d3RenderTabelaFilialUltimoDia(agDetalhado);
     d3RenderRotatividadeAgregada(agDetalhado);
     setChartLoading(D3_LOADING_IDS, false);
-    d3FetchLineHistorico(renderSeq, signal);
+
+    const histParams = buildAgreParams('d3', d3_active);
+    histParams.set('historico', '1');
+    fetchJSON(`${API_BASE}/api/dashboard/estoque?${histParams}`, signal)
+      .then(agHistorico => {
+        if (renderSeq !== d3_renderSeq) return;
+        if (shouldUseMonthlyMainChart('d3', d3_active)) {
+          d3RenderGraficoEstoqueUltimoDia(agHistorico);
+        }
+        d3RenderLineAgregado(agHistorico);
+      })
+      .catch(e => {
+        if (e.name === 'AbortError' || renderSeq !== d3_renderSeq) return;
+        console.warn('Historico de estoque indisponivel:', e.message);
+        const lineState = document.getElementById('d3-line-state');
+        if (lineState) { lineState.style.display = 'flex'; lineState.innerHTML = 'Historico indisponivel.'; }
+      });
   } catch(e) {
     if (e.name === 'AbortError') return;
-    try {
-      const params = buildAgreParams('d3', d3_active);
-      params.set('escopo', 'loja');
-      const ag = await fetchJSON(`${API_BASE}/api/dashboard/estoque-resumo?${params}`, signal);
-      if (renderSeq !== d3_renderSeq) return;
-      d3_estoqueAg = ag;
-      d3RenderResumoEstoqueAgregado(ag);
-    } catch(_) {}
+    console.warn('Snapshot de estoque indisponivel:', e.message);
     if (renderSeq === d3_renderSeq) setChartLoading(D3_LOADING_IDS, false);
   }
 }
@@ -6272,43 +6267,30 @@ async function seRenderizarAgregado() {
 
   const paramsGrafico = buildAgreParams('se', se_active);
   paramsGrafico.set('escopo', 'loja');
-  const paramsMain = seParams(true);
   const paramsTabela = seParams(false);
   const paramsPeriodo = buildAgreParams('se', null);
   if (se_active.dim === 'loja' && se_active.val) paramsPeriodo.set('loja', se_active.val);
   paramsPeriodo.set('escopo', 'periodo');
   const estoqueEndpoint = seViewMode === 'data' ? 'estoque' : 'estoque-resumo';
   const paramsEstoqueUltimoDia = new URLSearchParams(paramsGrafico);
+  ['escopo','ativo_loja','ativo_cat','ativo_familia'].forEach(key => paramsEstoqueUltimoDia.delete(key));
   paramsEstoqueUltimoDia.set('snapshot', '1');
-  const paramsEstoqueUltimoDiaTabela = seParams(false);
-  paramsEstoqueUltimoDiaTabela.set('snapshot', '1');
   const paramsEstoqueHistorico = new URLSearchParams(paramsGrafico);
   paramsEstoqueHistorico.delete('escopo');
   paramsEstoqueHistorico.delete('detalhe');
+  if (se_active.dim === 'loja' && se_active.val) {
+    paramsEstoqueHistorico.delete('ativo_loja');
+    paramsEstoqueHistorico.set('loja', se_active.val);
+  }
   paramsEstoqueHistorico.set('historico', '1');
 
   try {
-    const [vMain, vPeriodo, eUltimoDia, eHistorico, vTabela, eTabela, eUltimoDiaTabela] = await Promise.all([
+    const [vMain, eUltimoDia] = await Promise.all([
       fetchJSON(`${API_BASE}/api/dashboard/agregados?${paramsGrafico}`, se_renderAbort.signal),
-      fetchJSON(`${API_BASE}/api/dashboard/agregados?${paramsPeriodo}`, se_renderAbort.signal),
       fetchJSON(`${API_BASE}/api/dashboard/estoque?${paramsEstoqueUltimoDia}`, se_renderAbort.signal),
-      fetchJSON(`${API_BASE}/api/dashboard/estoque?${paramsEstoqueHistorico}`, se_renderAbort.signal),
-      seViewMode !== 'data' && paramsTabela.toString() === paramsMain.toString()
-        ? Promise.resolve(null)
-        : fetchJSON(`${API_BASE}/api/dashboard/agregados?${paramsTabela}`, se_renderAbort.signal),
-      seViewMode !== 'data' && paramsTabela.toString() === paramsMain.toString()
-        ? Promise.resolve(null)
-        : fetchJSON(`${API_BASE}/api/dashboard/${estoqueEndpoint}?${paramsTabela}`, se_renderAbort.signal),
-      seViewMode === 'data' || paramsEstoqueUltimoDiaTabela.toString() === paramsEstoqueUltimoDia.toString()
-        ? Promise.resolve(null)
-        : fetchJSON(`${API_BASE}/api/dashboard/estoque?${paramsEstoqueUltimoDiaTabela}`, se_renderAbort.signal),
     ]);
-    const vendaTabela = vTabela || vMain;
-    const estoqueTabela = eTabela || eUltimoDia;
-    const estoqueTabelaUltimoDia = eUltimoDiaTabela || eUltimoDia;
 
     const byLoja = seCombinarPorLoja(vMain.por_loja, eUltimoDia.por_loja);
-    const byLojaTabela = seCombinarPorLoja(vendaTabela.por_loja, estoqueTabelaUltimoDia.por_loja);
     const totalSellout = (vMain.por_dia || []).length
       ? vMain.por_dia.reduce((s,r) => s + Number(r.qty || 0), 0)
       : (vMain.por_loja || []).reduce((s,r) => s + Number(r.qty || 0), 0);
@@ -6346,16 +6328,40 @@ async function seRenderizarAgregado() {
     if (seStatusEl) seStatusEl.textContent =
       `${totalSellout.toLocaleString('pt-BR')} unidades vendidas · ${totalEstoque.toLocaleString('pt-BR')} em estoque${estoqueUltimoDia.data ? ` - ${d3FormatarDataKpi(estoqueUltimoDia.data)}` : ''}`;
 
-    const dadosGraficoMensal = combinarSelloutEstoquePorMes(vPeriodo?.por_dia, eHistorico?.por_loja_dia);
-    seRenderGrafico(dadosGraficoMensal, true, 'month');
     seRenderGrafico(byLoja, false, 'filial');
-    if (seViewMode === 'data') {
-      seRenderTabelaDataAgregada(seCombinarPorData(vendaTabela.por_dia, estoqueTabela.por_loja_dia));
-    } else {
-      seRenderTabela(byLojaTabela, estoqueUltimoDia.data);
-    }
     seRenderRiskTabela(byLoja);
-    setChartLoading(SE_LOADING_IDS, false);
+    const tabelaUsaPrincipal = seViewMode !== 'data';
+    if (tabelaUsaPrincipal) seRenderTabela(byLoja, estoqueUltimoDia.data);
+    setChartLoading(['se-kpi-row','se-filial-chart-wrap'], false);
+    if (tabelaUsaPrincipal) setChartLoading(['se-table-body'], false);
+
+    try {
+      const [vPeriodo, eHistorico, vTabela, eTabela] = await Promise.all([
+        fetchJSON(`${API_BASE}/api/dashboard/agregados?${paramsPeriodo}`, se_renderAbort.signal),
+        fetchJSON(`${API_BASE}/api/dashboard/estoque?${paramsEstoqueHistorico}`, se_renderAbort.signal),
+        tabelaUsaPrincipal
+          ? Promise.resolve(null)
+          : fetchJSON(`${API_BASE}/api/dashboard/agregados?${paramsTabela}`, se_renderAbort.signal),
+        seViewMode === 'data'
+          ? fetchJSON(`${API_BASE}/api/dashboard/${estoqueEndpoint}?${paramsTabela}`, se_renderAbort.signal)
+          : Promise.resolve(null),
+      ]);
+      const dadosGraficoMensal = combinarSelloutEstoquePorMes(vPeriodo?.por_dia, eHistorico?.por_loja_dia);
+      seRenderGrafico(dadosGraficoMensal, true, 'month');
+      if (seViewMode === 'data') {
+        seRenderTabelaDataAgregada(seCombinarPorData(vTabela?.por_dia, eTabela?.por_loja_dia));
+      }
+      setChartLoading(['se-month-chart-wrap','se-table-body'], false);
+    } catch (detalheError) {
+      if (detalheError.name === 'AbortError') return;
+      console.warn('Historico de sell out x estoque indisponivel:', detalheError.message);
+      setChartLoading(['se-month-chart-wrap','se-table-body'], false);
+      const state = document.getElementById('se-month-chart-state');
+      if (state) { state.style.display = 'flex'; state.innerHTML = 'Historico indisponivel.'; }
+      if (!tabelaUsaPrincipal) {
+        document.getElementById('se-table-body').innerHTML = '<div class="no-data">Detalhamento indisponivel</div>';
+      }
+    }
   } catch(e) {
     if (e.name === 'AbortError') return;
     setChartLoading(SE_LOADING_IDS, false);
