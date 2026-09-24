@@ -2510,6 +2510,7 @@ async function init() {
     garantirFiltrosAba('f');
     renderizar();
     tabsRenderizadas.add('vendas');
+    if (filtrosAbasConstruidos.has('d2')) d2ConstruirFiltros();
 
   } catch(err) {
     console.error(err);
@@ -3943,33 +3944,106 @@ function renderTabela(byLoja) {
 }
 
 // â”€â”€ ABA 2: VENDA POR DIA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const d2OpcoesFiltro = {
+  anos: [], meses: [], lojas: [], categorias: [], familias: [], produtos: []
+};
+let d2FiltrosTopoPromise = null;
+
+function d2ValoresUnicos(valores) {
+  return [...new Set(valores.map(v => String(v ?? '').trim()).filter(Boolean))];
+}
+
+function d2PreencherSelect(id, vazio, valores, formatar = value => value) {
+  const select = document.getElementById(id);
+  if (!select) return;
+  const selecionados = new Set(selectedValues(id));
+  select.innerHTML = `<option value="">${vazio}</option>` + valores.map(value =>
+    `<option value="${escapeHtml(value)}">${escapeHtml(formatar(value))}</option>`
+  ).join('');
+  [...select.options].forEach(option => {
+    option.selected = option.value !== '' && selecionados.has(option.value);
+  });
+}
+
 function d2ConstruirFiltros() {
-  const anos  = filtroAnos();
-  const meses = filtroMeses();
+  const anos = d2ValoresUnicos([...d2OpcoesFiltro.anos, ...filtroAnos()]).sort();
+  const meses = d2ValoresUnicos([...d2OpcoesFiltro.meses, ...filtroMeses()]);
+  const lojas = d2ValoresUnicos([...d2OpcoesFiltro.lojas, ...filtroLojas(true)])
+    .sort((a, b) => Number(a) - Number(b));
+  const cats = d2ValoresUnicos([
+    ...d2OpcoesFiltro.categorias,
+    ...catList,
+    ...Object.values(catMap || {}),
+    ...rawData.map(r => getCat(r))
+  ]).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const familias = d2ValoresUnicos([
+    ...d2OpcoesFiltro.familias,
+    ...familiaList,
+    ...Object.values(familiaMap || {}),
+    ...rawData.map(r => getFamilia(r))
+  ]).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const produtos = d2ValoresUnicos([...d2OpcoesFiltro.produtos, ...filtroProdutos()])
+    .filter(value => value !== '-' && value !== '?')
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
-  const lojas = filtroLojas(true);
-  const cats  = catList.length ? catList : [...new Set(rawData.map(r => getCat(r)).filter(Boolean))].sort();
-
-  const familias = familiaList.length ? familiaList : [...new Set(rawData.map(r => getFamilia(r)).filter(Boolean))].sort();
-  const produtos = filtroProdutos();
-
-  document.getElementById('d2-ano').innerHTML     = '<option value="">Todos</option>' + anos.map(a => `<option>${a}</option>`).join('');
-  document.getElementById('d2-mes').innerHTML     = '<option value="">Todos</option>' + meses.map(m => `<option>${m}</option>`).join('');
-  document.getElementById('d2-loja').innerHTML    = '<option value="">Todas</option>' + lojas.map(l => {
-    const nome = nomeLojaDePara(l);
-    return `<option value="${l}">#${l} - ${nome}</option>`;
-  }).join('');
-  document.getElementById('d2-cat').innerHTML     = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
-  document.getElementById('d2-familia').innerHTML = '<option value="">Todas</option>' + familias.map(f => `<option value="${f}">${f}</option>`).join('');
-  document.getElementById('d2-produto').innerHTML = '<option value="">Todos</option>' + produtos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+  d2PreencherSelect('d2-ano', 'Todos', anos);
+  d2PreencherSelect('d2-mes', 'Todos', meses);
+  d2PreencherSelect('d2-loja', 'Todas', lojas, loja => `#${loja} - ${nomeLojaDePara(loja)}`);
+  d2PreencherSelect('d2-cat', 'Todas', cats);
+  d2PreencherSelect('d2-familia', 'Todas', familias);
+  d2PreencherSelect('d2-produto', 'Todos', produtos);
   prepararTodosMultiSelect();
 
-  ['d2-ano','d2-mes','d2-di','d2-df','d2-loja','d2-cat','d2-familia','d2-produto'].forEach(id =>
-    document.getElementById(id).addEventListener('change', d2Renderizar)
-  );
+  ['d2-ano','d2-mes','d2-di','d2-df','d2-loja','d2-cat','d2-familia','d2-produto'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.dataset.diaChangeBound !== '1') {
+      el.addEventListener('change', d2Renderizar);
+      el.dataset.diaChangeBound = '1';
+    }
+  });
 
   document.getElementById('d2-status-msg').textContent =
     document.getElementById('status-msg').textContent;
+}
+
+function d2CarregarFiltrosTopo() {
+  d2ConstruirFiltros();
+  if (d2FiltrosTopoPromise) return d2FiltrosTopoPromise;
+
+  const atualizarSeAberta = () => {
+    if (filtrosAbasConstruidos.has('d2') || document.getElementById('tab-dia')?.classList.contains('active')) {
+      d2ConstruirFiltros();
+    }
+  };
+  const categoriasTask = fetchJSON('/api/categorias-depara')
+    .then(rows => {
+      const categorias = [], familias = [], produtos = [];
+      (Array.isArray(rows) ? rows : []).forEach(row => {
+        const entries = Object.entries(row || {});
+        const normalizar = key => String(key).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        const campo = regex => entries.find(([key]) => regex.test(normalizar(key)))?.[1];
+        categorias.push(campo(/^categ/));
+        familias.push(campo(/^famil/));
+        produtos.push(campo(/^nome.?prod|^produto|^descri/));
+      });
+      d2OpcoesFiltro.categorias = d2ValoresUnicos(categorias);
+      d2OpcoesFiltro.familias = d2ValoresUnicos(familias);
+      d2OpcoesFiltro.produtos = d2ValoresUnicos(produtos);
+      atualizarSeAberta();
+    })
+    .catch(error => console.warn('Filtros de categoria da Venda por Dia indisponiveis:', error.message));
+
+  const geraisTask = fetchJSON('/api/dashboard/filtros')
+    .then(filtros => {
+      d2OpcoesFiltro.anos = d2ValoresUnicos(Array.isArray(filtros?.anos) ? filtros.anos : []);
+      d2OpcoesFiltro.meses = d2ValoresUnicos(Array.isArray(filtros?.meses) ? filtros.meses : []);
+      d2OpcoesFiltro.lojas = d2ValoresUnicos(Array.isArray(filtros?.lojas) ? filtros.lojas : []);
+      atualizarSeAberta();
+    })
+    .catch(error => console.warn('Filtros de periodo da Venda por Dia indisponiveis:', error.message));
+
+  d2FiltrosTopoPromise = Promise.allSettled([categoriasTask, geraisTask]);
+  return d2FiltrosTopoPromise;
 }
 
 function d2LimparFiltros() {
@@ -4151,6 +4225,15 @@ async function d2Renderizar() {
   const d2Signal = d2_renderAbort.signal;
 
   try {
+    let ag = agreCache(baseCacheKey);
+    if (!ag) {
+      ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${d2BaseParams}`, d2Signal);
+      agreCache(baseCacheKey, ag);
+    }
+    setChartLoading(D2_MAIN_IDS, false);
+    const [pd, all] = agToDia(ag);
+    d2AtualizarGrafico(pd, all, ag, false);
+
     const detalheCached = agreCache(detalheCacheKey);
     const detalhePromise = detalheCached
       ? Promise.resolve(detalheCached)
@@ -4160,15 +4243,6 @@ async function d2Renderizar() {
             return agDetalhado;
           })
           .catch(e => ({ __erroDetalhe: e }));
-
-    let ag = agreCache(baseCacheKey);
-    if (!ag) {
-      ag = await fetchJSON(`${API_BASE}/api/dashboard/agregados?${d2BaseParams}`, d2Signal);
-      agreCache(baseCacheKey, ag);
-    }
-    setChartLoading(D2_MAIN_IDS, false);
-    const [pd, all] = agToDia(ag);
-    d2AtualizarGrafico(pd, all, ag, false);
 
     detalhePromise
       .then(agDetalhado => {
@@ -7276,6 +7350,10 @@ function trocarAba(aba, evt) {
       filtrosAbasConstruidos.delete('v');
       tabsRenderizadas.delete('valor');
     }
+  }
+  if (aba === 'dia') {
+    garantirFiltrosAba('d2');
+    d2CarregarFiltrosTopo();
   }
 
   // Constr?i filtros e renderiza apenas na primeira vez que a aba for aberta
