@@ -1863,7 +1863,7 @@ function combinarSelloutEstoquePorMes(vendasPorDia, estoquePorLojaDia) {
 }
 
 function shouldUseMonthlyMainChart(prefix, active) {
-  return active.dim !== 'loja';
+  return prefix === 'f' || prefix === 'v' || active.dim !== 'loja';
 }
 
 function setFirstChartTitle(tabId, title) {
@@ -3325,19 +3325,22 @@ async function renderizar() {
   const totalFiltrado = (ag, byLoja) => ag && Array.isArray(ag.por_dia) && ag.por_dia.length > 0
     ? ag.por_dia.reduce((s, r) => s + (r.qty || 0), 0)
     : byLoja.reduce((s, r) => s + r.qty, 0);
-  const chartRowsFromAg = (ag, byLoja) => {
-    if (ag && Array.isArray(ag.por_dia) && ag.por_dia.length > 0 && shouldUseMonthlyMainChart('f', f_active)) {
-      const mensal = agruparAgPorMes(ag && ag.por_dia, 'qty', 'qty');
-      if (mensal.length > 0) return mensal;
-    }
-    return byLoja;
-  };
+  const chartRowsFromAg = ag => agruparAgPorMes(ag?.por_dia, 'qty', 'qty');
   const updateMainChartTitle = () => {
     setFirstChartTitle('tab-vendas', shouldUseMonthlyMainChart('f', f_active)
       ? 'Quantidade Vendida Total por Mês'
       : 'Quantidade Vendida por Filial');
   };
   updateMainChartTitle();
+
+  if (f_renderAbort) f_renderAbort.abort();
+  f_renderAbort = new AbortController();
+  const periodoParams = buildAgreParams('f', f_active);
+  periodoParams.set('escopo', 'periodo');
+  const periodoPromise = fetchJSON(
+    `${API_BASE}/api/dashboard/agregados?${periodoParams}`,
+    f_renderAbort.signal
+  );
 
   if (cached) {
     const byLoja = toByLoja(cached);
@@ -3346,10 +3349,15 @@ async function renderizar() {
       return;
     }
     renderKPIs(byLoja, cached);
-    renderGrafico(chartRowsFromAg(cached, byLoja), cached);
     renderTabela(byLoja);
     if (cached.por_cat.length > 0) renderCat1(null, cached.por_cat, cached); else renderCat1(filtrar('cat'));
     if (cached.por_fam.length > 0) renderFam1(null, cached.por_fam, cached); else renderFam1(filtrar('familia'));
+    try {
+      const agPeriodo = await periodoPromise;
+      renderGrafico(chartRowsFromAg(agPeriodo), agPeriodo);
+    } catch(e) {
+      if (e.name !== 'AbortError') console.warn('Grafico mensal de Sell Out indisponivel:', e.message);
+    }
     return;
   }
 
@@ -3360,9 +3368,6 @@ async function renderizar() {
   if (rawDataPreviewOk) setChartLoading(['f-kpi-row','chart-wrap','cat1-wrap','fam1-wrap','table-body','cat1-table-body','fam1-table-body'], true);
 
   // Cancela requisição anterior se um novo filtro for aplicado antes da resposta chegar
-  if (f_renderAbort) f_renderAbort.abort();
-  f_renderAbort = new AbortController();
-
   try {
     const fastParams = buildAgreParams('f', f_active);
     fastParams.set('escopo', 'loja');
@@ -3374,16 +3379,20 @@ async function renderizar() {
 
     const fastTask = fastPromise.then(agFast => {
       rawDataPreviewOk = true;
-      setChartLoading(['f-kpi-row','chart-wrap','table-body'], false);
+      setChartLoading(['f-kpi-row','table-body'], false);
       const byLoja = toByLoja(agFast);
       if (totalFiltrado(agFast, byLoja) <= 0) {
         renderSemDados();
         return;
       }
       renderKPIs(byLoja, agFast);
-      renderGrafico(chartRowsFromAg(agFast, byLoja), agFast);
       renderTabela(byLoja);
       fastRendered = true;
+    });
+
+    const monthlyTask = periodoPromise.then(agPeriodo => {
+      setChartLoading(['chart-wrap'], false);
+      renderGrafico(chartRowsFromAg(agPeriodo), agPeriodo);
     });
 
     const fullTask = fastTask.then(() => fetchJSON(
@@ -3395,7 +3404,7 @@ async function renderizar() {
       if (ag.por_fam.length > 0) renderFam1(null, ag.por_fam, ag); else renderFam1(filtrar('familia'));
     });
 
-    const results = await Promise.allSettled([fastTask, fullTask]);
+    const results = await Promise.allSettled([fastTask, monthlyTask, fullTask]);
     const abortResult = results.find(r => r.status === 'rejected' && r.reason?.name === 'AbortError');
     if (abortResult) throw abortResult.reason;
     const failures = results.filter(r => r.status === 'rejected');
@@ -3403,6 +3412,10 @@ async function renderizar() {
     if (failures.length) {
       setChartLoading(['cat1-wrap','fam1-wrap','cat1-table-body','fam1-table-body'], false);
       if (results[1]?.status === 'rejected') {
+        setChartLoading(['chart-wrap'], false);
+        setEstado('Grafico mensal indisponivel no momento.');
+      }
+      if (results[2]?.status === 'rejected') {
         ['cat1-state', 'fam1-state'].forEach(id => {
           const state = document.getElementById(id);
           if (state) { state.style.display = 'flex'; state.innerHTML = 'Erro ao carregar este gráfico.'; }
@@ -7580,14 +7593,16 @@ async function vRenderizar() {
   const cached   = agreCache(cacheKey);
   if (v_renderAbort) v_renderAbort.abort();
   v_renderAbort = new AbortController();
-  const coberturaParams = buildAgreParams('v', v_active);
-  coberturaParams.set('escopo', 'periodo');
-  const coberturaPromise = fetchJSON(
-    `${API_BASE}/api/dashboard/agregados?${coberturaParams}`,
+  const periodoParams = buildAgreParams('v', v_active);
+  periodoParams.set('escopo', 'periodo');
+  const periodoPromise = fetchJSON(
+    `${API_BASE}/api/dashboard/agregados?${periodoParams}`,
     v_renderAbort.signal
   ).then(agPeriodo => {
     coberturaExibirAviso('v-coverage-note', coberturaMensagensColunas(agPeriodo, ['valor']));
-  }).catch(e => {
+    return agPeriodo;
+  });
+  periodoPromise.catch(e => {
     if (e.name !== 'AbortError') console.warn('Cobertura da coluna de valor indisponivel:', e.message);
   });
   const toByLoja = ag => ag.por_loja
@@ -7596,13 +7611,7 @@ async function vRenderizar() {
       return { loja, nome: nomeLojaDePara(loja), val: Number(r.valor || 0), qty: Number(r.qty || 0) };
     })
     .filter(r => r.loja);
-  const chartRowsFromAg = (ag, byLoja) => {
-    if (shouldUseMonthlyMainChart('v', v_active)) {
-      const mensal = agruparAgPorMes(ag && ag.por_dia, 'valor', 'val');
-      if (mensal.length > 0) return mensal;
-    }
-    return byLoja;
-  };
+  const chartRowsFromAg = ag => agruparAgPorMes(ag?.por_dia, 'valor', 'val');
   const updateMainChartTitle = () => {
     setFirstChartTitle('tab-valor', shouldUseMonthlyMainChart('v', v_active)
       ? 'Valor Vendido Total por Mês'
@@ -7618,7 +7627,6 @@ async function vRenderizar() {
       return;
     }
     vRenderKPIs(byLoja, ag);
-    vRenderGrafico(chartRowsFromAg(ag, byLoja), ag);
     vRenderTabela(byLoja);
     if (ag.por_cat.length > 0) vRenderCat1(null, ag.por_cat, ag); else vRenderCat1(vFiltrar('cat'));
     if (ag.por_fam.length > 0) vRenderFam1(null, ag.por_fam, ag); else vRenderFam1(vFiltrar('familia'));
@@ -7626,7 +7634,12 @@ async function vRenderizar() {
 
   if (cached) {
     renderFromAg(cached, toByLoja(cached));
-    await coberturaPromise;
+    try {
+      const agPeriodo = await periodoPromise;
+      vRenderGrafico(chartRowsFromAg(agPeriodo), agPeriodo);
+    } catch(e) {
+      if (e.name !== 'AbortError') console.warn('Grafico mensal de Venda Valor indisponivel:', e.message);
+    }
     return;
   }
 
@@ -7642,7 +7655,7 @@ async function vRenderizar() {
 
     const fastTask = fastPromise.then(agFast => {
       rawDataPreviewOk = true;
-      setChartLoading(['v-kpi-row','v-chart-wrap','v-table-body'], false);
+      setChartLoading(['v-kpi-row','v-table-body'], false);
       const byLoja = toByLoja(agFast);
       const totalFiltrado = byLoja.reduce((s, r) => s + Number(r.val || 0), 0);
       if (totalFiltrado <= 0) {
@@ -7650,8 +7663,12 @@ async function vRenderizar() {
         return;
       }
       vRenderKPIs(byLoja, agFast);
-      vRenderGrafico(chartRowsFromAg(agFast, byLoja), agFast);
       vRenderTabela(byLoja);
+    });
+
+    const monthlyTask = periodoPromise.then(agPeriodo => {
+      setChartLoading(['v-chart-wrap'], false);
+      vRenderGrafico(chartRowsFromAg(agPeriodo), agPeriodo);
     });
 
     const fullTask = fastTask.then(() => fetchJSON(
@@ -7663,7 +7680,7 @@ async function vRenderizar() {
       if (ag.por_fam.length > 0) vRenderFam1(null, ag.por_fam, ag); else vRenderFam1(vFiltrar('familia'));
     });
 
-    const results = await Promise.allSettled([fastTask, fullTask]);
+    const results = await Promise.allSettled([fastTask, monthlyTask, fullTask]);
     const abortResult = results.find(r => r.status === 'rejected' && r.reason?.name === 'AbortError');
     if (abortResult) throw abortResult.reason;
     const failures = results.filter(r => r.status === 'rejected');
@@ -7671,6 +7688,11 @@ async function vRenderizar() {
     if (failures.length) {
       setChartLoading(['v-cat1-wrap','v-fam1-wrap','v-cat1-table-body','v-fam1-table-body'], false);
       if (results[1]?.status === 'rejected') {
+        setChartLoading(['v-chart-wrap'], false);
+        const state = document.getElementById('v-chart-state');
+        if (state) { state.style.display = 'flex'; state.innerHTML = 'Grafico mensal indisponivel no momento.'; }
+      }
+      if (results[2]?.status === 'rejected') {
         ['v-cat1-state', 'v-fam1-state'].forEach(id => {
           const state = document.getElementById(id);
           if (state) { state.style.display = 'flex'; state.innerHTML = 'Erro ao carregar este gráfico.'; }
