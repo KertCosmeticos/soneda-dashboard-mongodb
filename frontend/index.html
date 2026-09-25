@@ -61,7 +61,9 @@
   main { max-width: 1300px; margin: 0 auto; padding: 36px 40px; }
   .section-title { font-family: 'DM Serif Display', serif; font-size: 1.9rem; font-style: italic; margin-bottom: 6px; }
   .section-sub { color: var(--text-dim); font-size: 0.82rem; margin-bottom: 28px; font-family: 'DM Mono', monospace; }
-  .data-coverage-note { display: none; max-width: 920px; margin: -14px 0 28px; padding-left: 12px; border-left: 2px solid var(--accent); color: var(--text-dim); font-family: 'DM Mono', monospace; font-size: 0.72rem; line-height: 1.6; }
+  .data-coverage-note { display: none; width: 100%; margin: -14px 0 28px; padding-left: 12px; border-left: 2px solid var(--accent); color: var(--text-dim); font-family: 'DM Mono', monospace; font-size: 0.65rem; line-height: 1.55; }
+  .data-coverage-line { display: block; white-space: nowrap; overflow-x: auto; scrollbar-width: thin; }
+  .data-coverage-line + .data-coverage-line { margin-top: 3px; }
   .data-coverage-note strong { color: var(--accent); font-weight: 500; }
 
   /* FILTERS */
@@ -4206,6 +4208,21 @@ function coberturaSomarPorMes(rows) {
   return totais;
 }
 
+function coberturaEstoqueFinalPorMes(rows) {
+  const porMes = new Map();
+  (rows || []).forEach(row => {
+    const data = String(row.data || '').trim();
+    const mes = monthKeyFromDate(data);
+    if (!mes || !/^\d{4}-\d{2}-\d{2}$/.test(data)) return;
+    if (!porMes.has(mes) || data > porMes.get(mes).data) {
+      porMes.set(mes, { data, total: Number(row.qty || 0) });
+    } else if (data === porMes.get(mes).data) {
+      porMes.get(mes).total += Number(row.qty || 0);
+    }
+  });
+  return new Map([...porMes.entries()].map(([mes, item]) => [mes, item.total]));
+}
+
 function coberturaRotuloMes(chave) {
   const [ano, mes] = String(chave || '').split('-');
   return `${MONTH_ABBR[Number(mes) - 1] || mes}/${ano}`;
@@ -4273,7 +4290,7 @@ function coberturaExibirAviso(id, mensagens) {
   const el = document.getElementById(id);
   if (!el) return;
   const validas = mensagens.filter(Boolean);
-  el.innerHTML = validas.join(' ');
+  el.innerHTML = validas.map(mensagem => `<span class="data-coverage-line">${mensagem}</span>`).join('');
   el.style.display = validas.length ? 'block' : 'none';
 }
 
@@ -5317,8 +5334,12 @@ function d3Renderizar() {
 
 function d3AtualizarAvisoCobertura(agHistorico, vendasPeriodo) {
   const estoque = coberturaSomarPorMes(agHistorico?.por_loja_dia);
+  const estoqueFinal = coberturaEstoqueFinalPorMes(agHistorico?.por_loja_dia);
   const vendas = coberturaSomarPorMes(vendasPeriodo?.por_dia);
   const semEstoque = [...vendas.keys()].filter(mes => !estoque.has(mes)).sort();
+  const estoqueZerado = [...vendas.keys()]
+    .filter(mes => estoque.has(mes) && Math.abs(Number(estoqueFinal.get(mes) || 0)) < 0.0001)
+    .sort();
   const uniao = [...new Set([...vendas.keys(), ...estoque.keys()])];
   const ausentes = coberturaMesesNoIntervalo(uniao)
     .filter(mes => !vendas.has(mes) && !estoque.has(mes));
@@ -5326,6 +5347,9 @@ function d3AtualizarAvisoCobertura(agHistorico, vendasPeriodo) {
   const mensagens = [];
   if (semEstoque.length) {
     mensagens.push(`<strong>Meses sem dados de estoque:</strong> ${semEstoque.map(coberturaRotuloMes).join(', ')}. Esses meses existem no Sell Out, mas nao na base diaria de estoque.`);
+  }
+  if (estoqueZerado.length) {
+    mensagens.push(`<strong>Meses com estoque final zerado:</strong> ${estoqueZerado.map(coberturaRotuloMes).join(', ')}. Existem datas na base, mas o consolidado do ultimo dia do mes e zero.`);
   }
   if (ausentes.length) {
     mensagens.push(`<strong>Meses sem registros nas bases:</strong> ${ausentes.map(coberturaRotuloMes).join(', ')}.`);
@@ -6461,11 +6485,15 @@ function seAtualizarAvisoCobertura(vendasPeriodo, vendasDia, estoqueHistorico) {
   const vendas = coberturaSomarPorMes(vendasPeriodo?.por_dia);
   const vendasDetalhadas = coberturaSomarPorMes(vendasDia?.por_dia);
   const estoque = coberturaSomarPorMes(estoqueHistorico?.por_loja_dia);
+  const estoqueFinal = coberturaEstoqueFinalPorMes(estoqueHistorico?.por_loja_dia);
   const semDetalhe = vendasDia ? [...vendas.entries()]
     .map(([mes, total]) => ({ mes, qty: Math.max(0, total - (vendasDetalhadas.get(mes) || 0)) }))
     .filter(item => item.qty > 0.5)
     .sort((a, b) => a.mes.localeCompare(b.mes)) : [];
   const semEstoque = [...vendas.keys()].filter(mes => !estoque.has(mes)).sort();
+  const estoqueZerado = [...vendas.keys()]
+    .filter(mes => estoque.has(mes) && Math.abs(Number(estoqueFinal.get(mes) || 0)) < 0.0001)
+    .sort();
   const semSellOut = [...estoque.keys()].filter(mes => !vendas.has(mes)).sort();
   const uniao = [...new Set([...vendas.keys(), ...estoque.keys()])];
   const ausentes = coberturaMesesNoIntervalo(uniao)
@@ -6479,6 +6507,9 @@ function seAtualizarAvisoCobertura(vendasPeriodo, vendasDia, estoqueHistorico) {
   }
   if (semEstoque.length) {
     mensagens.push(`<strong>Estoque ausente:</strong> ${semEstoque.map(coberturaRotuloMes).join(', ')}.`);
+  }
+  if (estoqueZerado.length) {
+    mensagens.push(`<strong>Estoque final zerado:</strong> ${estoqueZerado.map(coberturaRotuloMes).join(', ')}.`);
   }
   if (semSellOut.length) {
     mensagens.push(`<strong>Sell Out ausente:</strong> ${semSellOut.map(coberturaRotuloMes).join(', ')}.`);
