@@ -4223,13 +4223,42 @@ function coberturaEstoqueFinalPorMes(rows) {
   return new Map([...porMes.entries()].map(([mes, item]) => [mes, item.total]));
 }
 
-function coberturaMesesSemColunaEstoque(agHistorico, mesesComData) {
-  const comData = mesesComData instanceof Map ? mesesComData : new Map();
-  return new Set((agHistorico?.cobertura_mensal || [])
-    .filter(item => comData.has(String(item.mes || ''))
-      && Number(item.registros || 0) > 0
-      && Number(item.registros_com_estoque || 0) === 0)
-    .map(item => String(item.mes)));
+function coberturaMesesSemColuna(fonte, campo) {
+  const chave = `registros_com_${campo}`;
+  return new Set((fonte?.cobertura_mensal || [])
+    .filter(item => Number(item.registros || 0) > 0 && Number(item[chave] || 0) === 0)
+    .map(item => String(item.mes || ''))
+    .filter(Boolean));
+}
+
+function coberturaMensagensColunas(fonte) {
+  const definicoes = [
+    { campo: 'data', rotulo: 'data' },
+    { campo: 'estoque', rotulo: 'estoque' },
+    { campo: 'valor', rotulo: 'valor' }
+  ];
+  const cobertura = fonte?.cobertura_mensal || [];
+  const mensagens = [];
+
+  definicoes.forEach(({ campo, rotulo }) => {
+    const chave = `registros_com_${campo}`;
+    const ausentes = cobertura
+      .filter(item => Number(item.registros || 0) > 0 && Number(item[chave] || 0) === 0)
+      .map(item => String(item.mes || ''))
+      .filter(Boolean)
+      .sort();
+    const parciais = cobertura
+      .filter(item => Number(item[chave] || 0) > 0 && Number(item[chave] || 0) < Number(item.registros || 0))
+      .map(item => `${coberturaRotuloMes(item.mes)} (${Number(item[chave]).toLocaleString('pt-BR')} de ${Number(item.registros).toLocaleString('pt-BR')} registros)`);
+
+    if (ausentes.length) {
+      mensagens.push(`<strong>Meses sem coluna de ${rotulo}:</strong> ${ausentes.map(coberturaRotuloMes).join(', ')}. Esses meses existem na base bruta, mas os registros nao possuem a coluna de ${rotulo}.`);
+    }
+    if (parciais.length) {
+      mensagens.push(`<strong>Meses com coluna de ${rotulo} incompleta:</strong> ${parciais.join(', ')}.`);
+    }
+  });
+  return mensagens;
 }
 
 function coberturaRotuloMes(chave) {
@@ -4306,15 +4335,16 @@ function coberturaExibirAviso(id, mensagens) {
 function d2AtualizarAvisoCobertura(agDia, agPeriodo) {
   const comData = coberturaSomarPorMes(agDia?.por_dia);
   const totalSellOut = coberturaSomarPorMes(agPeriodo?.por_dia);
+  const semColunaData = coberturaMesesSemColuna(agPeriodo, 'data');
   const semDetalhe = [...totalSellOut.entries()]
     .map(([mes, total]) => ({ mes, qty: Math.max(0, total - (comData.get(mes) || 0)) }))
-    .filter(item => item.qty > 0.5)
+    .filter(item => item.qty > 0.5 && !semColunaData.has(item.mes))
     .sort((a, b) => a.mes.localeCompare(b.mes));
   const mesesAusentes = coberturaMesesNoIntervalo([...totalSellOut.keys()])
     .filter(mes => !totalSellOut.has(mes));
-  const mesesSemDetalhe = new Set(semDetalhe.map(item => item.mes));
+  const mesesSemDetalhe = new Set([...semColunaData, ...semDetalhe.map(item => item.mes)]);
   const lacunasDiarias = coberturaLacunasDiarias(agDia?.por_dia, [...totalSellOut.keys()]);
-  const mensagens = [];
+  const mensagens = coberturaMensagensColunas(agPeriodo);
   if (semDetalhe.length) {
     const meses = semDetalhe.map(item => `${coberturaRotuloMes(item.mes)} (${Math.round(item.qty).toLocaleString('pt-BR')} un.)`);
     mensagens.push(`<strong>Sell Out sem data diaria:</strong> ${meses.join(', ')}. Essas unidades constam no Sell Out geral, mas nao nos totais e graficos desta pagina.`);
@@ -5345,8 +5375,9 @@ function d3AtualizarAvisoCobertura(agHistorico, vendasPeriodo) {
   const estoque = coberturaSomarPorMes(agHistorico?.por_loja_dia);
   const estoqueFinal = coberturaEstoqueFinalPorMes(agHistorico?.por_loja_dia);
   const vendas = coberturaSomarPorMes(vendasPeriodo?.por_dia);
-  const semColunaEstoque = coberturaMesesSemColunaEstoque(agHistorico, estoque);
-  const semEstoque = [...vendas.keys()].filter(mes => !estoque.has(mes)).sort();
+  const semColunaData = coberturaMesesSemColuna(vendasPeriodo, 'data');
+  const semColunaEstoque = coberturaMesesSemColuna(vendasPeriodo, 'estoque');
+  const semEstoque = [...vendas.keys()].filter(mes => !estoque.has(mes) && !semColunaEstoque.has(mes)).sort();
   const estoqueZerado = [...vendas.keys()]
     .filter(mes => estoque.has(mes) && !semColunaEstoque.has(mes) && Math.abs(Number(estoqueFinal.get(mes) || 0)) < 0.0001)
     .sort();
@@ -5354,12 +5385,9 @@ function d3AtualizarAvisoCobertura(agHistorico, vendasPeriodo) {
   const ausentes = coberturaMesesNoIntervalo(uniao)
     .filter(mes => !vendas.has(mes) && !estoque.has(mes));
   const lacunasDiarias = coberturaLacunasDiarias(agHistorico?.por_loja_dia, uniao);
-  const mensagens = [];
+  const mensagens = coberturaMensagensColunas(vendasPeriodo);
   if (semEstoque.length) {
     mensagens.push(`<strong>Meses sem dados de estoque:</strong> ${semEstoque.map(coberturaRotuloMes).join(', ')}. Esses meses existem no Sell Out, mas nao na base diaria de estoque.`);
-  }
-  if (semColunaEstoque.size) {
-    mensagens.push(`<strong>Meses sem coluna de estoque:</strong> ${[...semColunaEstoque].sort().map(coberturaRotuloMes).join(', ')}. Esses meses existem na base bruta, mas os registros nao possuem a coluna de estoque.`);
   }
   if (estoqueZerado.length) {
     mensagens.push(`<strong>Meses com estoque final zerado:</strong> ${estoqueZerado.map(coberturaRotuloMes).join(', ')}. Existem datas na base, mas o consolidado do ultimo dia do mes e zero.`);
@@ -5367,7 +5395,7 @@ function d3AtualizarAvisoCobertura(agHistorico, vendasPeriodo) {
   if (ausentes.length) {
     mensagens.push(`<strong>Meses sem registros nas bases:</strong> ${ausentes.map(coberturaRotuloMes).join(', ')}.`);
   }
-  const semEstoqueSet = new Set(semEstoque);
+  const semEstoqueSet = new Set([...semEstoque, ...semColunaData, ...semColunaEstoque]);
   const mesesParciais = [...lacunasDiarias.entries()].filter(([mes]) => !semEstoqueSet.has(mes));
   if (mesesParciais.length) {
     const detalhes = mesesParciais.map(([mes, descricao]) => `${coberturaRotuloMes(mes)} (${descricao})`);
@@ -6499,12 +6527,13 @@ function seAtualizarAvisoCobertura(vendasPeriodo, vendasDia, estoqueHistorico) {
   const vendasDetalhadas = coberturaSomarPorMes(vendasDia?.por_dia);
   const estoque = coberturaSomarPorMes(estoqueHistorico?.por_loja_dia);
   const estoqueFinal = coberturaEstoqueFinalPorMes(estoqueHistorico?.por_loja_dia);
-  const semColunaEstoque = coberturaMesesSemColunaEstoque(estoqueHistorico, estoque);
+  const semColunaData = coberturaMesesSemColuna(vendasPeriodo, 'data');
+  const semColunaEstoque = coberturaMesesSemColuna(vendasPeriodo, 'estoque');
   const semDetalhe = vendasDia ? [...vendas.entries()]
     .map(([mes, total]) => ({ mes, qty: Math.max(0, total - (vendasDetalhadas.get(mes) || 0)) }))
-    .filter(item => item.qty > 0.5)
+    .filter(item => item.qty > 0.5 && !semColunaData.has(item.mes))
     .sort((a, b) => a.mes.localeCompare(b.mes)) : [];
-  const semEstoque = [...vendas.keys()].filter(mes => !estoque.has(mes)).sort();
+  const semEstoque = [...vendas.keys()].filter(mes => !estoque.has(mes) && !semColunaEstoque.has(mes)).sort();
   const estoqueZerado = [...vendas.keys()]
     .filter(mes => estoque.has(mes) && !semColunaEstoque.has(mes) && Math.abs(Number(estoqueFinal.get(mes) || 0)) < 0.0001)
     .sort();
@@ -6514,16 +6543,13 @@ function seAtualizarAvisoCobertura(vendasPeriodo, vendasDia, estoqueHistorico) {
     .filter(mes => !vendas.has(mes) && !estoque.has(mes));
   const lacunasSellOut = vendasDia ? coberturaLacunasDiarias(vendasDia?.por_dia, uniao) : new Map();
   const lacunasEstoque = coberturaLacunasDiarias(estoqueHistorico?.por_loja_dia, uniao);
-  const mensagens = [];
+  const mensagens = coberturaMensagensColunas(vendasPeriodo);
   if (semDetalhe.length) {
     const meses = semDetalhe.map(item => `${coberturaRotuloMes(item.mes)} (${Math.round(item.qty).toLocaleString('pt-BR')} un.)`);
     mensagens.push(`<strong>Sell Out sem data diaria:</strong> ${meses.join(', ')}.`);
   }
   if (semEstoque.length) {
     mensagens.push(`<strong>Estoque ausente:</strong> ${semEstoque.map(coberturaRotuloMes).join(', ')}.`);
-  }
-  if (semColunaEstoque.size) {
-    mensagens.push(`<strong>Meses sem coluna de estoque:</strong> ${[...semColunaEstoque].sort().map(coberturaRotuloMes).join(', ')}. Esses meses existem na base bruta, mas os registros nao possuem a coluna de estoque.`);
   }
   if (estoqueZerado.length) {
     mensagens.push(`<strong>Estoque final zerado:</strong> ${estoqueZerado.map(coberturaRotuloMes).join(', ')}.`);
@@ -6534,8 +6560,8 @@ function seAtualizarAvisoCobertura(vendasPeriodo, vendasDia, estoqueHistorico) {
   if (ausentes.length) {
     mensagens.push(`<strong>Meses sem registros nas duas bases:</strong> ${ausentes.map(coberturaRotuloMes).join(', ')}.`);
   }
-  const ignorarSellOut = new Set(semDetalhe.map(item => item.mes));
-  const ignorarEstoque = new Set([...semEstoque, ...semColunaEstoque]);
+  const ignorarSellOut = new Set([...semColunaData, ...semDetalhe.map(item => item.mes)]);
+  const ignorarEstoque = new Set([...semColunaData, ...semColunaEstoque, ...semEstoque]);
   const mesesParciais = new Map();
   const registrarParcial = (mes, fonte, descricao) => {
     if (!mesesParciais.has(mes)) mesesParciais.set(mes, { fontes: [], descricoes: [] });

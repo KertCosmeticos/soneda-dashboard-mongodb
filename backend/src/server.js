@@ -1912,7 +1912,7 @@ async function iniciarServidor() {
     // ─────────────────────────────────────
     app.get("/api/dashboard/agregados", async (req, res) => {
       try {
-        const cacheKey = await dashboardCacheKey('agre:v15', req.query);
+        const cacheKey = await dashboardCacheKey('agre:v16', req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
         const persisted = await cachePersistenteGet(cacheKey, req.query);
@@ -1956,6 +1956,15 @@ async function iniciarServidor() {
         const grp = {
           qty:   { $sum: vendaQtdExpr() },
           valor: { $sum: vendaValorExpr() }
+        };
+        const campoBrutoPresenteExpr = rawExpr => ({
+          $ne: [{ $ifNull: [rawExpr, "__AUSENTE__"] }, "__AUSENTE__"]
+        });
+        const estoqueBrutoExpr = {
+          $ifNull: [
+            { $getField: "Estoque Diario" },
+            { $getField: "Estoque" }
+          ]
         };
 
         const AGG_OPTS = { allowDiskUse: true };
@@ -2093,6 +2102,20 @@ async function iniciarServidor() {
           ];
         }
 
+        if (apenasPeriodo) {
+          facets.cobertura_mensal = [
+            { $group: {
+              _id: { $substrBytes: [{ $ifNull: [dateGroupExpr, ""] }, 0, 7] },
+              registros: { $sum: 1 },
+              registros_com_data: { $sum: { $cond: [campoBrutoPresenteExpr({ $getField: "Data" }), 1, 0] } },
+              registros_com_estoque: { $sum: { $cond: [campoBrutoPresenteExpr(estoqueBrutoExpr), 1, 0] } },
+              registros_com_valor: { $sum: { $cond: [campoBrutoPresenteExpr(vendaValorRawExpr()), 1, 0] } }
+            } },
+            { $match: { _id: /^(19|20)\d{2}-\d{2}$/ } },
+            { $sort: { _id: 1 } }
+          ];
+        }
+
         if (!apenasLoja && !apenasDia && !apenasPeriodo && !(apenasDimensoes && incluirDiaDetalhado)) {
           facets.por_cat = [
             ...mLoja, ...mFamilia,
@@ -2131,6 +2154,13 @@ async function iniciarServidor() {
           por_cat:  (facet?.por_cat  || []).map(r => ({ cat:  r._id || "Sem mapeamento",     qty: r.qty, valor: r.valor })),
           por_fam:  (facet?.por_fam  || []).map(r => ({ fam:  r._id || "Sem mapeamento",     qty: r.qty, valor: r.valor })),
           por_dia:  (facet?.por_dia  || []).map(r => ({ data: r._id,                         qty: r.qty, valor: r.valor })),
+          cobertura_mensal: (facet?.cobertura_mensal || []).map(r => ({
+            mes: r._id,
+            registros: r.registros,
+            registros_com_data: r.registros_com_data,
+            registros_com_estoque: r.registros_com_estoque,
+            registros_com_valor: r.registros_com_valor
+          })),
           por_cat_dia: (facet?.por_cat_dia || []).map(r => ({ cat: r._id.cat || "Sem mapeamento", data: r._id.data, qty: r.qty, valor: r.valor })),
           por_fam_dia: (facet?.por_fam_dia || []).map(r => ({ fam: r._id.fam || "Sem mapeamento", data: r._id.data, qty: r.qty, valor: r.valor }))
         };
