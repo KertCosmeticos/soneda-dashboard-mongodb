@@ -4226,6 +4226,49 @@ function coberturaMesesNoIntervalo(chaves) {
   return meses;
 }
 
+function coberturaLacunasDiarias(rows, mesesReferencia) {
+  const datas = new Set((rows || []).map(row => String(row.data || '').trim())
+    .filter(data => /^\d{4}-\d{2}-\d{2}$/.test(data)));
+  const hoje = new Date();
+  const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+  const mesAtual = hojeIso.slice(0, 7);
+  const lacunas = new Map();
+
+  coberturaMesesNoIntervalo(mesesReferencia).forEach(mes => {
+    if (mes > mesAtual) return;
+    const [ano, numeroMes] = mes.split('-').map(Number);
+    const ultimoDiaMes = new Date(ano, numeroMes, 0).getDate();
+    const ultimoDiaEsperado = mes === mesAtual ? hoje.getDate() : ultimoDiaMes;
+    const existentes = [...datas].filter(data => data.startsWith(`${mes}-`)).sort();
+    const ausentes = [];
+    for (let dia = 1; dia <= ultimoDiaEsperado; dia++) {
+      const data = `${mes}-${String(dia).padStart(2, '0')}`;
+      if (!datas.has(data)) ausentes.push(dia);
+    }
+    if (!ausentes.length) return;
+    if (!existentes.length) {
+      lacunas.set(mes, 'sem datas diarias');
+      return;
+    }
+
+    const ultimoExistente = Number(existentes[existentes.length - 1].slice(-2));
+    const apenasDepoisDaUltima = ausentes.every(dia => dia > ultimoExistente);
+    if (apenasDepoisDaUltima) {
+      const inicio = ausentes[0];
+      const fim = ausentes[ausentes.length - 1];
+      const faixa = inicio === fim ? `${String(inicio).padStart(2, '0')}/${String(numeroMes).padStart(2, '0')}`
+        : `${String(inicio).padStart(2, '0')} a ${String(fim).padStart(2, '0')}/${String(numeroMes).padStart(2, '0')}`;
+      lacunas.set(mes, `dados ate ${String(ultimoExistente).padStart(2, '0')}/${String(numeroMes).padStart(2, '0')}; faltam ${faixa}`);
+      return;
+    }
+
+    const lista = ausentes.slice(0, 6).map(dia => String(dia).padStart(2, '0')).join(', ');
+    const complemento = ausentes.length > 6 ? ` e mais ${ausentes.length - 6}` : '';
+    lacunas.set(mes, `dias sem dados: ${lista}${complemento}`);
+  });
+  return lacunas;
+}
+
 function coberturaExibirAviso(id, mensagens) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -4243,6 +4286,8 @@ function d2AtualizarAvisoCobertura(agDia, agPeriodo) {
     .sort((a, b) => a.mes.localeCompare(b.mes));
   const mesesAusentes = coberturaMesesNoIntervalo([...totalSellOut.keys()])
     .filter(mes => !totalSellOut.has(mes));
+  const mesesSemDetalhe = new Set(semDetalhe.map(item => item.mes));
+  const lacunasDiarias = coberturaLacunasDiarias(agDia?.por_dia, [...totalSellOut.keys()]);
   const mensagens = [];
   if (semDetalhe.length) {
     const meses = semDetalhe.map(item => `${coberturaRotuloMes(item.mes)} (${Math.round(item.qty).toLocaleString('pt-BR')} un.)`);
@@ -4250,6 +4295,11 @@ function d2AtualizarAvisoCobertura(agDia, agPeriodo) {
   }
   if (mesesAusentes.length) {
     mensagens.push(`<strong>Meses sem registros na base:</strong> ${mesesAusentes.map(coberturaRotuloMes).join(', ')}.`);
+  }
+  const mesesParciais = [...lacunasDiarias.entries()].filter(([mes]) => !mesesSemDetalhe.has(mes));
+  if (mesesParciais.length) {
+    const detalhes = mesesParciais.map(([mes, descricao]) => `${coberturaRotuloMes(mes)} (${descricao})`);
+    mensagens.push(`<strong>Meses com dados diarios incompletos:</strong> ${detalhes.join(', ')}.`);
   }
   coberturaExibirAviso('d2-coverage-note', mensagens);
 }
@@ -5272,12 +5322,19 @@ function d3AtualizarAvisoCobertura(agHistorico, vendasPeriodo) {
   const uniao = [...new Set([...vendas.keys(), ...estoque.keys()])];
   const ausentes = coberturaMesesNoIntervalo(uniao)
     .filter(mes => !vendas.has(mes) && !estoque.has(mes));
+  const lacunasDiarias = coberturaLacunasDiarias(agHistorico?.por_loja_dia, uniao);
   const mensagens = [];
   if (semEstoque.length) {
     mensagens.push(`<strong>Meses sem dados de estoque:</strong> ${semEstoque.map(coberturaRotuloMes).join(', ')}. Esses meses existem no Sell Out, mas nao na base diaria de estoque.`);
   }
   if (ausentes.length) {
     mensagens.push(`<strong>Meses sem registros nas bases:</strong> ${ausentes.map(coberturaRotuloMes).join(', ')}.`);
+  }
+  const semEstoqueSet = new Set(semEstoque);
+  const mesesParciais = [...lacunasDiarias.entries()].filter(([mes]) => !semEstoqueSet.has(mes));
+  if (mesesParciais.length) {
+    const detalhes = mesesParciais.map(([mes, descricao]) => `${coberturaRotuloMes(mes)} (${descricao})`);
+    mensagens.push(`<strong>Meses com estoque diario incompleto:</strong> ${detalhes.join(', ')}.`);
   }
   coberturaExibirAviso('d3-coverage-note', mensagens);
 }
@@ -6413,6 +6470,8 @@ function seAtualizarAvisoCobertura(vendasPeriodo, vendasDia, estoqueHistorico) {
   const uniao = [...new Set([...vendas.keys(), ...estoque.keys()])];
   const ausentes = coberturaMesesNoIntervalo(uniao)
     .filter(mes => !vendas.has(mes) && !estoque.has(mes));
+  const lacunasSellOut = vendasDia ? coberturaLacunasDiarias(vendasDia?.por_dia, uniao) : new Map();
+  const lacunasEstoque = coberturaLacunasDiarias(estoqueHistorico?.por_loja_dia, uniao);
   const mensagens = [];
   if (semDetalhe.length) {
     const meses = semDetalhe.map(item => `${coberturaRotuloMes(item.mes)} (${Math.round(item.qty).toLocaleString('pt-BR')} un.)`);
@@ -6426,6 +6485,28 @@ function seAtualizarAvisoCobertura(vendasPeriodo, vendasDia, estoqueHistorico) {
   }
   if (ausentes.length) {
     mensagens.push(`<strong>Meses sem registros nas duas bases:</strong> ${ausentes.map(coberturaRotuloMes).join(', ')}.`);
+  }
+  const ignorarSellOut = new Set(semDetalhe.map(item => item.mes));
+  const ignorarEstoque = new Set(semEstoque);
+  const mesesParciais = new Map();
+  const registrarParcial = (mes, fonte, descricao) => {
+    if (!mesesParciais.has(mes)) mesesParciais.set(mes, { fontes: [], descricoes: [] });
+    const item = mesesParciais.get(mes);
+    item.fontes.push(fonte);
+    if (!item.descricoes.includes(descricao)) item.descricoes.push(descricao);
+  };
+  lacunasSellOut.forEach((descricao, mes) => {
+    if (!ignorarSellOut.has(mes)) registrarParcial(mes, 'Sell Out', descricao);
+  });
+  lacunasEstoque.forEach((descricao, mes) => {
+    if (!ignorarEstoque.has(mes)) registrarParcial(mes, 'estoque', descricao);
+  });
+  if (mesesParciais.size) {
+    const detalhes = [...mesesParciais.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([mes, item]) => {
+      const fontes = item.fontes.length === 2 ? 'Sell Out e estoque' : item.fontes[0];
+      return `${coberturaRotuloMes(mes)} (${fontes}: ${item.descricoes.join('; ')})`;
+    });
+    mensagens.push(`<strong>Meses com cobertura diaria incompleta:</strong> ${detalhes.join(', ')}.`);
   }
   if (mensagens.length) mensagens.push('As comparacoes desses periodos podem apresentar divergencias.');
   coberturaExibirAviso('se-coverage-note', mensagens);
