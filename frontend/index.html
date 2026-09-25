@@ -61,6 +61,8 @@
   main { max-width: 1300px; margin: 0 auto; padding: 36px 40px; }
   .section-title { font-family: 'DM Serif Display', serif; font-size: 1.9rem; font-style: italic; margin-bottom: 6px; }
   .section-sub { color: var(--text-dim); font-size: 0.82rem; margin-bottom: 28px; font-family: 'DM Mono', monospace; }
+  .data-coverage-note { display: none; max-width: 920px; margin: -14px 0 28px; padding-left: 12px; border-left: 2px solid var(--accent); color: var(--text-dim); font-family: 'DM Mono', monospace; font-size: 0.72rem; line-height: 1.6; }
+  .data-coverage-note strong { color: var(--accent); font-weight: 500; }
 
   /* FILTERS */
   .filters-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 28px; padding: 22px 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
@@ -418,6 +420,7 @@
 <main>
   <h1 class="section-title">Sell Out x Estoque</h1>
   <p class="section-sub" id="se-status-msg">Carregando dados...</p>
+  <p class="data-coverage-note" id="se-coverage-note"></p>
 
   <div class="filters-row">
     <div class="filter-group"><label>Ano</label><select id="se-ano" data-multi-filter="1" multiple><option value="">Todos</option></select></div>
@@ -1162,6 +1165,7 @@
 <main>
   <h1 class="section-title">Venda por Dia</h1>
   <p class="section-sub" id="d2-status-msg">Carregando dados...</p>
+  <p class="data-coverage-note" id="d2-coverage-note"></p>
 
   <!-- FILTROS -->
   <div class="filters-row">
@@ -1309,6 +1313,7 @@
 <main>
   <h1 class="section-title">Estoque</h1>
   <p class="section-sub" id="d3-status-msg">Carregando dados...</p>
+  <p class="data-coverage-note" id="d3-coverage-note"></p>
 
   <!-- FILTROS -->
   <div class="filters-row">
@@ -4191,6 +4196,64 @@ function d2RenderSemDados() {
   document.getElementById('fam2-table-body').innerHTML = '<div class="no-data">Nenhum dado para os filtros selecionados</div>';
 }
 
+function coberturaSomarPorMes(rows) {
+  const totais = new Map();
+  (rows || []).forEach(row => {
+    const mes = monthKeyFromDate(row.data);
+    if (!mes) return;
+    totais.set(mes, (totais.get(mes) || 0) + Number(row.qty || 0));
+  });
+  return totais;
+}
+
+function coberturaRotuloMes(chave) {
+  const [ano, mes] = String(chave || '').split('-');
+  return `${MONTH_ABBR[Number(mes) - 1] || mes}/${ano}`;
+}
+
+function coberturaMesesNoIntervalo(chaves) {
+  const ordenadas = [...new Set(chaves)].filter(Boolean).sort();
+  if (ordenadas.length < 2) return ordenadas;
+  const [anoIni, mesIni] = ordenadas[0].split('-').map(Number);
+  const [anoFim, mesFim] = ordenadas[ordenadas.length - 1].split('-').map(Number);
+  const atual = new Date(Date.UTC(anoIni, mesIni - 1, 1));
+  const fim = new Date(Date.UTC(anoFim, mesFim - 1, 1));
+  const meses = [];
+  while (atual <= fim && meses.length < 240) {
+    meses.push(`${atual.getUTCFullYear()}-${String(atual.getUTCMonth() + 1).padStart(2, '0')}`);
+    atual.setUTCMonth(atual.getUTCMonth() + 1);
+  }
+  return meses;
+}
+
+function coberturaExibirAviso(id, mensagens) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const validas = mensagens.filter(Boolean);
+  el.innerHTML = validas.join(' ');
+  el.style.display = validas.length ? 'block' : 'none';
+}
+
+function d2AtualizarAvisoCobertura(agDia, agPeriodo) {
+  const comData = coberturaSomarPorMes(agDia?.por_dia);
+  const totalSellOut = coberturaSomarPorMes(agPeriodo?.por_dia);
+  const semDetalhe = [...totalSellOut.entries()]
+    .map(([mes, total]) => ({ mes, qty: Math.max(0, total - (comData.get(mes) || 0)) }))
+    .filter(item => item.qty > 0.5)
+    .sort((a, b) => a.mes.localeCompare(b.mes));
+  const mesesAusentes = coberturaMesesNoIntervalo([...totalSellOut.keys()])
+    .filter(mes => !totalSellOut.has(mes));
+  const mensagens = [];
+  if (semDetalhe.length) {
+    const meses = semDetalhe.map(item => `${coberturaRotuloMes(item.mes)} (${Math.round(item.qty).toLocaleString('pt-BR')} un.)`);
+    mensagens.push(`<strong>Sell Out sem data diaria:</strong> ${meses.join(', ')}. Essas unidades constam no Sell Out geral, mas nao nos totais e graficos desta pagina.`);
+  }
+  if (mesesAusentes.length) {
+    mensagens.push(`<strong>Meses sem registros na base:</strong> ${mesesAusentes.map(coberturaRotuloMes).join(', ')}.`);
+  }
+  coberturaExibirAviso('d2-coverage-note', mensagens);
+}
+
 async function d2Renderizar() {
   mostrarBanner('d2-active-banner', d2_active, {cat:'CATEGORIA', data:'DATA'}, 'd2LimparAtivo');
 
@@ -4211,10 +4274,13 @@ async function d2Renderizar() {
   const d2FiltroParams = buildAgreParams('d2', d2_active);
   const d2BaseParams = new URLSearchParams(d2FiltroParams);
   d2BaseParams.set('escopo', 'dia');
+  const d2PeriodoParams = new URLSearchParams(d2FiltroParams);
+  d2PeriodoParams.set('escopo', 'periodo');
   const d2DetalheParams = new URLSearchParams(d2FiltroParams);
   d2DetalheParams.set('detalhe_dia', '1');
   d2DetalheParams.set('escopo', 'dimensoes');
   const baseCacheKey = 'd2dia:v2:' + d2BaseParams.toString();
+  const periodoCacheKey = 'd2periodo:v1:' + d2PeriodoParams.toString();
   const detalheCacheKey = 'd2det:v2:' + d2DetalheParams.toString();
 
   // Mostra loading apenas no primeiro carregamento
@@ -4234,6 +4300,18 @@ async function d2Renderizar() {
   if (d2_renderAbort) d2_renderAbort.abort();
   d2_renderAbort = new AbortController();
   const d2Signal = d2_renderAbort.signal;
+  const coverageEl = document.getElementById('d2-coverage-note');
+  if (coverageEl) coverageEl.style.display = 'none';
+
+  const periodoCached = agreCache(periodoCacheKey);
+  const periodoPromise = periodoCached
+    ? Promise.resolve(periodoCached)
+    : fetchJSON(`${API_BASE}/api/dashboard/agregados?${d2PeriodoParams}`, d2Signal)
+        .then(agPeriodo => {
+          agreCache(periodoCacheKey, agPeriodo);
+          return agPeriodo;
+        });
+  periodoPromise.catch(() => {});
 
   // O detalhamento alimenta os graficos inferiores e deve carregar em paralelo
   // com o resumo, sem atrasar a primeira pintura da pagina.
@@ -4256,6 +4334,12 @@ async function d2Renderizar() {
     setChartLoading(D2_MAIN_IDS, false);
     const [pd, all] = agToDia(ag);
     d2AtualizarGrafico(pd, all, ag, false);
+    try {
+      const agPeriodo = await periodoPromise;
+      if (!d2Signal.aborted) d2AtualizarAvisoCobertura(ag, agPeriodo);
+    } catch(e) {
+      if (e.name !== 'AbortError') console.warn('Cobertura de datas indisponivel:', e.message);
+    }
   } catch(e) {
     if (e.name === 'AbortError') return;
     setChartLoading(D2_MAIN_IDS, false);
@@ -5181,12 +5265,32 @@ function d3Renderizar() {
   d3FetchTotalEstoque();
 }
 
+function d3AtualizarAvisoCobertura(agHistorico, vendasPeriodo) {
+  const estoque = coberturaSomarPorMes(agHistorico?.por_loja_dia);
+  const vendas = coberturaSomarPorMes(vendasPeriodo?.por_dia);
+  const semEstoque = [...vendas.keys()].filter(mes => !estoque.has(mes)).sort();
+  const uniao = [...new Set([...vendas.keys(), ...estoque.keys()])];
+  const ausentes = coberturaMesesNoIntervalo(uniao)
+    .filter(mes => !vendas.has(mes) && !estoque.has(mes));
+  const mensagens = [];
+  if (semEstoque.length) {
+    mensagens.push(`<strong>Meses sem dados de estoque:</strong> ${semEstoque.map(coberturaRotuloMes).join(', ')}. Esses meses existem no Sell Out, mas nao na base diaria de estoque.`);
+  }
+  if (ausentes.length) {
+    mensagens.push(`<strong>Meses sem registros nas bases:</strong> ${ausentes.map(coberturaRotuloMes).join(', ')}.`);
+  }
+  coberturaExibirAviso('d3-coverage-note', mensagens);
+}
+
 async function d3FetchTotalEstoque(renderSeq = d3_renderSeq, signal = null) {
   const detalhesParams = buildAgreParams('d3', d3_active);
   ['ativo_loja','ativo_cat','ativo_familia'].forEach(key => detalhesParams.delete(key));
   detalhesParams.set('snapshot', '1');
   const histParams = buildAgreParams('d3', d3_active);
   histParams.set('historico', '1');
+  const vendasPeriodoParams = buildAgreParams('d3', d3_active);
+  vendasPeriodoParams.set('escopo', 'periodo');
+  coberturaExibirAviso('d3-coverage-note', []);
 
   const fetchCached = (key, endpoint) => {
     const cached = agreCache(key);
@@ -5206,7 +5310,12 @@ async function d3FetchTotalEstoque(renderSeq = d3_renderSeq, signal = null) {
     `d3historico:v1:${histParams}`,
     `${API_BASE}/api/dashboard/estoque?${histParams}`
   );
+  const vendasPeriodoPromise = fetchCached(
+    `d3vendas-periodo:v1:${vendasPeriodoParams}`,
+    `${API_BASE}/api/dashboard/agregados?${vendasPeriodoParams}`
+  );
   historicoPromise.catch(() => {});
+  vendasPeriodoPromise.catch(() => {});
 
   try {
     const agDetalhado = await snapshotPromise;
@@ -5234,6 +5343,12 @@ async function d3FetchTotalEstoque(renderSeq = d3_renderSeq, signal = null) {
     }
     d3RenderLineAgregado(agHistorico);
     setChartLoading(D3_HISTORY_IDS, false);
+    try {
+      const vendasPeriodo = await vendasPeriodoPromise;
+      if (renderSeq === d3_renderSeq) d3AtualizarAvisoCobertura(agHistorico, vendasPeriodo);
+    } catch(e) {
+      if (e.name !== 'AbortError') console.warn('Cobertura mensal do estoque indisponivel:', e.message);
+    }
   } catch(e) {
     if (e.name === 'AbortError' || renderSeq !== d3_renderSeq) return;
     console.warn('Historico de estoque indisponivel:', e.message);
@@ -6285,8 +6400,40 @@ function seResumoEstoqueUltimoDia(ag) {
   };
 }
 
+function seAtualizarAvisoCobertura(vendasPeriodo, vendasDia, estoqueHistorico) {
+  const vendas = coberturaSomarPorMes(vendasPeriodo?.por_dia);
+  const vendasDetalhadas = coberturaSomarPorMes(vendasDia?.por_dia);
+  const estoque = coberturaSomarPorMes(estoqueHistorico?.por_loja_dia);
+  const semDetalhe = vendasDia ? [...vendas.entries()]
+    .map(([mes, total]) => ({ mes, qty: Math.max(0, total - (vendasDetalhadas.get(mes) || 0)) }))
+    .filter(item => item.qty > 0.5)
+    .sort((a, b) => a.mes.localeCompare(b.mes)) : [];
+  const semEstoque = [...vendas.keys()].filter(mes => !estoque.has(mes)).sort();
+  const semSellOut = [...estoque.keys()].filter(mes => !vendas.has(mes)).sort();
+  const uniao = [...new Set([...vendas.keys(), ...estoque.keys()])];
+  const ausentes = coberturaMesesNoIntervalo(uniao)
+    .filter(mes => !vendas.has(mes) && !estoque.has(mes));
+  const mensagens = [];
+  if (semDetalhe.length) {
+    const meses = semDetalhe.map(item => `${coberturaRotuloMes(item.mes)} (${Math.round(item.qty).toLocaleString('pt-BR')} un.)`);
+    mensagens.push(`<strong>Sell Out sem data diaria:</strong> ${meses.join(', ')}.`);
+  }
+  if (semEstoque.length) {
+    mensagens.push(`<strong>Estoque ausente:</strong> ${semEstoque.map(coberturaRotuloMes).join(', ')}.`);
+  }
+  if (semSellOut.length) {
+    mensagens.push(`<strong>Sell Out ausente:</strong> ${semSellOut.map(coberturaRotuloMes).join(', ')}.`);
+  }
+  if (ausentes.length) {
+    mensagens.push(`<strong>Meses sem registros nas duas bases:</strong> ${ausentes.map(coberturaRotuloMes).join(', ')}.`);
+  }
+  if (mensagens.length) mensagens.push('As comparacoes desses periodos podem apresentar divergencias.');
+  coberturaExibirAviso('se-coverage-note', mensagens);
+}
+
 async function seRenderizarAgregado() {
   seSetLoading();
+  coberturaExibirAviso('se-coverage-note', []);
   if (se_renderAbort) se_renderAbort.abort();
   se_renderAbort = new AbortController();
 
@@ -6296,6 +6443,8 @@ async function seRenderizarAgregado() {
   const paramsPeriodo = buildAgreParams('se', null);
   if (se_active.dim === 'loja' && se_active.val) paramsPeriodo.set('loja', se_active.val);
   paramsPeriodo.set('escopo', 'periodo');
+  const paramsVendaDia = new URLSearchParams(paramsPeriodo);
+  paramsVendaDia.set('escopo', 'dia');
   const estoqueEndpoint = seViewMode === 'data' ? 'estoque' : 'estoque-resumo';
   const paramsEstoqueUltimoDia = new URLSearchParams(paramsGrafico);
   ['escopo','ativo_loja','ativo_cat','ativo_familia'].forEach(key => paramsEstoqueUltimoDia.delete(key));
@@ -6323,6 +6472,7 @@ async function seRenderizarAgregado() {
   // no historico esconda os outros graficos ou a tabela.
   const detalhesPromise = Promise.allSettled([
     fetchCached(`seperiodo:v1:${paramsPeriodo}`, `${API_BASE}/api/dashboard/agregados?${paramsPeriodo}`),
+    fetchCached(`sedias:v1:${paramsVendaDia}`, `${API_BASE}/api/dashboard/agregados?${paramsVendaDia}`),
     fetchCached(`sehistorico:v1:${paramsEstoqueHistorico}`, `${API_BASE}/api/dashboard/estoque?${paramsEstoqueHistorico}`),
     tabelaUsaPrincipal
       ? Promise.resolve(null)
@@ -6382,11 +6532,16 @@ async function seRenderizarAgregado() {
     setChartLoading(['se-kpi-row','se-filial-chart-wrap'], false);
     if (tabelaUsaPrincipal) setChartLoading(['se-table-body'], false);
 
-    const [vPeriodoRes, eHistoricoRes, vTabelaRes, eTabelaRes] = await detalhesPromise;
+    const [vPeriodoRes, vDiaRes, eHistoricoRes, vTabelaRes, eTabelaRes] = await detalhesPromise;
     const historicoCompleto = vPeriodoRes.status === 'fulfilled' && eHistoricoRes.status === 'fulfilled';
     if (historicoCompleto) {
       const dadosGraficoMensal = combinarSelloutEstoquePorMes(vPeriodoRes.value?.por_dia, eHistoricoRes.value?.por_loja_dia);
       seRenderGrafico(dadosGraficoMensal, true, 'month');
+      seAtualizarAvisoCobertura(
+        vPeriodoRes.value,
+        vDiaRes.status === 'fulfilled' ? vDiaRes.value : null,
+        eHistoricoRes.value
+      );
     } else {
       const detalheError = vPeriodoRes.reason || eHistoricoRes.reason;
       if (detalheError?.name === 'AbortError') return;
