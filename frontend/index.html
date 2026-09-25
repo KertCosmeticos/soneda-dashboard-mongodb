@@ -1025,6 +1025,7 @@
 <main>
   <h1 class="section-title">Venda Valor</h1>
   <p class="section-sub" id="v-status-msg">Carregando dados...</p>
+  <p class="data-coverage-note" id="v-coverage-note"></p>
 
   <!-- FILTROS -->
   <div class="filters-row">
@@ -4231,12 +4232,12 @@ function coberturaMesesSemColuna(fonte, campo) {
     .filter(Boolean));
 }
 
-function coberturaMensagensColunas(fonte) {
+function coberturaMensagensColunas(fonte, campos = ['data', 'estoque', 'valor']) {
   const definicoes = [
     { campo: 'data', rotulo: 'data' },
     { campo: 'estoque', rotulo: 'estoque' },
     { campo: 'valor', rotulo: 'valor' }
-  ];
+  ].filter(item => campos.includes(item.campo));
   const cobertura = fonte?.cobertura_mensal || [];
   const mensagens = [];
 
@@ -4344,7 +4345,7 @@ function d2AtualizarAvisoCobertura(agDia, agPeriodo) {
     .filter(mes => !totalSellOut.has(mes));
   const mesesSemDetalhe = new Set([...semColunaData, ...semDetalhe.map(item => item.mes)]);
   const lacunasDiarias = coberturaLacunasDiarias(agDia?.por_dia, [...totalSellOut.keys()]);
-  const mensagens = coberturaMensagensColunas(agPeriodo);
+  const mensagens = coberturaMensagensColunas(agPeriodo, ['data']);
   if (semDetalhe.length) {
     const meses = semDetalhe.map(item => `${coberturaRotuloMes(item.mes)} (${Math.round(item.qty).toLocaleString('pt-BR')} un.)`);
     mensagens.push(`<strong>Sell Out sem data diaria:</strong> ${meses.join(', ')}. Essas unidades constam no Sell Out geral, mas nao nos totais e graficos desta pagina.`);
@@ -5385,7 +5386,7 @@ function d3AtualizarAvisoCobertura(agHistorico, vendasPeriodo) {
   const ausentes = coberturaMesesNoIntervalo(uniao)
     .filter(mes => !vendas.has(mes) && !estoque.has(mes));
   const lacunasDiarias = coberturaLacunasDiarias(agHistorico?.por_loja_dia, uniao);
-  const mensagens = coberturaMensagensColunas(vendasPeriodo);
+  const mensagens = coberturaMensagensColunas(vendasPeriodo, ['data', 'estoque']);
   if (semEstoque.length) {
     mensagens.push(`<strong>Meses sem dados de estoque:</strong> ${semEstoque.map(coberturaRotuloMes).join(', ')}. Esses meses existem no Sell Out, mas nao na base diaria de estoque.`);
   }
@@ -6543,7 +6544,7 @@ function seAtualizarAvisoCobertura(vendasPeriodo, vendasDia, estoqueHistorico) {
     .filter(mes => !vendas.has(mes) && !estoque.has(mes));
   const lacunasSellOut = vendasDia ? coberturaLacunasDiarias(vendasDia?.por_dia, uniao) : new Map();
   const lacunasEstoque = coberturaLacunasDiarias(estoqueHistorico?.por_loja_dia, uniao);
-  const mensagens = coberturaMensagensColunas(vendasPeriodo);
+  const mensagens = coberturaMensagensColunas(vendasPeriodo, ['data', 'estoque']);
   if (semDetalhe.length) {
     const meses = semDetalhe.map(item => `${coberturaRotuloMes(item.mes)} (${Math.round(item.qty).toLocaleString('pt-BR')} un.)`);
     mensagens.push(`<strong>Sell Out sem data diaria:</strong> ${meses.join(', ')}.`);
@@ -7569,6 +7570,7 @@ function vFam1OrdenarPor(coluna) {
 }
 
 async function vRenderizar() {
+  coberturaExibirAviso('v-coverage-note', []);
   mostrarBanner('v-active-banner', v_active, {loja:'FILIAL', cat:'CATEGORIA', familia:'FAMÃLIA'}, 'vLimparAtivo');
 
   document.getElementById('v-chart-sub').textContent = subtituloGrafico('v');
@@ -7576,6 +7578,18 @@ async function vRenderizar() {
 
   const cacheKey = buildAgreParams('v', v_active).toString();
   const cached   = agreCache(cacheKey);
+  if (v_renderAbort) v_renderAbort.abort();
+  v_renderAbort = new AbortController();
+  const coberturaParams = buildAgreParams('v', v_active);
+  coberturaParams.set('escopo', 'periodo');
+  const coberturaPromise = fetchJSON(
+    `${API_BASE}/api/dashboard/agregados?${coberturaParams}`,
+    v_renderAbort.signal
+  ).then(agPeriodo => {
+    coberturaExibirAviso('v-coverage-note', coberturaMensagensColunas(agPeriodo, ['valor']));
+  }).catch(e => {
+    if (e.name !== 'AbortError') console.warn('Cobertura da coluna de valor indisponivel:', e.message);
+  });
   const toByLoja = ag => ag.por_loja
     .map(r => {
       const loja = normCodLoja(String(r.loja || ''));
@@ -7612,14 +7626,12 @@ async function vRenderizar() {
 
   if (cached) {
     renderFromAg(cached, toByLoja(cached));
+    await coberturaPromise;
     return;
   }
 
   const V_IDS = ['v-kpi-row','v-chart-wrap','v-cat1-wrap','v-fam1-wrap','v-table-body','v-cat1-table-body','v-fam1-table-body'];
   if (rawDataPreviewOk) setChartLoading(V_IDS, true);
-
-  if (v_renderAbort) v_renderAbort.abort();
-  v_renderAbort = new AbortController();
 
   try {
     const fastParams = buildAgreParams('v', v_active);
