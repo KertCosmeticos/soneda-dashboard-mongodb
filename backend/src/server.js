@@ -196,11 +196,7 @@ function filtroCategoriaPendente() {
   return {
     $or: [
       { _cat: { $exists: false } },
-      { _cat: null },
-      { _cat: "" },
-      { _fam: { $exists: false } },
-      { _fam: null },
-      { _fam: "" }
+      { _fam: { $exists: false } }
     ]
   };
 }
@@ -848,6 +844,27 @@ async function iniciarServidor() {
         .sort((a, b) => b - a)[0] || null;
     }
 
+    async function aplicarFiltroDimensoesPorGtin(baseMatch, cat, familia, produtoGtin = null) {
+      if (_migCat || !_migGtin || (!cat && !familia)) return false;
+
+      const filtroDePara = {};
+      if (cat) filtroDePara.CATEGORIA = matchListaTexto(cat);
+      if (familia) filtroDePara.FAMILIA = matchListaTexto(familia);
+      let gtins = (await db.collection("categorias_depara").distinct("CODBARRAS", filtroDePara))
+        .map(normalizarEAN)
+        .filter(Boolean);
+
+      const produtosSelecionados = listaParam(produtoGtin).map(normalizarEAN).filter(Boolean);
+      if (produtosSelecionados.length) {
+        const permitidos = new Set(produtosSelecionados);
+        gtins = gtins.filter(gtin => permitidos.has(gtin));
+      }
+
+      gtins = [...new Set(gtins)];
+      baseMatch._gtin = gtins.length ? matchListaTexto(gtins) : "__SEM_GTIN_PARA_FILTRO__";
+      return true;
+    }
+
     console.log("✅ Conectado ao MongoDB");
     console.log(`📦 Banco em uso: ${dbName}`);
 
@@ -1112,10 +1129,13 @@ async function iniciarServidor() {
       db.collection("dados_brutos").createIndex({ "Loja": 1 }),
       db.collection("dados_brutos").createIndex({ "GTIN/PLU": 1 }),
       db.collection("dados_brutos").createIndex({ "_gtin": 1 }),
+      db.collection("dados_brutos").createIndex({ "_cat": 1 }),
+      db.collection("dados_brutos").createIndex({ "_fam": 1 }),
       db.collection("dados_brutos").createIndex({ "_data_iso": 1 }),
       db.collection("dados_brutos").createIndex({ "Ano": 1, "_data_iso": 1, "Loja": 1 }),
       db.collection("dados_brutos").createIndex({ "_data_iso": -1, "importado_em": -1 }),
-      db.collection("categorias_depara").createIndex({ "CODBARRAS": 1 })
+      db.collection("categorias_depara").createIndex({ "CODBARRAS": 1 }),
+      db.collection("categorias_depara").createIndex({ "CATEGORIA": 1, "FAMILIA": 1 })
     ]);
     console.log("📊 Índices de dashboard criados/verificados");
 
@@ -1977,7 +1997,8 @@ async function iniciarServidor() {
         if (ano)  aplicarFiltroAno(baseMatch, ano);
         if (mes)  aplicarFiltroMes(baseMatch, mes);
         if (loja) baseMatch["Loja"] = matchTextoOuNumeroLista(loja);
-        if (produto_gtin && _migGtin) baseMatch["_gtin"] = matchListaTexto(produto_gtin);
+        const filtroDimensoesPorGtin = await aplicarFiltroDimensoesPorGtin(baseMatch, cat, familia, produto_gtin);
+        if (produto_gtin && _migGtin && !filtroDimensoesPorGtin) baseMatch["_gtin"] = matchListaTexto(produto_gtin);
         if (apenasDataReal && _migData) {
           baseMatch["_data_iso"] = { $type: "string", $regex: /^(19|20)\d{2}-\d{2}-\d{2}$/ };
         }
@@ -2005,7 +2026,8 @@ async function iniciarServidor() {
 
         // Join unico (uma vez para todos os facets de cat/fam/produto).
         // Em escopo=loja puro, nao precisa de categoria e evita timeout.
-        const precisaJoinCat = apenasDimensoes || (!apenasLoja && !apenasDia && !apenasPeriodo) || cat || familia || produto || aCat || aFamilia || incluirDiaDetalhado;
+        const precisaJoinCat = apenasDimensoes || (!apenasLoja && !apenasDia && !apenasPeriodo)
+          || ((!filtroDimensoesPorGtin && (cat || familia)) || produto || aCat || aFamilia || incluirDiaDetalhado);
         const consultaAmplaSemFiltroCat = !cat && !familia && !produto && !aCat && !aFamilia && !incluirDiaDetalhado;
         const podeFazerJoinCat = _migCat || !consultaAmplaSemFiltroCat;
         if (precisaJoinCat && podeFazerJoinCat && (!_migCat || (produto && !produto_gtin))) {
@@ -2023,8 +2045,8 @@ async function iniciarServidor() {
         }
 
         // Filtros dropdown de cat/fam/produto — comuns a todos os branches do facet
-        if (cat)     preStages.push({ $match: { _cat: matchListaTexto(cat) } });
-        if (familia) preStages.push({ $match: { _fam: matchListaTexto(familia) } });
+        if (cat && !filtroDimensoesPorGtin)     preStages.push({ $match: { _cat: matchListaTexto(cat) } });
+        if (familia && !filtroDimensoesPorGtin) preStages.push({ $match: { _fam: matchListaTexto(familia) } });
         if (produto && !produto_gtin) preStages.push({ $match: { _prod: matchListaTexto(produto) } });
 
         // Filtros ativos (clique no gráfico) — aplicados seletivamente por branch
@@ -2186,9 +2208,10 @@ async function iniciarServidor() {
         if (ano)  aplicarFiltroAno(baseMatch, ano);
         if (mes)  aplicarFiltroMes(baseMatch, mes);
         if (loja) baseMatch["Loja"] = matchTextoOuNumeroLista(loja);
-        if (cat) baseMatch["_cat"] = matchListaTexto(cat);
-        if (familia) baseMatch["_fam"] = matchListaTexto(familia);
-        if (produto_gtin && _migGtin) baseMatch["_gtin"] = matchListaTexto(produto_gtin);
+        const filtroDimensoesPorGtin = await aplicarFiltroDimensoesPorGtin(baseMatch, cat, familia, produto_gtin);
+        if (cat && !filtroDimensoesPorGtin) baseMatch["_cat"] = matchListaTexto(cat);
+        if (familia && !filtroDimensoesPorGtin) baseMatch["_fam"] = matchListaTexto(familia);
+        if (produto_gtin && _migGtin && !filtroDimensoesPorGtin) baseMatch["_gtin"] = matchListaTexto(produto_gtin);
         if ((di || df) && _migData) {
           const dr = {};
           if (di) dr.$gte = di;
@@ -2214,8 +2237,8 @@ async function iniciarServidor() {
           );
         }
         const latestMatch = { ...baseMatch };
-        if (cat && _migCat) latestMatch["_cat"] = matchListaTexto(cat);
-        if (familia && _migCat) latestMatch["_fam"] = matchListaTexto(familia);
+        if (cat && _migCat && !filtroDimensoesPorGtin) latestMatch["_cat"] = matchListaTexto(cat);
+        if (familia && _migCat && !filtroDimensoesPorGtin) latestMatch["_fam"] = matchListaTexto(familia);
         const latestDoc = _migData && !(produto && !produto_gtin)
           ? await db.collection("dados_brutos")
               .find(latestMatch, { projection: { _data_iso: 1 } })
@@ -2287,7 +2310,8 @@ async function iniciarServidor() {
         if (ano)  aplicarFiltroAno(baseMatch, ano);
         if (mes)  aplicarFiltroMes(baseMatch, mes);
         if (loja) baseMatch["Loja"] = matchTextoOuNumeroLista(loja);
-        if (produto_gtin && _migGtin) baseMatch["_gtin"] = matchListaTexto(produto_gtin);
+        const filtroDimensoesPorGtin = await aplicarFiltroDimensoesPorGtin(baseMatch, cat, familia, produto_gtin);
+        if (produto_gtin && _migGtin && !filtroDimensoesPorGtin) baseMatch["_gtin"] = matchListaTexto(produto_gtin);
         if ((di || df) && _migData) {
           const dr = {};
           if (di) dr.$gte = di;
@@ -2295,7 +2319,7 @@ async function iniciarServidor() {
           baseMatch["_data_iso"] = dr;
         }
         const preStages = Object.keys(baseMatch).length ? [{ $match: baseMatch }] : [];
-        if (!_migCat) {
+        if (!_migCat && (cat || familia) && !filtroDimensoesPorGtin) {
           preStages.push(
             { $addFields: { _gtin_atual_lookup: { $toString: { $ifNull: ["$_gtin", { $getField: "GTIN/PLU" }] } } } },
             {
@@ -2317,8 +2341,8 @@ async function iniciarServidor() {
         }
         const catCampo = _migCat ? "_cat" : "_cat_atual";
         const famCampo = _migCat ? "_fam" : "_fam_atual";
-        if (cat)     preStages.push({ $match: { [catCampo]: matchListaTexto(cat) } });
-        if (familia) preStages.push({ $match: { [famCampo]: matchListaTexto(familia) } });
+        if (cat && !filtroDimensoesPorGtin)     preStages.push({ $match: { [catCampo]: matchListaTexto(cat) } });
+        if (familia && !filtroDimensoesPorGtin) preStages.push({ $match: { [famCampo]: matchListaTexto(familia) } });
         if (produto_gtin && !_migGtin) {
           const gtins = listaParam(produto_gtin);
           if (gtins.length) {
@@ -2392,8 +2416,8 @@ async function iniciarServidor() {
         }
 
         const latestMatch = { ...baseMatch };
-        if (cat && _migCat) latestMatch["_cat"] = matchListaTexto(cat);
-        if (familia && _migCat) latestMatch["_fam"] = matchListaTexto(familia);
+        if (cat && _migCat && !filtroDimensoesPorGtin) latestMatch["_cat"] = matchListaTexto(cat);
+        if (familia && _migCat && !filtroDimensoesPorGtin) latestMatch["_fam"] = matchListaTexto(familia);
         const latestDoc = _migData && !(produto && !produto_gtin)
           ? await db.collection("dados_brutos")
               .find(latestMatch, { projection: { _data_iso: 1 } })
