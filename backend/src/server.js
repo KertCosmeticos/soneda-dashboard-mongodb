@@ -2241,7 +2241,7 @@ async function iniciarServidor() {
     app.get("/api/dashboard/estoque", async (req, res) => {
       try {
         const cacheKey = await dashboardCacheKey(
-          req.query.snapshot === "1" ? 'est:v20:snapshot' : 'est:v20',
+          req.query.snapshot === "1" ? 'est:v21:snapshot' : 'est:v21',
           req.query
         );
         const cached = cacheGet(cacheKey);
@@ -2305,6 +2305,15 @@ async function iniciarServidor() {
           );
         }
         const estoqueExpr = { $ifNull: ["$_estoque_num", brToDouble({ $getField: "Estoque Diario" })] };
+        const estoqueBrutoExpr = {
+          $ifNull: [
+            { $getField: "Estoque Diario" },
+            { $getField: "Estoque" }
+          ]
+        };
+        const estoqueBrutoInformadoExpr = {
+          $ne: [{ $ifNull: [estoqueBrutoExpr, "__AUSENTE__"] }, "__AUSENTE__"]
+        };
         const anoRefMensal = _migData ? null : await anoReferenciaMensal(ano);
         const dateGroupExpr = _migData
           ? "$_data_iso"
@@ -2316,15 +2325,36 @@ async function iniciarServidor() {
             };
 
         if (req.query.historico === "1") {
-          const historico = await db.collection("dados_brutos").aggregate([
+          const dataCoberturaExpr = {
+            $ifNull: [dateGroupExpr, { $ifNull: [dataFallbackPorMesExpr(anoRefMensal), ""] }]
+          };
+          const [facetHistorico] = await db.collection("dados_brutos").aggregate([
             ...preStages,
-            { $group: { _id: { loja: "$Loja", data: dateGroupExpr }, qty: { $sum: estoqueExpr } } },
-            { $sort: { "_id.data": 1, qty: -1 } }
+            { $facet: {
+              historico: [
+                { $group: { _id: { loja: "$Loja", data: dateGroupExpr }, qty: { $sum: estoqueExpr } } },
+                { $sort: { "_id.data": 1, qty: -1 } }
+              ],
+              cobertura_mensal: [
+                { $group: {
+                  _id: { $substrBytes: [dataCoberturaExpr, 0, 7] },
+                  registros: { $sum: 1 },
+                  registros_com_estoque: { $sum: { $cond: [estoqueBrutoInformadoExpr, 1, 0] } }
+                } },
+                { $match: { _id: /^(19|20)\d{2}-\d{2}$/ } },
+                { $sort: { _id: 1 } }
+              ]
+            } }
           ], { allowDiskUse: true }).toArray();
 
           const lojasNomeMap = await mapaNomesLojas();
           const resultHistorico = {
-            por_loja_dia: historico.map(r => ({ loja: r._id.loja, nome: nomeLojaPorCodigo(r._id.loja, lojasNomeMap), data: r._id.data, qty: r.qty }))
+            por_loja_dia: (facetHistorico?.historico || []).map(r => ({ loja: r._id.loja, nome: nomeLojaPorCodigo(r._id.loja, lojasNomeMap), data: r._id.data, qty: r.qty })),
+            cobertura_mensal: (facetHistorico?.cobertura_mensal || []).map(r => ({
+              mes: r._id,
+              registros: r.registros,
+              registros_com_estoque: r.registros_com_estoque
+            }))
           };
           cacheSet(cacheKey, resultHistorico);
           cachePersistenteSet(cacheKey, req.query, resultHistorico);
