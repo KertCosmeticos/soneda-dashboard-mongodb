@@ -758,6 +758,40 @@ async function iniciarServidor() {
       return `${prefix}:${await dadosVersion()}:${JSON.stringify(filtros)}`;
     }
 
+    function permiteCachePersistente(query) {
+      const permitidos = new Set(["_cb", "escopo", "snapshot", "historico", "detalhe_dia"]);
+      return Object.keys(query || {}).every(key => permitidos.has(key));
+    }
+
+    function dashboardCacheId(cacheKey) {
+      return crypto.createHash("sha256").update(cacheKey).digest("hex");
+    }
+
+    async function cachePersistenteGet(cacheKey, query) {
+      if (!permiteCachePersistente(query)) return null;
+      try {
+        const doc = await db.collection("dashboard_cache").findOne(
+          { _id: dashboardCacheId(cacheKey) },
+          { projection: { cacheKey: 1, data: 1 } }
+        );
+        if (!doc || doc.cacheKey !== cacheKey) return null;
+        cacheSet(cacheKey, doc.data);
+        return doc.data;
+      } catch (error) {
+        console.warn("Cache persistente indisponivel:", error.message);
+        return null;
+      }
+    }
+
+    function cachePersistenteSet(cacheKey, query, data) {
+      if (!permiteCachePersistente(query) || READ_ONLY) return;
+      db.collection("dashboard_cache").updateOne(
+        { _id: dashboardCacheId(cacheKey) },
+        { $set: { cacheKey, data, atualizadoEm: new Date() } },
+        { upsert: true }
+      ).catch(error => console.warn("Nao foi possivel persistir cache:", error.message));
+    }
+
     async function mapaNomesLojas() {
       const rows = await db.collection("lojas_depara")
         .find({}, { projection: { Cod_Loja: 1, Nome_Fantasia: 1 } })
@@ -956,26 +990,43 @@ async function iniciarServidor() {
 
     await atualizarFlagsMigracao();
     // Migrações pesadas ficam sob demanda para não competir com o painel.
-    function aquecerCacheDashboard(motivo = "startup") {
+    async function aquecerCacheDashboard(motivo = "startup") {
       const { request } = require('http');
       const PORT_WU = process.env.PORT || 3000;
-      const anoAtual = new Date().getFullYear();
       const paths = [
-        `/api/dashboard/agregados?ano=${anoAtual}&escopo=loja`,
-        `/api/dashboard/agregados?ano=${anoAtual}`,
-        `/api/dashboard/estoque-resumo?ano=${anoAtual}`
+        `/api/dashboard/agregados?escopo=loja`,
+        `/api/dashboard/estoque?snapshot=1`,
+        `/api/dashboard/agregados?escopo=dia`,
+        `/api/dashboard/agregados?escopo=periodo`,
+        `/api/dashboard/estoque?historico=1`,
+        `/api/dashboard/agregados?detalhe_dia=1&escopo=dimensoes`
       ];
-      paths.forEach(pathReq => {
-        const req = request({ hostname: 'localhost', port: PORT_WU, path: pathReq }, res => {
-          res.resume();
-          console.log(`Cache pre-aquecido (${motivo}): ${pathReq}`);
+      for (const pathReq of paths) {
+        await new Promise(resolve => {
+          const req = request({ hostname: 'localhost', port: PORT_WU, path: pathReq }, res => {
+            res.resume();
+            res.on('end', () => {
+              console.log(`Cache pre-aquecido (${motivo}): ${pathReq}`);
+              resolve();
+            });
+          });
+          req.on('error', () => resolve());
+          req.end();
         });
-        req.on('error', () => {});
-        req.end();
-      });
+      }
     }
-    const WARMUP_CACHE = /^(1|true|yes|sim)$/i.test(process.env.WARMUP_CACHE || "");
-    if (WARMUP_CACHE) setTimeout(() => aquecerCacheDashboard("startup"), 4500);
+    let aquecimentoCacheTimer = null;
+    function agendarAquecimentoCache(motivo, esperaMs = 4500) {
+      if (aquecimentoCacheTimer) clearTimeout(aquecimentoCacheTimer);
+      aquecimentoCacheTimer = setTimeout(() => {
+        aquecimentoCacheTimer = null;
+        aquecerCacheDashboard(motivo).catch(error => {
+          console.warn(`Pre-aquecimento de cache falhou (${motivo}):`, error.message);
+        });
+      }, esperaMs);
+    }
+    const WARMUP_CACHE = !/^(0|false|no|nao)$/i.test(process.env.WARMUP_CACHE || "");
+    if (WARMUP_CACHE) agendarAquecimentoCache("startup");
     // Seed usuário inicial de importação a partir das variáveis de ambiente
     if (!READ_ONLY) {
     const totalUsuarios = await db.collection("usuarios_importacao").countDocuments();
@@ -1864,6 +1915,8 @@ async function iniciarServidor() {
         const cacheKey = await dashboardCacheKey('agre:v15', req.query);
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
+        const persisted = await cachePersistenteGet(cacheKey, req.query);
+        if (persisted) return res.json(persisted);
 
         const { ano, mes, cat, familia, produto, produto_gtin } = req.query;
         const loja = await parametroLojasCobreTodoDePara(req.query.loja) ? null : req.query.loja;
@@ -1992,6 +2045,7 @@ async function iniciarServidor() {
               por_fam_dia: []
             };
             cacheSet(cacheKey, resultFast);
+            cachePersistenteSet(cacheKey, req.query, resultFast);
             return res.json(resultFast);
           } catch (fastError) {
             console.warn("Agregado rapido por loja indisponivel:", fastError.message);
@@ -2081,6 +2135,7 @@ async function iniciarServidor() {
           por_fam_dia: (facet?.por_fam_dia || []).map(r => ({ fam: r._id.fam || "Sem mapeamento", data: r._id.data, qty: r.qty, valor: r.valor }))
         };
         cacheSet(cacheKey, result);
+        cachePersistenteSet(cacheKey, req.query, result);
         res.json(result);
       } catch(e) {
         res.status(500).json({ erro: "Erro ao agregar dados", detalhe: e.message });
@@ -2191,6 +2246,8 @@ async function iniciarServidor() {
         );
         const cached = cacheGet(cacheKey);
         if (cached) return res.json(cached);
+        const persisted = await cachePersistenteGet(cacheKey, req.query);
+        if (persisted) return res.json(persisted);
 
         const { ano, mes, loja, cat, familia, produto, produto_gtin } = req.query;
         const di = req.query.di || null;
@@ -2270,6 +2327,7 @@ async function iniciarServidor() {
             por_loja_dia: historico.map(r => ({ loja: r._id.loja, nome: nomeLojaPorCodigo(r._id.loja, lojasNomeMap), data: r._id.data, qty: r.qty }))
           };
           cacheSet(cacheKey, resultHistorico);
+          cachePersistenteSet(cacheKey, req.query, resultHistorico);
           return res.json(resultHistorico);
         }
 
@@ -2368,6 +2426,7 @@ async function iniciarServidor() {
         };
 
         cacheSet(cacheKey, result);
+        cachePersistenteSet(cacheKey, req.query, result);
         res.json(result);
       } catch(e) {
         res.status(500).json({ erro: "Erro ao agregar estoque", detalhe: e.message });
@@ -2718,6 +2777,7 @@ async function iniciarServidor() {
           retencao = await aplicarRetencaoDadosBrutos(13);
           cacheClear();
           await atualizarFlagsMigracao();
+          if (WARMUP_CACHE) agendarAquecimentoCache("importacao-dados", 2500);
         }
 
         res.json({
@@ -2773,6 +2833,7 @@ async function iniciarServidor() {
           ...arquivoImportado
         });
         await invalidarCategoriasPrecomputadas();
+        if (WARMUP_CACHE) agendarAquecimentoCache("importacao-categorias", 15000);
         res.json({ ok: true, inserido, ultimo: true, mensagem: "Categorias importadas" });
       } catch (error) {
         if (arquivoImportado?.arquivoGridFsId) {
@@ -2802,6 +2863,7 @@ async function iniciarServidor() {
           ...arquivoImportado
         });
         cacheClear();
+        if (WARMUP_CACHE) agendarAquecimentoCache("importacao-lojas", 2500);
         res.json({ ok: true, inserido, ultimo: true, mensagem: "Lojas importadas" });
       } catch (error) {
         if (arquivoImportado?.arquivoGridFsId) {
